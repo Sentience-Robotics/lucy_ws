@@ -1,0 +1,27 @@
+# Workspace (filled by install.sh)
+src/
+
+# Colcon
+install/
+build/
+log/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*~
+
+# Local overrides (optional)
+.env
+.env.local
+
+# Install config (user copies from config/repos.json.example)
+config/repos.json
