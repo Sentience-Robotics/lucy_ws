@@ -63,12 +63,12 @@ LAUNCH_GAZEBO_RVIZ_BRIDGE="ros2 launch thais_urdf gazebo.launch.py"
 PORT_ROSBRIDGE=9090
 DOCKER_PORT_ARGS=(-p "${PORT_ROSBRIDGE}:9090")
 
-# --install: only build workspace and exit (no interactive shell)
+# --install: rosdep install then build workspace and exit (no interactive shell)
 if [ "${1:-}" = "--install" ]; then
-  echo "Install: building workspace and exiting..."
+  echo "Install: rosdep install, then building workspace and exiting..."
   docker run -it --rm \
     -v "$SCRIPT_DIR:$WORKSPACE" \
-    "$IMAGE_NAME" -c "${SETUP} && cd $WORKSPACE && colcon build"
+    "$IMAGE_NAME" -c "${SETUP} && cd $WORKSPACE && rosdep install --from-paths src --ignore-src -r -y && colcon build"
   echo "Done. Run ./launch_lucy.sh to start a shell."
   exit 0
 fi
