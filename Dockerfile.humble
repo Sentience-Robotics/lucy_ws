@@ -1,0 +1,35 @@
+# ROS 2 Humble on Ubuntu 22.04 — for testing Humble packages on Ubuntu 24.04 (Noble)
+# Official 'ros' image has no desktop tag; OSRF provides humble-desktop
+#
+# Install steps (host):
+#   1. Build image:  docker build -f Dockerfile.humble -t lucy_ros2_control:humble .
+#   2. Run script:   ./launch_lucy.sh   (builds workspace and starts shell)
+#   3. In container: ros2 launch thais_urdf gazebo.launch.py
+#
+FROM osrf/ros:humble-desktop
+
+# Gazebo Fortress (gz sim binary) — required by ros_gz_sim launch
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl lsb-release gnupg \
+    && curl -sSL https://packages.osrfoundation.org/gazebo.gpg -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" > /etc/apt/sources.list.d/gazebo-stable.list \
+    && apt-get update && apt-get install -y --no-install-recommends ignition-fortress \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install: Gazebo Sim + gz_ros2_control (sim joint control), ros2_control, controllers, xacro, colcon, rosbridge
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-ros-gz-sim \
+    ros-humble-ros-gz-bridge \
+    ros-humble-gz-ros2-control \
+    ros-humble-ros2-control \
+    ros-humble-ros2-control-cmake \
+    ros-humble-ros2-controllers \
+    ros-humble-xacro \
+    ros-humble-rosbridge-server \
+    python3-colcon-common-extensions \
+    && rm -rf /var/lib/apt/lists/*
+
+# Workspace will be mounted at /workspace (lucy_ws)
+WORKDIR /workspace
+ENTRYPOINT ["/bin/bash"]
+CMD ["-c", "source /opt/ros/humble/setup.bash && exec /bin/bash"]

@@ -1,0 +1,14 @@
+{
+  "repos": [
+    {
+      "name": "thais_urdf",
+      "branch": "main",
+      "url": "https://github.com/sentience-robotics/thais_urdf.git"
+    },
+    {
+      "name": "lucy_ros_packages",
+      "branch": "main",
+      "url": "https://github.com/sentience-robotics/lucy_ros_packages.git"
+    }
+  ]
+}
