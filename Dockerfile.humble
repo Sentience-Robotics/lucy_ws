@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get update && apt-get install -y --no-install-recommends ignition-fortress \
     && rm -rf /var/lib/apt/lists/*
 
-# Install: Gazebo Sim + gz_ros2_control (sim joint control), ros2_control, controllers, xacro, colcon, rosbridge
+# Install: Gazebo Sim + gz_ros2_control, ros2_control, controllers, xacro, colcon, rosbridge, rosdep (for audio_common etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-ros-gz-sim \
     ros-humble-ros-gz-bridge \
@@ -27,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-xacro \
     ros-humble-rosbridge-server \
     python3-colcon-common-extensions \
+    python3-rosdep2 \
+    && rosdep update \
     && rm -rf /var/lib/apt/lists/*
 
 # Workspace will be mounted at /workspace (lucy_ws)
