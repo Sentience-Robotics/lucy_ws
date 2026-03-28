@@ -6,6 +6,11 @@
 #   2. Run script:   ./launch_lucy.sh   (builds workspace and starts shell)
 #   3. In container: ros2 launch thais_urdf gazebo.launch.py
 #
+# Rebuild the image after editing this Dockerfile (launch_lucy.sh only creates the image if it is missing):
+#   docker build -f Dockerfile.humble -t lucy_ros2_control:humble .
+# Or delete the tag and run the script again:
+#   docker rmi lucy_ros2_control:humble && ./launch_lucy.sh
+#
 FROM osrf/ros:humble-desktop
 
 # Gazebo Fortress (gz sim binary) — required by ros_gz_sim launch
@@ -28,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rosbridge-server \
     python3-colcon-common-extensions \
     python3-rosdep2 \
+    python3-pytest-cov \
     && rosdep update \
     && rm -rf /var/lib/apt/lists/*
 

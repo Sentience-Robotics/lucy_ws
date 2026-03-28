@@ -16,8 +16,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="lucy_ros2_control:humble"
 WORKSPACE="/workspace"
-URDF_PATH="$WORKSPACE/src/thais_urdf/inmoov/urdf/inmoov.urdf.xacro"
-BASE_PATH="$WORKSPACE/src/thais_urdf/inmoov"
 
 # X11 by default; use --headless to disable. Set DOCKER_GUI_DISPLAY if host DISPLAY doesn't work (e.g. Docker Desktop).
 # See docker/DISPLAY_FIX.md for full instructions.
@@ -43,9 +41,9 @@ else
   fi
 fi
 
-# Build image if missing
+# Build image if missing (after Dockerfile.humble changes: docker build -f Dockerfile.humble -t "$IMAGE_NAME" .  or  docker rmi "$IMAGE_NAME")
 if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
-  echo "Building Docker image $IMAGE_NAME (one-time)..."
+  echo "Building Docker image $IMAGE_NAME (one-time; rebuild manually if you edited Dockerfile.humble)..."
   docker build -f "$SCRIPT_DIR/Dockerfile.humble" -t "$IMAGE_NAME" "$SCRIPT_DIR"
 fi
 
