@@ -105,7 +105,7 @@ Keep this file aligned with `lucy_ros2_control/config/lucy_controllers.yaml`.
 
 ## 3. `thais_urdf` package
 
-**Install note**: `CMakeLists.txt` installs `launch/` and `config/` only. The **`inmoov/`** tree (URDF, meshes) is referenced by **path** from launch files (e.g. workspace `src/thais_urdf/inmoov/...`), not necessarily via `share/thais_urdf`.
+**Install note**: `CMakeLists.txt` installs **`launch/`**, **`config/`**, and **`inmoov/`** into `share/thais_urdf`. Launch defaults use **`get_package_share_directory("thais_urdf")`** (binary installs and CI need only a sourced overlay).
 
 | Path | Purpose |
 |------|---------|
@@ -121,8 +121,7 @@ Keep this file aligned with `lucy_ros2_control/config/lucy_controllers.yaml`.
 
 | Gap | Severity | Standard / good practice (Humble & industry) |
 |-----|----------|-----------------------------------------------|
-| **URDF/meshes not installed** via `CMakeLists.txt` (only `launch`, `config`) | **High** | Standard pattern: `install(DIRECTORY inmoov DESTINATION share/${PROJECT_NAME}/...)` so **`ros2 pkg prefix thais_urdf`** resolves resources on any machine. Launch files should use **`FindPackageShare`** / `get_package_share_directory` for **all** assets, not hardcoded workspace `src/...` paths. |
-| **Hardcoded workspace paths** in launch (`src/thais_urdf/inmoov`) | **High** | Breaks **binary installs**, CI, and colleagues with different layouts. Use **package share** + xacro args. |
+| **URDF/meshes install + share paths** (historical gap) | **Done** | **`inmoov/`** installed to `share/thais_urdf`; default **`urdf_path` / `base_path`** use **`get_package_share_directory("thais_urdf")`** (`rviz` / `gazebo` / `lucy_ros2_control` `control.launch.py`). Override launch args if you need a forked xacro tree. |
 | **Package name vs content** (`thais_urdf` vs InMoov model) | **Low** | Document clearly in `package.xml` / README; consider renaming for discoverability (optional, large churn). |
 | **License / provenance** | **Medium** | InMoov-derived assets: ensure **LICENSE** files ship with installed share and are referenced in package metadata (common in industry compliance). |
 
