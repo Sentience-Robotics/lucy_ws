@@ -2,28 +2,18 @@
   "repos": [
     {
       "name": "thais_urdf",
-      "branch": "aes/evol-dae",
+      "branch": "dev",
       "url": "git@github.com:Sentience-Robotics/thais_urdf.git"
     },
     {
       "name": "lucy_ros_packages",
-      "branch": "sbr/feat-ros2-control",
+      "branch": "dev-feat-config-pipeline",
       "url": "git@github.com:Sentience-Robotics/lucy_ros_packages.git"
     },
     {
       "name": "lucy_control_panel",
-      "branch": "cma/evol-ros2-control",
-      "url": "git@github.com:Sentience-Robotics/lucy_control_panel.git"
-    },
-    {
-      "name": "micro_ros_raspberrypi_pico_sdk",
       "branch": "dev",
-      "url": "git@github.com:Sentience-Robotics/micro_ros_raspberrypi_pico_sdk.git"
-    },
-    {
-      "name": "audio_common",
-      "branch": "main",
-      "url": "https://github.com/mgonzs13/audio_common.git"
+      "url": "git@github.com:Sentience-Robotics/lucy_control_panel.git"
     }
   ]
 }

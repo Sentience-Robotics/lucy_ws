@@ -4,7 +4,7 @@ ROS 2 **Humble**. Maintainer documentation for the Lucy stack is **owned per rep
 
 | Repository | Developer documentation |
 |------------|-------------------------|
-| **lucy_ros_packages** | [`src/lucy_ros_packages/doc/DEVELOPER.md`](../src/lucy_ros_packages/doc/DEVELOPER.md) — bringup, `lucy_ros2_control`, `camera_ros`, CI |
+| **lucy_ros_packages** | [`doc/DEVELOPER.md`](../src/lucy_ros_packages/doc/DEVELOPER.md) — bringup, `lucy_ros2_control`, `camera_ros`, CI; [**ros2_control on Lucy**](../src/lucy_ros_packages/doc/ROS2_CONTROL.md) |
 | **thais_urdf** | [`src/thais_urdf/doc/DEVELOPER.md`](../src/thais_urdf/doc/DEVELOPER.md) — URDF/xacro, meshes, launches, RViz |
 
 **End-to-end pipeline** (control panel, sim time, TF, known gaps): [`simulation_and_visualization.md`](simulation_and_visualization.md).
