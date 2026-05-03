@@ -22,8 +22,9 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-IMAGE_NAME="lucy_ros2:humble"
-WORKSPACE="/lucy_ws"
+IMAGE_NAME="lucy_ros2_control:humble"
+# Container mount path (must match Dockerfile WORKDIR and paths in docker_workspace_install).
+WORKSPACE="/workspace"
 
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/docker/ensure_image.sh"
@@ -44,7 +45,7 @@ check_cmd() {
 remove_workspace_src_repo() {
   local name="$1"
   rm -rf "src/${name}" 2>/dev/null || true
-  docker run --rm -v "$SCRIPT_DIR:$WORKSPACE" "$IMAGE_NAME" -c "rm -rf /workspace/src/${name}"
+  docker run --rm -v "$SCRIPT_DIR:$WORKSPACE" "$IMAGE_NAME" -c "rm -rf ${WORKSPACE}/src/${name}"
 }
 
 # Fetch + fast-forward to repos.json branch (existing clone).

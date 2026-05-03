@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Rebuild lucy_ros2_control:humble when Dockerfile.humble content changes (image LABEL tracks checksum).
+# Rebuild the Lucy image when Dockerfile.humble content changes (image LABEL tracks checksum). Tag defaults to lucy_ros2_control:humble.
 
 ensure_lucy_docker_image() {
   local ws_root="$1"
