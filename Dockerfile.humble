@@ -3,15 +3,24 @@
 #
 # Install steps (host):
 #   1. Build image:  docker build -f Dockerfile.humble -t lucy_ros2_control:humble .
-#   2. Run script:   ./launch_lucy.sh   (builds workspace and starts shell)
+#   2. Run script:   ./launch_lucy.sh   (builds workspace, starts Vite control panel in container, interactive shell)
 #   3. In container: ros2 launch thais_urdf gazebo.launch.py
+#   4. Control panel UI: http://localhost:5000 on host (PORT_CONTROL_PANEL); rosbridge :9090
 #
-# Rebuild the image after editing this Dockerfile (launch_lucy.sh only creates the image if it is missing):
-#   docker build -f Dockerfile.humble -t lucy_ros2_control:humble .
-# Or delete the tag and run the script again:
-#   docker rmi lucy_ros2_control:humble && ./launch_lucy.sh
+# Rebuilding: install.sh / launch_lucy.sh compare Dockerfile.humble checksum to LABEL lucy.dockerfile.sha256 and rebuild when needed.
 #
 FROM osrf/ros:humble-desktop
+
+ARG DOCKERFILE_SHA256=unknown
+LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}"
+
+# Jammy: universe + multiverse carry python3-pytest-mock, GStreamer, etc. The base image can list only "main".
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates software-properties-common \
+ && add-apt-repository -y universe \
+ && add-apt-repository -y multiverse \
+ && apt-get update \
+ && rm -rf /var/lib/apt/lists/*
 
 # Gazebo Fortress (gz sim binary) — required by ros_gz_sim launch
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -21,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get update && apt-get install -y --no-install-recommends ignition-fortress \
     && rm -rf /var/lib/apt/lists/*
 
-# Install: Gazebo Sim + gz_ros2_control, ros2_control, controllers, xacro, colcon, rosbridge, rosdep (for audio_common etc.)
+# ROS sim/studio stack + rosdep prerequisites lucy_bringup/camera_ros expect from apt (see rosdep in install.sh).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-ros-gz-sim \
     ros-humble-ros-gz-bridge \
@@ -31,10 +40,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-ros2-controllers \
     ros-humble-xacro \
     ros-humble-rosbridge-server \
+    ros-humble-realsense2-camera \
     python3-colcon-common-extensions \
     python3-rosdep2 \
     python3-pytest-cov \
+    python3-pytest-mock \
+    gstreamer1.0-tools \
+    gstreamer1.0-plugins-good \
+    libgstreamer-plugins-good1.0-0 \
     && rosdep update \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node 22 + yarn — lucy_control_panel (Vite dev server) runs inside this container
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g yarn \
     && rm -rf /var/lib/apt/lists/*
 
 # Workspace will be mounted at /workspace (lucy_ws)

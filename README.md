@@ -9,24 +9,40 @@ This tree holds workspace layout and tooling; **`src/`** is populated by the ins
 
 ## Building the workspace
 
-**First-time setup:** **install.sh** checks requirements (Docker, git, python3), reads **config/repos.json**, clones each listed repo into **src/**, runs **launch_lucy.sh --install** to build the workspace in Docker, then exits.
+If you want to clone over ssh (for development purposes for example), copy `.env.example` to `.env` to use the env var `DEV=true` before running the install script.
+Else, just run:
 
 ```bash
 chmod +x install.sh launch_lucy.sh
 ./install.sh
 ```
 
-If all repos are already cloned, the script asks whether to repair (re-clone and rebuild) or abort.
-
-**Rebuild only** (no full install flow):
+If repos are already cloned, a normal **`./install.sh`** run **pulls** each repo to the branch in **config/repos.json** (fast-forward only), then rebuilds in Docker.
 
 ```bash
-./launch_lucy.sh --install
+./install.sh --update     # same behavior (explicit “update”)
+./install.sh update
+```
+
+**Force re-clone** everything listed in **repos.json** (removes **`src/<repo>`**, then clone + Docker build):
+
+```bash
+./install.sh --repair
+```
+
+**Rebuild only** (no git; Docker **rosdep** / **colcon** / **yarn** only):
+
+```bash
+./install.sh --build-only
 ```
 
 ## Quick start
 
-**launch_lucy.sh** builds the Docker image if needed, mounts the workspace, runs colcon in the container, and starts a shell (GUI by default).
+**launch_lucy.sh** builds the Docker image if needed, mounts the workspace, sources the built ROS overlay, and starts a shell (GUI by default). Run **install.sh** first so **install/setup.bash** exists.
+
+An interactive run starts the **control panel** (**Vite**) **in the background** (log **`/tmp/lucy-control-panel-vite.log`**). Start **Gazebo** or **RViz** yourself so **rosbridge** is running before using the panel.
+
+**Control panel URL:** **`launch_lucy.sh`** reads **`src/lucy_control_panel/.env`** for **`VITE_PORT`** and publishes that host port into the container (defaults **5000** if **`VITE_PORT`** is missing). Override with **`PORT_CONTROL_PANEL`** / **`PORT_CONTROL_PANEL_CONTAINER`** if needed.
 
 ```bash
 ./launch_lucy.sh
@@ -36,19 +52,16 @@ Inside the container:
 
 | What you want | Command |
 |---------------|---------|
-| Real robot + RViz + rosbridge | `ros2 launch thais_urdf rviz.launch.py` |
+| Gazebo + RViz + Control Panel | `ros2 launch thais_urdf gazebo.launch.py` |
+| RViz + Control Panel | `ros2 launch thais_urdf rviz.launch.py` |
 | Real robot, control only | `ros2 launch lucy_ros2_control control.launch.py` |
-| Gazebo sim + RViz + rosbridge | `ros2 launch thais_urdf gazebo.launch.py` |
 
 ### Launch script options
 
 ```bash
 ./launch_lucy.sh --headless   # shell without GUI
-./launch_lucy.sh --install    # build workspace only and exit
-./launch_lucy.sh <command>    # run one command in the container
+./launch_lucy.sh <command>    # run one command in the container (no background control panel)
 ```
-
-When using GUI, the script runs `xhost +local:docker` if available so the container can use the host display.
 
 ## Packages (`src/` after install)
 

@@ -1,0 +1,44 @@
+# Full workspace install (clone + Docker + colcon + yarn) and a non-interactive launch smoke test.
+# Uses DEV=false (HTTPS-friendly clones via git url.insteadOf); requires dependency repos readable by GITHUB_TOKEN.
+
+name: Install and launch
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-and-launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DEV: "false"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Drop workspace .env if present (use DEV from workflow env only)
+        run: rm -f .env .env.local || true
+
+      - name: Clone private deps over HTTPS with GITHUB_TOKEN
+        run: git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install (clone + Docker image + rosdep + colcon + yarn)
+        run: |
+          chmod +x install.sh launch_lucy.sh
+          ./install.sh
+
+      - name: Launch smoke test (headless, no TTY)
+        run: ./launch_lucy.sh --headless ros2 doctor --report
