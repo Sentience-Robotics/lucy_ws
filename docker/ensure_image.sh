@@ -62,6 +62,7 @@ ensure_lucy_docker_image() {
     echo "Building Docker image $image_name ..."
   fi
   docker build "${build_platform_args[@]}" -f "$dockerfile" \
+    --build-arg "LUCY_FROM_PLATFORM=$target_platform" \
     --build-arg "DOCKERFILE_SHA256=$hash" \
     --build-arg "LUCY_DOCKER_BUILD_PLATFORM=$target_platform" \
     -t "$image_name" "$ws_root"
