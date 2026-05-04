@@ -1,5 +1,6 @@
 # Full workspace install (clone + Docker + colcon + yarn) and a non-interactive launch smoke test.
 # Uses DEV=false (HTTPS-friendly clones via git url.insteadOf); requires dependency repos readable by GITHUB_TOKEN.
+# matrix.dockerfile_variant=macos exercises Dockerfile.humble.macos (linux/arm64) via QEMU on ubuntu-latest.
 
 name: Install and launch
 
@@ -13,19 +14,30 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   install-and-launch:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.dockerfile_variant }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile_variant: [default, macos]
     env:
       DEV: "false"
       CI: "true"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up QEMU (linux/arm64 Docker builds on amd64 runner)
+        if: matrix.dockerfile_variant == 'macos'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: matrix.dockerfile_variant == 'macos'
+        uses: docker/setup-buildx-action@v3
 
       - name: Drop workspace .env if present (use DEV from workflow env only)
         run: rm -f .env .env.local || true
@@ -38,7 +50,16 @@ jobs:
       - name: Install (clone + Docker image + rosdep + colcon + yarn)
         run: |
           chmod +x install.sh launch_lucy.sh
-          ./install.sh
+          if [ "${{ matrix.dockerfile_variant }}" = macos ]; then
+            ./install.sh --macos
+          else
+            ./install.sh
+          fi
 
       - name: Launch smoke test (headless, no TTY)
-        run: ./launch_lucy.sh --headless ros2 doctor --report
+        run: |
+          if [ "${{ matrix.dockerfile_variant }}" = macos ]; then
+            ./launch_lucy.sh --macos --headless ros2 doctor --report
+          else
+            ./launch_lucy.sh --headless ros2 doctor --report
+          fi

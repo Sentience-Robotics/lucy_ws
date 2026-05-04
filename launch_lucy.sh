@@ -4,9 +4,10 @@
 # Prerequisite: ./install.sh (or ./install.sh --build-only) — clones src/, Docker image, colcon build, yarn for control panel.
 #
 # Usage:
-#   ./launch_lucy.sh              # interactive shell; Vite control panel in background (see printed ros2 launch hints)
-#   ./launch_lucy.sh --headless   # same without GUI forwarding
-#   ./launch_lucy.sh <command>    # run one command in the container (no control panel)
+#   ./launch_lucy.sh                # interactive shell; Vite control panel in background (see printed ros2 launch hints)
+#   ./launch_lucy.sh --macos        # same; use lucy_ros2_control:humble-macos (Apple Silicon / Dockerfile.humble.macos)
+#   ./launch_lucy.sh --headless     # same without GUI forwarding
+#   ./launch_lucy.sh <command>      # run one command in the container (no control panel)
 #
 # Ports mapped to host: rosbridge 9090, control panel PORT_CONTROL_PANEL (match lucy_control_panel VITE_PORT / .env).
 # Vite proxies /rosbridge -> ws://127.0.0.1:9090 inside the container.
@@ -15,13 +16,32 @@
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE_NAME="lucy_ros2_control:humble"
+
+LAUNCH_USE_MACOS_IMAGE=0
+_launch_argv=()
+for _a in "$@"; do
+  if [ "$_a" = "--macos" ]; then
+    LAUNCH_USE_MACOS_IMAGE=1
+  else
+    _launch_argv+=("$_a")
+  fi
+done
+set -- "${_launch_argv[@]}"
+
+if [ "$LAUNCH_USE_MACOS_IMAGE" = 1 ]; then
+  IMAGE_NAME="lucy_ros2_control:humble-macos"
+  DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble.macos"
+  echo "Using macOS/ARM64 image ($IMAGE_NAME)."
+else
+  IMAGE_NAME="lucy_ros2_control:humble"
+  DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
+fi
 
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/docker/ensure_image.sh"
 
 ensure_docker_image() {
-  ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME"
+  ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME" "$DOCKERFILE_PATH"
 }
 WORKSPACE="/workspace"
 

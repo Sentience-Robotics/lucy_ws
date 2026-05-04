@@ -4,12 +4,16 @@
 ensure_lucy_docker_image() {
   local ws_root="$1"
   local image_name="${2:-lucy_ros2_control:humble}"
-  local dockerfile="$ws_root/Dockerfile.humble"
+  local dockerfile="${3:-$ws_root/Dockerfile.humble}"
   local hash want
+  local build_platform_args=()
 
   if [ ! -f "$dockerfile" ]; then
     echo "ensure_lucy_docker_image: missing $dockerfile" >&2
     return 1
+  fi
+  if [[ "$(basename "$dockerfile")" == Dockerfile.humble.macos ]] || [[ -n "${LUCY_DOCKER_PLATFORM:-}" ]]; then
+    build_platform_args=(--platform "${LUCY_DOCKER_PLATFORM:-linux/arm64}")
   fi
   hash=$(sha256sum "$dockerfile" | awk '{print $1}')
   if docker image inspect "$image_name" &>/dev/null; then
@@ -17,11 +21,11 @@ ensure_lucy_docker_image() {
     if [ "$want" = "$hash" ]; then
       return 0
     fi
-    echo "Dockerfile.humble changed (label mismatch); rebuilding $image_name ..."
+    echo "Lucy Dockerfile changed (label mismatch); rebuilding $image_name ..."
   else
     echo "Building Docker image $image_name ..."
   fi
-  docker build -f "$dockerfile" --build-arg "DOCKERFILE_SHA256=$hash" -t "$image_name" "$ws_root"
+  docker build "${build_platform_args[@]}" -f "$dockerfile" --build-arg "DOCKERFILE_SHA256=$hash" -t "$image_name" "$ws_root"
 }
 
 # docker run -it breaks without a TTY (e.g. GitHub Actions); use -i only there.

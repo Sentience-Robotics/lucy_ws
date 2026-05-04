@@ -6,10 +6,12 @@
 # Optional: copy .env.example to .env — DEV=true rewrites HTTPS clone URLs to SSH (see parse_repos).
 #
 # Usage:
-#   ./install.sh                  # clone missing repos; git pull existing @ repos.json branch + Docker build
-#   ./install.sh --update | update  # same as above (explicit update)
-#   ./install.sh --repair          # delete listed repos under src/ and re-clone + Docker build
-#   ./install.sh --build-only      # Docker build only (skips git)
+#   ./install.sh                      # clone missing repos; git pull existing @ repos.json branch + Docker build
+#   ./install.sh --macos              # same, using Dockerfile.humble.macos (linux/arm64) for Apple Silicon Docker
+#   ./install.sh --update | update   # same as above (explicit update)
+#   ./install.sh --repair             # delete listed repos under src/ and re-clone + Docker build
+#   ./install.sh --build-only         # Docker build only (skips git)
+#   ./install.sh --macos --build-only # rebuild macOS image + workspace in container only
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,7 +24,26 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-IMAGE_NAME="lucy_ros2_control:humble"
+# Optional: ./install.sh --macos …  (Apple Silicon Docker; image lucy_ros2_control:humble-macos, Dockerfile.humble.macos)
+INSTALL_USE_MACOS_IMAGE=0
+_install_argv=()
+for _a in "$@"; do
+  if [ "$_a" = "--macos" ]; then
+    INSTALL_USE_MACOS_IMAGE=1
+  else
+    _install_argv+=("$_a")
+  fi
+done
+set -- "${_install_argv[@]}"
+
+if [ "$INSTALL_USE_MACOS_IMAGE" = 1 ]; then
+  IMAGE_NAME="lucy_ros2_control:humble-macos"
+  DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble.macos"
+  echo "Using macOS/ARM64 image ($IMAGE_NAME) from $(basename "$DOCKERFILE_PATH")."
+else
+  IMAGE_NAME="lucy_ros2_control:humble"
+  DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
+fi
 # Container mount path (must match Dockerfile WORKDIR and paths in docker_workspace_install).
 WORKSPACE="/workspace"
 
@@ -30,7 +51,7 @@ WORKSPACE="/workspace"
 source "$SCRIPT_DIR/docker/ensure_image.sh"
 
 ensure_docker_image() {
-  ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME"
+  ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME" "$DOCKERFILE_PATH"
 }
 
 # --- Requirements ---
@@ -95,7 +116,7 @@ case "${1:-}" in
     ;;
 esac
 if [ $# -gt 0 ]; then
-  echo "Unknown argument: $1 (try --repair, --update, or --build-only)" >&2
+  echo "Unknown argument: $1 (try --macos, --repair, --update, or --build-only)" >&2
   exit 1
 fi
 
