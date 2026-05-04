@@ -22,3 +22,6 @@ __pycache__/
 # Local overrides (optional)
 .env
 .env.local
+
+# Docker platform choice (./install.sh --arm)
+.lucy-docker-platform

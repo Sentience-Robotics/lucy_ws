@@ -1,6 +1,6 @@
 # Full workspace install (clone + Docker + colcon + yarn) and a non-interactive launch smoke test.
 # Uses DEV=false (HTTPS-friendly clones via git url.insteadOf); requires dependency repos readable by GITHUB_TOKEN.
-# matrix.dockerfile_variant=macos exercises Dockerfile.humble.macos (linux/arm64) via QEMU on ubuntu-latest.
+# matrix.variant=arm runs ./install.sh --arm (linux/arm64 via QEMU on ubuntu-latest); launch uses .lucy-docker-platform (no extra flag).
 
 name: Install and launch
 
@@ -17,14 +17,14 @@ permissions:
 jobs:
   install-and-launch:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.dockerfile_variant }}
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.variant }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        dockerfile_variant: [default, macos]
+        variant: [default, arm]
     env:
       DEV: "false"
       CI: "true"
@@ -32,11 +32,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up QEMU (linux/arm64 Docker builds on amd64 runner)
-        if: matrix.dockerfile_variant == 'macos'
+        if: matrix.variant == 'arm'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        if: matrix.dockerfile_variant == 'macos'
+        if: matrix.variant == 'arm'
         uses: docker/setup-buildx-action@v3
 
       - name: Drop workspace .env if present (use DEV from workflow env only)
@@ -50,16 +50,11 @@ jobs:
       - name: Install (clone + Docker image + rosdep + colcon + yarn)
         run: |
           chmod +x install.sh launch_lucy.sh
-          if [ "${{ matrix.dockerfile_variant }}" = macos ]; then
-            ./install.sh --macos
+          if [ "${{ matrix.variant }}" = arm ]; then
+            ./install.sh --arm
           else
             ./install.sh
           fi
 
       - name: Launch smoke test (headless, no TTY)
-        run: |
-          if [ "${{ matrix.dockerfile_variant }}" = macos ]; then
-            ./launch_lucy.sh --macos --headless ros2 doctor --report
-          else
-            ./launch_lucy.sh --headless ros2 doctor --report
-          fi
+        run: ./launch_lucy.sh --headless ros2 doctor --report
