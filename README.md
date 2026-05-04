@@ -35,7 +35,7 @@ Docker pulls **`linux/amd64`** images — correct for these hosts.
 
 ### Apple Silicon macOS (M1 / M2 / M3, Docker Desktop)
 
-Docker Desktop often defaults to **`linux/amd64`** ROS images and runs them under emulation, which produces platform warnings and unreliable **`apt` / `rosdep`**. Use **`--arm`** on **install** once (or every install you want as ARM64); **`--arm`** can be combined with **`--build-only`**, **`--repair`**, etc.
+Docker Desktop often defaults to **`linux/amd64`** ROS images and runs them under emulation, which produces platform warnings and unreliable **`apt` / `rosdep`**. Use **`--arm`** on **install** once (or every install you want as ARM64); **`--arm`** can be combined with **`--build-only`**, **`--repair`**, etc. The image **`osrf/ros:humble-desktop`** on Docker Hub is **amd64-only**; **`--arm`** builds from **`ros:humble-ros-base-jammy`** and installs **`ros-humble-desktop`** so a real **linux/arm64** base exists.
 
 **Install**
 

@@ -1,8 +1,8 @@
 # ROS 2 Humble on Ubuntu 22.04 — for testing Humble packages on Ubuntu 24.04 (Noble)
-# Official 'ros' image has no desktop tag; OSRF provides humble-desktop
+# AMD64: osrf/ros humble-desktop. ARM64: Docker Hub has no arm osrf humble-desktop; use ros:humble-ros-base-jammy + ros-humble-desktop.
 #
 # Install steps (host):
-#   1. Build image:  docker build -f Dockerfile.humble -t lucy_ros2_control:humble .
+#   1. Build image:  ./install.sh (recommended) — passes LUCY_* build-args. Ad-hoc docker build needs --platform + LUCY_FROM_PLATFORM, LUCY_BASE_IMAGE, LUCY_BOOTSTRAP_DESKTOP (see docker/ensure_image.sh).
 #   2. Run script:   ./launch_lucy.sh   (builds workspace, starts Vite control panel in container, interactive shell)
 #   3. In container: ros2 launch thais_urdf gazebo.launch.py
 #   4. Control panel UI: http://localhost:5000 on host (PORT_CONTROL_PANEL); rosbridge :9090
@@ -10,15 +10,23 @@
 # Rebuilding: install.sh / launch_lucy.sh compare Dockerfile checksum + platform to LABEL lucy.dockerfile.sha256 (see docker/ensure_image.sh).
 # Apple Silicon (Docker Desktop): ./install.sh --arm writes .lucy-docker-platform so images build/run as linux/arm64 (same tag lucy_ros2_control:humble).
 #
-# Pin the base OS/arch explicitly. Some builders still pull the wrong manifest for osrf/ros:humble-desktop even when
-# "docker build --platform" is set; that yields InvalidBaseImagePlatform and RUN … exec format error. Use LUCY_FROM_PLATFORM
-# (not TARGETPLATFORM) so this is not flagged as RedundantTargetPlatform by BuildKit.
+# osrf/ros:humble-desktop on Docker Hub is linux/amd64 only (no arm64 digest). ARM builds use multi-arch ros:humble-ros-base-jammy
+# plus ros-humble-desktop (see LUCY_BOOTSTRAP_DESKTOP). LUCY_FROM_PLATFORM pins the stage OS/arch for the chosen base.
 ARG LUCY_FROM_PLATFORM
-FROM --platform=${LUCY_FROM_PLATFORM} osrf/ros:humble-desktop
+ARG LUCY_BASE_IMAGE
+FROM --platform=${LUCY_FROM_PLATFORM} ${LUCY_BASE_IMAGE}
 
+ARG LUCY_BOOTSTRAP_DESKTOP=0
 ARG DOCKERFILE_SHA256=unknown
 ARG LUCY_DOCKER_BUILD_PLATFORM=unknown
 LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}|${LUCY_DOCKER_BUILD_PLATFORM}"
+
+# On ARM we start from ros-base; install desktop metapackage to approximate osrf humble-desktop (RViz, tutorials stack, etc.).
+RUN if [ "${LUCY_BOOTSTRAP_DESKTOP}" = 1 ]; then \
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ros-humble-desktop \
+    && rm -rf /var/lib/apt/lists/*; \
+  fi
 
 # Jammy: universe + multiverse carry python3-pytest-mock, GStreamer, etc. The base image can list only "main".
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
