@@ -7,15 +7,86 @@ Workspace for Lucy/InMoov:
 
 This tree holds workspace layout and tooling; **`src/`** is populated by the install script.
 
-## Building the workspace
+## Install and quick launch
 
-If you want to clone over ssh (for development purposes for example), copy `.env.example` to `.env` to use the env var `DEV=true` before running the install script.
-Else, just run:
+One-time:
 
 ```bash
 chmod +x install.sh launch_lucy.sh
+```
+
+I fyou need to clone the repositories over **SSH**, copy **`.env.example`** to **`.env`** and set **`DEV=true`** before running **`install.sh`** (HTTPS clones work without that).
+
+Pick the section that matches your machine; **install and launch must use the same variant** (default **`lucy_ros2_control:humble`** vs **`--macos`** → **`lucy_ros2_control:humble-macos`**).
+
+### Linux, Intel Mac, Windows WSL, x86_64 VMs
+
+Docker pulls **`linux/amd64`** images — correct for these hosts.
+
+**Install**
+
+```bash
 ./install.sh
 ```
+
+**Quick launch** (interactive shell; GUI / X11 if available)
+
+```bash
+./launch_lucy.sh
+```
+
+### Apple Silicon macOS (M1 / M2 / M3, Docker Desktop)
+
+Docker Desktop often defaults to **`linux/amd64`** ROS images and runs them under emulation, which produces platform warnings and unreliable **`apt` / `rosdep`**. Use the ARM64 Dockerfile and **`--macos`** on both scripts (you can combine **`--macos`** with flags like **`--build-only`** or **`--headless`**).
+
+**Install**
+
+```bash
+./install.sh --macos
+```
+
+**Quick launch**
+
+```bash
+./launch_lucy.sh --macos
+```
+
+Optional: override the Docker build platform with **`LUCY_DOCKER_PLATFORM`** (see **`docker/ensure_image.sh`**).
+
+## Quick start (what happens in the container)
+
+**launch_lucy.sh** builds the Docker image if needed, mounts the workspace, sources the built ROS overlay, and starts a shell (GUI by default). Run **`install.sh`** first so **`install/setup.bash`** exists.
+
+An interactive run starts the **control panel** (**Vite**) **in the background** (log **`/tmp/lucy-control-panel-vite.log`**). Start **Gazebo** or **RViz** yourself so **rosbridge** is running before using the panel.
+
+**Control panel URL:** **`launch_lucy.sh`** reads **`src/lucy_control_panel/.env`** for **`VITE_PORT`** and publishes that host port into the container (defaults **5000** if **`VITE_PORT`** is missing). Override with **`PORT_CONTROL_PANEL`** / **`PORT_CONTROL_PANEL_CONTAINER`** if needed.
+
+Inside the container:
+
+| What you want | Command |
+|---------------|---------|
+| Gazebo + RViz + Control Panel | `ros2 launch thais_urdf gazebo.launch.py` |
+| RViz + Control Panel | `ros2 launch thais_urdf rviz.launch.py` |
+| Real robot, control only | `ros2 launch lucy_ros2_control control.launch.py` |
+
+### More launch flags
+
+```bash
+./launch_lucy.sh --headless              # shell without GUI / X11
+./launch_lucy.sh <command>               # one command; no background control panel
+./launch_lucy.sh --headless ros2 doctor  # example non-interactive check
+```
+
+On Apple Silicon, prefix the same commands with **`--macos`** (e.g. **`./launch_lucy.sh --macos --headless ros2 doctor --report`**).
+
+## Packages (`src/` after install)
+
+- **thais_urdf** — InMoov URDF, RViz config, `rviz.launch.py`, `gazebo.launch.py`
+- **lucy_ros_packages** — bringup, `lucy_ros2_control`, `camera_ros`, etc.
+
+See each repository’s README for details.
+
+## Other install commands
 
 If repos are already cloned, a normal **`./install.sh`** run **pulls** each repo to the branch in **config/repos.json** (fast-forward only), then rebuilds in Docker.
 
@@ -36,36 +107,4 @@ If repos are already cloned, a normal **`./install.sh`** run **pulls** each repo
 ./install.sh --build-only
 ```
 
-## Quick start
-
-**launch_lucy.sh** builds the Docker image if needed, mounts the workspace, sources the built ROS overlay, and starts a shell (GUI by default). Run **install.sh** first so **install/setup.bash** exists.
-
-An interactive run starts the **control panel** (**Vite**) **in the background** (log **`/tmp/lucy-control-panel-vite.log`**). Start **Gazebo** or **RViz** yourself so **rosbridge** is running before using the panel.
-
-**Control panel URL:** **`launch_lucy.sh`** reads **`src/lucy_control_panel/.env`** for **`VITE_PORT`** and publishes that host port into the container (defaults **5000** if **`VITE_PORT`** is missing). Override with **`PORT_CONTROL_PANEL`** / **`PORT_CONTROL_PANEL_CONTAINER`** if needed.
-
-```bash
-./launch_lucy.sh
-```
-
-Inside the container:
-
-| What you want | Command |
-|---------------|---------|
-| Gazebo + RViz + Control Panel | `ros2 launch thais_urdf gazebo.launch.py` |
-| RViz + Control Panel | `ros2 launch thais_urdf rviz.launch.py` |
-| Real robot, control only | `ros2 launch lucy_ros2_control control.launch.py` |
-
-### Launch script options
-
-```bash
-./launch_lucy.sh --headless   # shell without GUI
-./launch_lucy.sh <command>    # run one command in the container (no background control panel)
-```
-
-## Packages (`src/` after install)
-
-- **thais_urdf** — InMoov URDF, RViz config, `rviz.launch.py`, `gazebo.launch.py`
-- **lucy_ros_packages** — bringup, `lucy_ros2_control`, `camera_ros`, etc.
-
-See each repository’s README for details.
+On Apple Silicon, add **`--macos`** to any of the above **`install.sh`** invocations (e.g. **`./install.sh --macos --build-only`**).

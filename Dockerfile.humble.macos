@@ -1,16 +1,11 @@
-# ROS 2 Humble on Ubuntu 22.04 — for testing Humble packages on Ubuntu 24.04 (Noble)
-# Official 'ros' image has no desktop tag; OSRF provides humble-desktop
+# ROS 2 Humble for Docker Desktop on Apple Silicon (native linux/arm64 containers).
+# Avoids amd64 emulation warnings and many apt/rosdep issues seen on M1/M2/M3.
 #
-# Install steps (host):
-#   1. Build image:  docker build -f Dockerfile.humble -t lucy_ros2_control:humble .
-#   2. Run script:   ./launch_lucy.sh   (builds workspace, starts Vite control panel in container, interactive shell)
-#   3. In container: ros2 launch thais_urdf gazebo.launch.py
-#   4. Control panel UI: http://localhost:5000 on host (PORT_CONTROL_PANEL); rosbridge :9090
+# Intel Mac or Linux x86_64: use Dockerfile.humble instead.
 #
-# Rebuilding: install.sh / launch_lucy.sh compare this file’s checksum to LABEL lucy.dockerfile.sha256 and rebuild when needed.
-# Apple Silicon (Docker Desktop): use Dockerfile.humble.macos and ./install.sh --macos / ./launch_lucy.sh --macos
+# Build: ./install.sh --macos --build-only   or   launch with ./launch_lucy.sh --macos
 #
-FROM osrf/ros:humble-desktop
+FROM --platform=linux/arm64 osrf/ros:humble-desktop
 
 ARG DOCKERFILE_SHA256=unknown
 LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}"
@@ -58,7 +53,6 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && npm install -g yarn \
     && rm -rf /var/lib/apt/lists/*
 
-# Workspace will be mounted at /workspace (lucy_ws)
 WORKDIR /workspace
 ENTRYPOINT ["/bin/bash"]
 CMD ["-c", "source /opt/ros/humble/setup.bash && exec /bin/bash"]
