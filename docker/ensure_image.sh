@@ -49,6 +49,19 @@ ensure_lucy_docker_image() {
   target_platform=$(lucy_workspace_target_platform "$ws_root")
   build_platform_args=(--platform "$target_platform")
 
+  # osrf/ros:humble-desktop is amd64-only on Docker Hub; arm64 uses official multi-arch ros:humble-ros-base-jammy + desktop apt.
+  local base_image bootstrap_desktop
+  case "$target_platform" in
+    linux/arm64)
+      base_image="ros:humble-ros-base-jammy"
+      bootstrap_desktop=1
+      ;;
+    *)
+      base_image="osrf/ros:humble-desktop"
+      bootstrap_desktop=0
+      ;;
+  esac
+
   hash=$(sha256sum "$dockerfile" | awk '{print $1}')
   want_id="${hash}|${target_platform}"
 
@@ -63,6 +76,8 @@ ensure_lucy_docker_image() {
   fi
   docker build "${build_platform_args[@]}" -f "$dockerfile" \
     --build-arg "LUCY_FROM_PLATFORM=$target_platform" \
+    --build-arg "LUCY_BASE_IMAGE=$base_image" \
+    --build-arg "LUCY_BOOTSTRAP_DESKTOP=$bootstrap_desktop" \
     --build-arg "DOCKERFILE_SHA256=$hash" \
     --build-arg "LUCY_DOCKER_BUILD_PLATFORM=$target_platform" \
     -t "$image_name" "$ws_root"
