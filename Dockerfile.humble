@@ -9,9 +9,12 @@
 #
 # Rebuilding: install.sh / launch_lucy.sh compare Dockerfile checksum + platform to LABEL lucy.dockerfile.sha256 (see docker/ensure_image.sh).
 # Apple Silicon (Docker Desktop): ./install.sh --arm writes .lucy-docker-platform so images build/run as linux/arm64 (same tag lucy_ros2_control:humble).
-# Base image variant follows "docker build --platform" (do not set FROM --platform=${TARGETPLATFORM}; BuildKit treats that as redundant).
 #
-FROM osrf/ros:humble-desktop
+# Pin the base OS/arch explicitly. Some builders still pull the wrong manifest for osrf/ros:humble-desktop even when
+# "docker build --platform" is set; that yields InvalidBaseImagePlatform and RUN … exec format error. Use LUCY_FROM_PLATFORM
+# (not TARGETPLATFORM) so this is not flagged as RedundantTargetPlatform by BuildKit.
+ARG LUCY_FROM_PLATFORM
+FROM --platform=${LUCY_FROM_PLATFORM} osrf/ros:humble-desktop
 
 ARG DOCKERFILE_SHA256=unknown
 ARG LUCY_DOCKER_BUILD_PLATFORM=unknown
