@@ -54,6 +54,7 @@ else
 fi
 
 ensure_docker_image
+docker_run_platform_flags "$SCRIPT_DIR"
 docker_run_it_flags
 
 # Vite reads lucy_control_panel/.env (VITE_PORT); Docker must publish that container port or the host URL lies.
@@ -139,7 +140,7 @@ if [ $# -eq 0 ]; then
   echo "  Typical stacks (run inside this shell after rosbridge is up):"
   echo "    • Gazebo + RViz + Control Panel  →  $LAUNCH_GAZEBO_RVIZ_BRIDGE_CP"
   echo "    • RViz + Control Panel           →  $LAUNCH_RVIZ_BRIDGE_CP"
-  docker run "${DOCKER_RUN_IT[@]}" --rm \
+  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
     "${DOCKER_PORT_ARGS[@]}" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \
@@ -147,7 +148,7 @@ if [ $# -eq 0 ]; then
     -e LUCY_CP_CONTAINER_PORT="$PORT_CONTROL_PANEL_CONTAINER" \
     "$IMAGE_NAME" -c "$INTERACTIVE_CONTAINER_SCRIPT"
 else
-  docker run "${DOCKER_RUN_IT[@]}" --rm \
+  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
     "${DOCKER_PORT_ARGS[@]}" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \

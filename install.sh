@@ -68,7 +68,8 @@ check_cmd() {
 remove_workspace_src_repo() {
   local name="$1"
   rm -rf "src/${name}" 2>/dev/null || true
-  docker run --rm -v "$SCRIPT_DIR:$WORKSPACE" "$IMAGE_NAME" -c "rm -rf ${WORKSPACE}/src/${name}"
+  docker_run_platform_flags "$SCRIPT_DIR"
+  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" --rm -v "$SCRIPT_DIR:$WORKSPACE" "$IMAGE_NAME" -c "rm -rf ${WORKSPACE}/src/${name}"
 }
 
 # Fetch + fast-forward to repos.json branch (existing clone).
@@ -89,13 +90,14 @@ update_git_repo() {
 # rosdep + colcon + control panel deps (inside container; workspace mounted at /workspace)
 docker_workspace_install() {
   ensure_docker_image
+  docker_run_platform_flags "$SCRIPT_DIR"
   docker_run_it_flags
   echo "Docker install: rosdep, colcon build, yarn install (lucy_control_panel) ..."
   local inner_cmd
   read -r -d '' inner_cmd <<'EOS' || true
 source /opt/ros/humble/setup.bash && cd /workspace && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common micro_ros_agent" && rm -rf build/camera_ros install/camera_ros && colcon build && if [ -f src/lucy_control_panel/package.json ]; then ( cd src/lucy_control_panel && yarn install ); fi
 EOS
-  docker run "${DOCKER_RUN_IT[@]}" --rm \
+  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "$IMAGE_NAME" -c "$inner_cmd"
 }
