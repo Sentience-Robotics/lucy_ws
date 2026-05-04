@@ -7,13 +7,14 @@
 #   3. In container: ros2 launch thais_urdf gazebo.launch.py
 #   4. Control panel UI: http://localhost:5000 on host (PORT_CONTROL_PANEL); rosbridge :9090
 #
-# Rebuilding: install.sh / launch_lucy.sh compare this file’s checksum to LABEL lucy.dockerfile.sha256 and rebuild when needed.
-# Apple Silicon (Docker Desktop): use Dockerfile.humble.macos and ./install.sh --macos / ./launch_lucy.sh --macos
+# Rebuilding: install.sh / launch_lucy.sh compare Dockerfile checksum + platform to LABEL lucy.dockerfile.sha256 (see docker/ensure_image.sh).
+# Apple Silicon (Docker Desktop): ./install.sh --arm writes .lucy-docker-platform so images build/run as linux/arm64 (same tag lucy_ros2_control:humble).
 #
 FROM osrf/ros:humble-desktop
 
 ARG DOCKERFILE_SHA256=unknown
-LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}"
+ARG LUCY_DOCKER_BUILD_PLATFORM=default
+LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}|${LUCY_DOCKER_BUILD_PLATFORM}"
 
 # Jammy: universe + multiverse carry python3-pytest-mock, GStreamer, etc. The base image can list only "main".
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

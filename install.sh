@@ -7,11 +7,11 @@
 #
 # Usage:
 #   ./install.sh                      # clone missing repos; git pull existing @ repos.json branch + Docker build
-#   ./install.sh --macos              # same, using Dockerfile.humble.macos (linux/arm64) for Apple Silicon Docker
+#   ./install.sh --arm                # same; Docker build/run as linux/arm64 (Apple Silicon Docker; writes .lucy-docker-platform)
 #   ./install.sh --update | update   # same as above (explicit update)
 #   ./install.sh --repair             # delete listed repos under src/ and re-clone + Docker build
 #   ./install.sh --build-only         # Docker build only (skips git)
-#   ./install.sh --macos --build-only # rebuild macOS image + workspace in container only
+#   ./install.sh --arm --build-only   # rebuild ARM image + workspace in container only
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,26 +24,28 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-# Optional: ./install.sh --macos …  (Apple Silicon Docker; image lucy_ros2_control:humble-macos, Dockerfile.humble.macos)
-INSTALL_USE_MACOS_IMAGE=0
+# Optional: ./install.sh --arm …  (linux/arm64; same image tag; persists .lucy-docker-platform for launch_lucy.sh)
+INSTALL_USE_ARM_IMAGE=0
 _install_argv=()
 for _a in "$@"; do
-  if [ "$_a" = "--macos" ]; then
-    INSTALL_USE_MACOS_IMAGE=1
+  if [ "$_a" = "--arm" ]; then
+    INSTALL_USE_ARM_IMAGE=1
   else
     _install_argv+=("$_a")
   fi
 done
 set -- "${_install_argv[@]}"
 
-if [ "$INSTALL_USE_MACOS_IMAGE" = 1 ]; then
-  IMAGE_NAME="lucy_ros2_control:humble-macos"
-  DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble.macos"
-  echo "Using macOS/ARM64 image ($IMAGE_NAME) from $(basename "$DOCKERFILE_PATH")."
+DOCKER_PLATFORM_FILE="$SCRIPT_DIR/.lucy-docker-platform"
+if [ "$INSTALL_USE_ARM_IMAGE" = 1 ]; then
+  printf '%s\n' "linux/arm64" >"$DOCKER_PLATFORM_FILE"
+  echo "Using linux/arm64 for Docker build/run (recorded in .lucy-docker-platform). Same image: lucy_ros2_control:humble"
 else
-  IMAGE_NAME="lucy_ros2_control:humble"
-  DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
+  rm -f "$DOCKER_PLATFORM_FILE"
 fi
+
+IMAGE_NAME="lucy_ros2_control:humble"
+DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
 # Container mount path (must match Dockerfile WORKDIR and paths in docker_workspace_install).
 WORKSPACE="/workspace"
 
@@ -116,7 +118,7 @@ case "${1:-}" in
     ;;
 esac
 if [ $# -gt 0 ]; then
-  echo "Unknown argument: $1 (try --macos, --repair, --update, or --build-only)" >&2
+  echo "Unknown argument: $1 (try --arm, --repair, --update, or --build-only)" >&2
   exit 1
 fi
 

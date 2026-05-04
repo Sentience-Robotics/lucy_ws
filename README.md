@@ -15,9 +15,9 @@ One-time:
 chmod +x install.sh launch_lucy.sh
 ```
 
-I fyou need to clone the repositories over **SSH**, copy **`.env.example`** to **`.env`** and set **`DEV=true`** before running **`install.sh`** (HTTPS clones work without that).
+If you need to clone the repositories over **SSH**, copy **`.env.example`** to **`.env`** and set **`DEV=true`** before running **`install.sh`** (HTTPS clones work without that).
 
-Pick the section that matches your machine; **install and launch must use the same variant** (default **`lucy_ros2_control:humble`** vs **`--macos`** → **`lucy_ros2_control:humble-macos`**).
+There is a single Docker image tag (**`lucy_ros2_control:humble`**). **`./install.sh --arm`** records **`linux/arm64`** in **`.lucy-docker-platform`** so **`launch_lucy.sh`** rebuilds/runs with the same platform. A normal **`./install.sh`** removes that file (host-default platform, usually **`linux/amd64`**). Override anytime with **`LUCY_DOCKER_PLATFORM`** (see **`docker/ensure_image.sh`**).
 
 ### Linux, Intel Mac, Windows WSL, x86_64 VMs
 
@@ -37,21 +37,19 @@ Docker pulls **`linux/amd64`** images — correct for these hosts.
 
 ### Apple Silicon macOS (M1 / M2 / M3, Docker Desktop)
 
-Docker Desktop often defaults to **`linux/amd64`** ROS images and runs them under emulation, which produces platform warnings and unreliable **`apt` / `rosdep`**. Use the ARM64 Dockerfile and **`--macos`** on both scripts (you can combine **`--macos`** with flags like **`--build-only`** or **`--headless`**).
+Docker Desktop often defaults to **`linux/amd64`** ROS images and runs them under emulation, which produces platform warnings and unreliable **`apt` / `rosdep`**. Use **`--arm`** on **install** once (or every install you want as ARM64); **`--arm`** can be combined with **`--build-only`**, **`--repair`**, etc.
 
 **Install**
 
 ```bash
-./install.sh --macos
+./install.sh --arm
 ```
 
-**Quick launch**
+**Quick launch** (same as on Linux — **`launch_lucy.sh`** reads **`.lucy-docker-platform`**)
 
 ```bash
-./launch_lucy.sh --macos
+./launch_lucy.sh
 ```
-
-Optional: override the Docker build platform with **`LUCY_DOCKER_PLATFORM`** (see **`docker/ensure_image.sh`**).
 
 ## Quick start (what happens in the container)
 
@@ -77,7 +75,7 @@ Inside the container:
 ./launch_lucy.sh --headless ros2 doctor  # example non-interactive check
 ```
 
-On Apple Silicon, prefix the same commands with **`--macos`** (e.g. **`./launch_lucy.sh --macos --headless ros2 doctor --report`**).
+After **`./install.sh --arm`**, headless checks use the same **`./launch_lucy.sh`** flags (e.g. **`./launch_lucy.sh --headless ros2 doctor --report`**).
 
 ## Packages (`src/` after install)
 
@@ -107,4 +105,4 @@ If repos are already cloned, a normal **`./install.sh`** run **pulls** each repo
 ./install.sh --build-only
 ```
 
-On Apple Silicon, add **`--macos`** to any of the above **`install.sh`** invocations (e.g. **`./install.sh --macos --build-only`**).
+On Apple Silicon, add **`--arm`** to any of the above **`install.sh`** invocations (e.g. **`./install.sh --arm --build-only`**).
