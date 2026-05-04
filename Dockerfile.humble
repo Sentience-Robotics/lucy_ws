@@ -10,10 +10,12 @@
 # Rebuilding: install.sh / launch_lucy.sh compare Dockerfile checksum + platform to LABEL lucy.dockerfile.sha256 (see docker/ensure_image.sh).
 # Apple Silicon (Docker Desktop): ./install.sh --arm writes .lucy-docker-platform so images build/run as linux/arm64 (same tag lucy_ros2_control:humble).
 #
-FROM osrf/ros:humble-desktop
+# TARGETPLATFORM must match "docker build --platform" so the base pull matches the build (avoids InvalidBaseImagePlatform).
+ARG TARGETPLATFORM
+FROM --platform=${TARGETPLATFORM} osrf/ros:humble-desktop
 
 ARG DOCKERFILE_SHA256=unknown
-ARG LUCY_DOCKER_BUILD_PLATFORM=default
+ARG LUCY_DOCKER_BUILD_PLATFORM=unknown
 LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}|${LUCY_DOCKER_BUILD_PLATFORM}"
 
 # Jammy: universe + multiverse carry python3-pytest-mock, GStreamer, etc. The base image can list only "main".
