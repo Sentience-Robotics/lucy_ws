@@ -17,8 +17,6 @@ chmod +x install.sh launch_lucy.sh
 
 If you need to clone the repositories over **SSH**, copy **`.env.example`** to **`.env`** and set **`DEV=true`** before running **`install.sh`** (HTTPS clones work without that).
 
-There is a single Docker image tag (**`lucy_ros2_control:humble`**). **`./install.sh --arm`** records **`linux/arm64`** in **`.lucy-docker-platform`** so **`launch_lucy.sh`** rebuilds/runs with the same platform. A normal **`./install.sh`** removes that file (host-default platform, usually **`linux/amd64`**). Override anytime with **`LUCY_DOCKER_PLATFORM`** (see **`docker/ensure_image.sh`**). On an **amd64** host with **`--arm`**, Docker builds/runs the ARM image via emulation; **`docker run --platform linux/arm64`** is passed automatically when host and target CPU family differ (avoids mismatch warnings).
-
 ### Linux, Intel Mac, Windows WSL, x86_64 VMs
 
 Docker pulls **`linux/amd64`** images — correct for these hosts.

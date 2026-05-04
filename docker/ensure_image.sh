@@ -27,16 +27,10 @@ lucy_workspace_target_platform() {
   lucy_host_container_platform
 }
 
-# Sets DOCKER_RUN_PLATFORM_ARGS so docker run matches cross-built images (silences platform mismatch warnings).
+# Always pass --platform on docker run so the daemon never guesses (avoids "no specific platform was requested" vs image arch).
 docker_run_platform_flags() {
   local ws_root="$1"
-  local target host
-  target=$(lucy_workspace_target_platform "$ws_root")
-  host=$(lucy_host_container_platform)
-  DOCKER_RUN_PLATFORM_ARGS=()
-  if [[ "$target" != "$host" ]]; then
-    DOCKER_RUN_PLATFORM_ARGS=(--platform "$target")
-  fi
+  DOCKER_RUN_PLATFORM_ARGS=(--platform "$(lucy_workspace_target_platform "$ws_root")")
 }
 
 ensure_lucy_docker_image() {
@@ -68,7 +62,6 @@ ensure_lucy_docker_image() {
     echo "Building Docker image $image_name ..."
   fi
   docker build "${build_platform_args[@]}" -f "$dockerfile" \
-    --build-arg "TARGETPLATFORM=$target_platform" \
     --build-arg "DOCKERFILE_SHA256=$hash" \
     --build-arg "LUCY_DOCKER_BUILD_PLATFORM=$target_platform" \
     -t "$image_name" "$ws_root"
