@@ -46,7 +46,7 @@ else
       echo "GUI: DISPLAY=:0 (host network). See docker/DISPLAY_FIX.md if connection fails."
     else
       X11_ARGS=(-e DISPLAY="$GUI_DISPLAY" -v /tmp/.X11-unix:/tmp/.X11-unix:rw)
-      echo "GUI: DISPLAY=$GUI_DISPLAY (see docker/DISPLAY_FIX.md if connection fails)"
+      echo "GUI: DISPLAY=$GUI_DISPLAY"
     fi
   else
     echo "GUI: DISPLAY not set; launch will run Gazebo headless (RViz disabled)."
