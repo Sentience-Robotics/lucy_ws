@@ -127,7 +127,8 @@ fi
 check_cmd docker
 check_cmd git
 check_cmd python3
-echo "Requirements OK (docker, git, python3)."
+check_cmd xhost
+echo "Requirements OK (docker, git, python3, xhost)."
 
 # --- Load config ---
 CONFIG_FILE="${SCRIPT_DIR}/config/repos.json"
