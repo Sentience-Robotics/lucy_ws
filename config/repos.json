@@ -7,7 +7,7 @@
     },
     {
       "name": "lucy_ros_packages",
-      "branch": "dev-feat-config-pipeline",
+      "branch": "dev",
       "url": "git@github.com:Sentience-Robotics/lucy_ros_packages.git"
     },
     {
