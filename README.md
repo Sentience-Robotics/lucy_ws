@@ -53,17 +53,20 @@ Docker Desktop often defaults to **`linux/amd64`** ROS images and runs them unde
 
 **launch_lucy.sh** builds the Docker image if needed, mounts the workspace, sources the built ROS overlay, and starts a shell (GUI by default). Run **`install.sh`** first so **`install/setup.bash`** exists.
 
-An interactive run starts the **control panel** (**Vite**) **in the background** (log **`/tmp/lucy-control-panel-vite.log`**). Start **Gazebo** or **RViz** yourself so **rosbridge** is running before using the panel.
-
-**Control panel URL:** **`launch_lucy.sh`** reads **`src/lucy_control_panel/.env`** for **`VITE_PORT`** and publishes that host port into the container (defaults **5000** if **`VITE_PORT`** is missing). Override with **`PORT_CONTROL_PANEL`** / **`PORT_CONTROL_PANEL_CONTAINER`** if needed.
+An interactive run starts the **control panel** (**Vite**) **in the background** (log **`/tmp/lucy-control-panel-vite.log`**). Start **`lucy_bringup`** **`lucy.launch.py`** (defaults include **rosbridge** and **`/config/*`** via **`web_ros_api`**) before using the panel.
 
 Inside the container:
 
 | What you want | Command |
 |---------------|---------|
-| Gazebo + RViz + Control Panel | `ros2 launch thais_urdf gazebo.launch.py` |
-| RViz + Control Panel | `ros2 launch thais_urdf rviz.launch.py` |
-| Real robot, control only | `ros2 launch lucy_ros2_control control.launch.py` |
+| Default Jetson stack (no RViz / no Gazebo) | `ros2 launch lucy_bringup lucy.launch.py` |
+| Jetson + RViz | `ros2 launch lucy_bringup lucy.launch.py rviz:=true` |
+| Dev + panel + control + RViz (no micro-ROS / cameras) | `ros2 launch lucy_bringup lucy.launch.py real:=false rviz:=true` |
+| Gazebo sim + panel (`rviz:=false` = headless Gazebo) | `ros2 launch lucy_bringup lucy.launch.py gazebo:=true real:=false` |
+
+**Notes:** **`gazebo:=true`** requires **`real:=false`** (launch aborts otherwise). With Gazebo, **`rviz`** maps to **`start_rviz`** in **`thais_urdf/gazebo.launch.py`**.
+
+**Control panel URL:** **`launch_lucy.sh`** reads **`src/lucy_control_panel/.env`** for **`VITE_PORT`** and publishes that host port into the container (defaults **5000** if **`VITE_PORT`** is missing). Override with **`PORT_CONTROL_PANEL`** / **`PORT_CONTROL_PANEL_CONTAINER`** if needed.
 
 ### More launch flags
 
@@ -77,7 +80,7 @@ After **`./install.sh --arm`**, headless checks use the same **`./launch_lucy.sh
 
 ## Packages (`src/` after install)
 
-- **thais_urdf** — InMoov URDF, RViz config, `rviz.launch.py`, `gazebo.launch.py`
+- **thais_urdf** — InMoov URDF, RViz config, `control.launch.py`, `gazebo.launch.py`, `rviz_standalone.launch.py` (robot + viz; web stack lives in **lucy_bringup**)
 - **lucy_ros_packages** — bringup, `lucy_ros2_control`, `camera_ros`, etc.
 
 See each repository’s README for details.

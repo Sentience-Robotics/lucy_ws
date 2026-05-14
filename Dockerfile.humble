@@ -4,7 +4,7 @@
 # Install steps (host):
 #   1. Build image:  ./install.sh (recommended) — passes LUCY_* build-args. Ad-hoc docker build needs --platform + LUCY_FROM_PLATFORM, LUCY_BASE_IMAGE, LUCY_BOOTSTRAP_DESKTOP (see docker/ensure_image.sh).
 #   2. Run script:   ./launch_lucy.sh   (builds workspace, starts Vite control panel in container, interactive shell)
-#   3. In container: ros2 launch thais_urdf gazebo.launch.py
+#   3. In container: ros2 launch lucy_bringup lucy.launch.py gazebo:=true real:=false
 #   4. Control panel UI: http://localhost:5000 on host (PORT_CONTROL_PANEL); rosbridge :9090
 #
 # Rebuilding: install.sh / launch_lucy.sh compare Dockerfile checksum + platform to LABEL lucy.dockerfile.sha256 (see docker/ensure_image.sh).
