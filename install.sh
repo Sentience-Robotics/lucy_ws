@@ -127,8 +127,12 @@ fi
 check_cmd docker
 check_cmd git
 check_cmd python3
-check_cmd xhost
-echo "Requirements OK (docker, git, python3, xhost)."
+if [ "${CI:-}" = "true" ] || [ "${CI:-}" = "1" ] || [ "${LUCY_INSTALL_SKIP_XHOST:-}" = "1" ]; then
+  echo "install.sh: skipping xhost check (set for headless CI or export LUCY_INSTALL_SKIP_XHOST=1 locally)."
+else
+  check_cmd xhost
+fi
+echo "Requirements OK (docker, git, python3)."
 
 # --- Load config ---
 CONFIG_FILE="${SCRIPT_DIR}/config/repos.json"

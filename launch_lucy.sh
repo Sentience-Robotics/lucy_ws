@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run Lucy ROS 2 Humble environment in Docker (Ubuntu 22.04): thais_urdf + lucy_ros2_control with Gazebo, RViz and rosbridge.
+# Run Lucy ROS 2 Humble in Docker: ``lucy_bringup/lucy.launch.py`` (args: real, rviz, gazebo) + workspace overlay.
 #
 # Prerequisite: ./install.sh (or ./install.sh --build-only) — clones src/, Docker image, colcon build, yarn for control panel.
 #
@@ -75,8 +75,8 @@ vite_listen_port_from_envfile() {
 
 SETUP="source /opt/ros/humble/setup.bash"
 SOURCE_WORKSPACE="cd $WORKSPACE && source install/setup.bash"
-LAUNCH_GAZEBO_RVIZ_BRIDGE_CP="ros2 launch thais_urdf gazebo.launch.py"
-LAUNCH_RVIZ_BRIDGE_CP="ros2 launch thais_urdf rviz.launch.py"
+LAUNCH_GAZEBO_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py gazebo:=true real:=false"
+LAUNCH_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py real:=false rviz:=true"
 
 PORT_ROSBRIDGE=9090
 if [[ -z "${PORT_CONTROL_PANEL_CONTAINER:-}" ]]; then
