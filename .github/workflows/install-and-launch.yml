@@ -1,6 +1,12 @@
-# Full workspace install (clone + Docker + colcon + yarn) and a non-interactive launch smoke test.
-# Uses DEV=false (HTTPS-friendly clones via git url.insteadOf); requires dependency repos readable by GITHUB_TOKEN.
-# variant=arm uses a GitHub-hosted ARM64 runner (ubuntu-24.04-arm) and ./install.sh --arm; image arch is verified after build.
+# Full workspace install (clone + Docker image + rosdep + colcon + yarn) plus a
+# non-interactive launch smoke test, on both x86_64 and ARM64 GitHub-hosted runners.
+#
+# - DEV=false  -> install.sh uses `url_https` from config/repos.json (sub-repos are public).
+# - CI=true    -> install.sh skips the host `xhost` check (no GUI on runners).
+# - variant=arm runs on `ubuntu-24.04-arm` with `./install.sh --arm`; the built image
+#   is then verified to be linux/arm64 (linux/amd64 for the default variant).
+# - The launch smoke test uses `./launch_lucy.sh --headless <command>`, which runs a
+#   single command inside the container (no control panel, no auto Gazebo/RViz).
 
 name: Install and launch
 
@@ -28,22 +34,20 @@ jobs:
           - variant: default
             runner: ubuntu-latest
             use_arm_install: false
+            expected_arch: linux/amd64
           - variant: arm
             runner: ubuntu-24.04-arm
             use_arm_install: true
+            expected_arch: linux/arm64
     env:
       DEV: "false"
       CI: "true"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Drop workspace .env if present (use DEV from workflow env only)
+      # Make sure no committed/local .env can flip DEV back to true at install time.
+      - name: Drop workspace .env if present
         run: rm -f .env .env.local || true
-
-      - name: Clone private deps over HTTPS with GITHUB_TOKEN
-        run: git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install (clone + Docker image + rosdep + colcon + yarn)
         run: |
@@ -54,31 +58,15 @@ jobs:
             ./install.sh
           fi
 
-      - name: Verify Lucy image is linux/arm64
-        if: matrix.use_arm_install == true
+      - name: Verify Lucy image architecture
         run: |
-          osarch=$(docker image inspect lucy_ros2_control:humble --format '{{.Os}}/{{.Architecture}}')
-          echo "lucy_ros2_control:humble -> ${osarch}"
-          case "${osarch}" in
-            linux/arm64) echo "OK: linux/arm64 image" ;;
-            *)
-              echo "::error::Expected linux/arm64 after ./install.sh --arm on ubuntu-24.04-arm, got ${osarch}"
-              exit 1
-              ;;
-          esac
+          osarch=$(docker image inspect lucy_ros2:humble --format '{{.Os}}/{{.Architecture}}')
+          echo "lucy_ros2:humble -> ${osarch}"
+          if [ "${osarch}" != "${{ matrix.expected_arch }}" ]; then
+            echo "::error::Expected ${{ matrix.expected_arch }} after ./install.sh on ${{ matrix.runner }}, got ${osarch}"
+            exit 1
+          fi
 
-      - name: Verify Lucy image is linux/amd64
-        if: matrix.use_arm_install == false
-        run: |
-          osarch=$(docker image inspect lucy_ros2_control:humble --format '{{.Os}}/{{.Architecture}}')
-          echo "lucy_ros2_control:humble -> ${osarch}"
-          case "${osarch}" in
-            linux/amd64) echo "OK: linux/amd64 image" ;;
-            *)
-              echo "::error::Expected linux/amd64 after ./install.sh on ubuntu-latest, got ${osarch}"
-              exit 1
-              ;;
-          esac
-
+      # Single command in the container -> bypasses the control-panel / Gazebo / RViz auto-launch.
       - name: Launch smoke test (headless, no TTY)
         run: ./launch_lucy.sh --headless ros2 doctor --report

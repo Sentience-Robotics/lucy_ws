@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# One-time setup: check requirements, clone repositories from config/repos.json into src/, then build in Docker
-# (rosdep, colcon, yarn install for lucy_control_panel).
-# Run from the workspace root (directory containing this script and launch_lucy.sh).
+# One-time setup for the Lucy workspace.
 #
-# Optional: copy .env.example to .env — DEV=true rewrites HTTPS clone URLs to SSH (see parse_repos).
+# Clones the sub-repositories listed in config/repos.json into ./src/, builds the
+# Docker image (lucy_ros2:humble), and runs `rosdep install`, `colcon build`
+# and `yarn install` for the control panel — all inside that container.
+#
+# Run from the workspace root (directory containing this script).
 #
 # Usage:
-#   ./install.sh                      # clone missing repos; git pull existing @ repos.json branch + Docker build
-#   ./install.sh --arm                # same; Docker build/run as linux/arm64 (Apple Silicon Docker; writes .lucy-docker-platform)
-#   ./install.sh --update | update   # same as above (explicit update)
-#   ./install.sh --repair             # delete listed repos under src/ and re-clone + Docker build
-#   ./install.sh --build-only         # Docker build only (skips git)
-#   ./install.sh --arm --build-only   # rebuild ARM image + workspace in container only
+#   ./install.sh                     clone missing repos, pull existing ones, rebuild workspace
+#   ./install.sh --update | update   same as above (explicit)
+#   ./install.sh --repair            wipe each repo under src/ then re-clone and rebuild
+#   ./install.sh --build-only        skip git; rebuild the workspace inside the container
+#   ./install.sh --arm               build/run the image as linux/arm64 (Apple Silicon)
+#                                    combine with any other flag, e.g. --arm --build-only
+#
+# Optional .env (copy from .env.example): DEV=true selects `url_ssh` in repos.json (default: `url_https`).
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,7 +28,24 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-# Optional: ./install.sh --arm …  (linux/arm64; same image tag; persists .lucy-docker-platform for launch_lucy.sh)
+# Container image + workspace mount path (must match Dockerfile.humble WORKDIR).
+IMAGE_NAME="lucy_ros2:humble"
+DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
+WORKSPACE="/workspace"
+CONFIG_FILE="${SCRIPT_DIR}/config/repos.json"
+
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/docker/ensure_image.sh"
+
+ensure_docker_image() {
+  ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME" "$DOCKERFILE_PATH"
+}
+
+# ----------------------------------------------------------------------------
+# Argument parsing
+# ----------------------------------------------------------------------------
+
+# Extract --arm anywhere on the command line (it can be combined with any other flag).
 INSTALL_USE_ARM_IMAGE=0
 _install_argv=()
 for _a in "$@"; do
@@ -36,27 +57,31 @@ for _a in "$@"; do
 done
 set -- "${_install_argv[@]}"
 
+# `.lucy-docker-platform` is read by docker/ensure_image.sh and launch_lucy.sh
+# so a one-time `--arm` install keeps subsequent runs on arm64.
 DOCKER_PLATFORM_FILE="$SCRIPT_DIR/.lucy-docker-platform"
 if [ "$INSTALL_USE_ARM_IMAGE" = 1 ]; then
   printf '%s\n' "linux/arm64" >"$DOCKER_PLATFORM_FILE"
-  echo "Using linux/arm64 for Docker build/run (recorded in .lucy-docker-platform). Same image: lucy_ros2_control:humble"
+  echo "Using linux/arm64 for Docker build/run (recorded in .lucy-docker-platform)."
 else
   rm -f "$DOCKER_PLATFORM_FILE"
 fi
 
-IMAGE_NAME="lucy_ros2_control:humble"
-DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
-# Container mount path (must match Dockerfile WORKDIR and paths in docker_workspace_install).
-WORKSPACE="/workspace"
+MODE="install"
+case "${1:-}" in
+  --build-only) MODE="build-only"; shift ;;
+  --repair)     MODE="repair";     shift ;;
+  --update | update) shift ;;
+esac
+if [ $# -gt 0 ]; then
+  echo "Unknown argument: $1 (try --arm, --repair, --update, or --build-only)" >&2
+  exit 1
+fi
 
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/docker/ensure_image.sh"
+# ----------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------
 
-ensure_docker_image() {
-  ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME" "$DOCKERFILE_PATH"
-}
-
-# --- Requirements ---
 check_cmd() {
   if ! command -v "$1" &>/dev/null; then
     echo "Missing required command: $1. Install it and run install.sh again." >&2
@@ -64,15 +89,17 @@ check_cmd() {
   fi
 }
 
-# Remove src/<repo> on the bind mount (host rm + container rm for root-owned files e.g. __pycache__).
+# Wipe src/<name>. We delete from inside the container too because colcon and
+# Python may have created root-owned files (__pycache__, install/) on the bind mount.
 remove_workspace_src_repo() {
   local name="$1"
   rm -rf "src/${name}" 2>/dev/null || true
   docker_run_platform_flags "$SCRIPT_DIR"
-  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" --rm -v "$SCRIPT_DIR:$WORKSPACE" "$IMAGE_NAME" -c "rm -rf ${WORKSPACE}/src/${name}"
+  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" --rm \
+    -v "$SCRIPT_DIR:$WORKSPACE" \
+    "$IMAGE_NAME" -c "rm -rf ${WORKSPACE}/src/${name}"
 }
 
-# Fetch + fast-forward to repos.json branch (existing clone).
 update_git_repo() {
   local name="$1" branch="$2"
   local dir="src/${name}"
@@ -87,7 +114,30 @@ update_git_repo() {
   fi
 }
 
-# rosdep + colcon + control panel deps (inside container; workspace mounted at /workspace)
+# Reads config/repos.json and prints one `name<TAB>branch<TAB>url` per repo.
+# Picks `url_ssh` when DEV=true, else `url_https` (falls back to the other field, then legacy `url`).
+parse_repos() {
+  python3 -c "
+import json, os, sys
+
+use_ssh = os.environ.get('DEV', '').strip().lower() in ('1', 'true', 'yes')
+
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+for r in data.get('repos', []):
+    name = r.get('name', '').strip()
+    branch = r.get('branch', 'main').strip()
+    url_https = (r.get('url_https') or r.get('url') or '').strip()
+    url_ssh = (r.get('url_ssh') or '').strip()
+    url = (url_ssh or url_https) if use_ssh else (url_https or url_ssh)
+    if name and url:
+        print(name, branch, url, sep='\t')
+" "$CONFIG_FILE"
+}
+
+# rosdep install + colcon build + yarn install for the control panel, all inside the container.
+# `camera_ros` is wiped because rosdep flips between PEP517/sdist builds depending on the host
+# (Python wheels), and colcon does not always detect that as a reason to rebuild.
 docker_workspace_install() {
   ensure_docker_image
   docker_run_platform_flags "$SCRIPT_DIR"
@@ -95,114 +145,73 @@ docker_workspace_install() {
   echo "Docker install: rosdep, colcon build, yarn install (lucy_control_panel) ..."
   local inner_cmd
   read -r -d '' inner_cmd <<'EOS' || true
-source /opt/ros/humble/setup.bash && cd /workspace && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common micro_ros_agent" && rm -rf build/camera_ros install/camera_ros && colcon build && if [ -f src/lucy_control_panel/package.json ]; then ( cd src/lucy_control_panel && yarn install ); fi
+source /opt/ros/humble/setup.bash \
+  && cd /workspace \
+  && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common micro_ros_agent" \
+  && rm -rf build/camera_ros install/camera_ros \
+  && colcon build \
+  && if [ -f src/lucy_control_panel/package.json ]; then \
+       ( cd src/lucy_control_panel && yarn install ); \
+     fi
 EOS
   docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "$IMAGE_NAME" -c "$inner_cmd"
 }
 
-if [ "${1:-}" = "--build-only" ]; then
+# ----------------------------------------------------------------------------
+# 1. --build-only short-circuit (no git, no host requirements beyond docker)
+# ----------------------------------------------------------------------------
+
+if [ "$MODE" = "build-only" ]; then
   check_cmd docker
   docker_workspace_install
-  echo "Build complete. Run ./launch_lucy.sh to start a shell."
+  echo "Build complete. Run ./launch_lucy.sh to start the stack."
   exit 0
 fi
 
-REPAIR=0
-case "${1:-}" in
-  --repair)
-    REPAIR=1
-    shift
-    ;;
-  --update | update)
-    shift
-    ;;
-esac
-if [ $# -gt 0 ]; then
-  echo "Unknown argument: $1 (try --arm, --repair, --update, or --build-only)" >&2
-  exit 1
-fi
+# ----------------------------------------------------------------------------
+# 2. Host requirements
+# ----------------------------------------------------------------------------
 
 check_cmd docker
 check_cmd git
 check_cmd python3
 if [ "${CI:-}" = "true" ] || [ "${CI:-}" = "1" ] || [ "${LUCY_INSTALL_SKIP_XHOST:-}" = "1" ]; then
-  echo "install.sh: skipping xhost check (set for headless CI or export LUCY_INSTALL_SKIP_XHOST=1 locally)."
+  echo "install.sh: skipping xhost check (set CI=1 for headless CI or export LUCY_INSTALL_SKIP_XHOST=1 locally)."
 else
   check_cmd xhost
 fi
 echo "Requirements OK (docker, git, python3)."
 
-# --- Load config ---
-CONFIG_FILE="${SCRIPT_DIR}/config/repos.json"
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo "Config not found: $CONFIG_FILE"
-  echo "Copy config/repos.json.example to config/repos.json and set name, branch and url for each repo."
+  echo "Config not found: $CONFIG_FILE" >&2
+  echo "Set name, branch, url_https and url_ssh for each repo." >&2
+  exit 1
+fi
+if [ "$(parse_repos | wc -l)" -eq 0 ]; then
+  echo "No repos with name and url_https/url_ssh in $CONFIG_FILE" >&2
   exit 1
 fi
 
-# Parse JSON: output one line per repo: name\tbranch\turl (HTTPS→SSH when DEV=true)
-parse_repos() {
-  python3 -c "
-import json, os, sys
-from urllib.parse import urlparse
+# ----------------------------------------------------------------------------
+# 3. (Optional) --repair: wipe every src/<repo> before re-cloning
+# ----------------------------------------------------------------------------
 
-def dev_clone_ssh():
-    v = os.environ.get('DEV', '').strip().lower()
-    return v in ('1', 'true', 'yes')
-
-def rewrite_clone_url(url: str) -> str:
-    u = url.strip()
-    if not dev_clone_ssh():
-        return u
-    if u.startswith('git@') or u.startswith('ssh://'):
-        return u
-    if not (u.startswith('http://') or u.startswith('https://')):
-        return u
-    p = urlparse(u)
-    host = (p.hostname or '').lower()
-    path = p.path.strip('/')
-    if not path:
-        return u
-    if path.endswith('.git'):
-        tail = path
-    else:
-        tail = path + '.git'
-    if host == 'github.com':
-        return f'git@github.com:{tail}'
-    if host == 'gitlab.com':
-        return f'git@gitlab.com:{tail}'
-    return u
-
-with open(sys.argv[1]) as f:
-    data = json.load(f)
-for r in data.get('repos', []):
-    name = r.get('name', '').strip()
-    branch = r.get('branch', 'main').strip()
-    url = rewrite_clone_url(r.get('url', '').strip())
-    if name and url:
-        print(name, branch, url, sep='\t')
-" "$CONFIG_FILE"
-}
-
-REPO_COUNT=$(parse_repos | wc -l)
-if [ "$REPO_COUNT" -eq 0 ]; then
-  echo "No repos with name and url in config/repos.json."
-  exit 1
-fi
-
-if [ "$REPAIR" = 1 ]; then
-  echo "Repair: removing listed repos under src/ (then re-clone) ..."
+if [ "$MODE" = "repair" ]; then
+  echo "Repair: removing listed repos under src/ ..."
   ensure_docker_image
   while IFS=$'\t' read -r name _ _; do
     remove_workspace_src_repo "$name"
   done < <(parse_repos)
 fi
 
-# --- Clone or update repos under src/ ---
+# ----------------------------------------------------------------------------
+# 4. Clone missing repos / fast-forward existing ones
+# ----------------------------------------------------------------------------
+
 case "$(echo "${DEV:-}" | tr '[:upper:]' '[:lower:]')" in
-  1|true|yes) echo "DEV=true: using SSH clone URLs (HTTPS entries in repos.json are rewritten)." ;;
+  1|true|yes) echo "DEV=true: using url_ssh from config/repos.json." ;;
 esac
 mkdir -p src
 while IFS=$'\t' read -r name branch url; do
@@ -219,6 +228,9 @@ while IFS=$'\t' read -r name branch url; do
   fi
 done < <(parse_repos)
 
-# --- Build workspace in Docker, then exit ---
+# ----------------------------------------------------------------------------
+# 5. Build the workspace inside the container
+# ----------------------------------------------------------------------------
+
 docker_workspace_install
-echo "Install complete. Run ./launch_lucy.sh to start a shell."
+echo "Install complete. Run ./launch_lucy.sh to start the stack."

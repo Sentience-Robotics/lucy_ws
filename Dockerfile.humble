@@ -1,19 +1,20 @@
-# ROS 2 Humble on Ubuntu 22.04 — for testing Humble packages on Ubuntu 24.04 (Noble)
-# AMD64: osrf/ros humble-desktop. ARM64: Docker Hub has no arm osrf humble-desktop; use ros:humble-ros-base-jammy + ros-humble-desktop.
+# Lucy runtime image — ROS 2 Humble (Ubuntu 22.04 Jammy) with Gazebo Fortress,
+# ros2_control, RViz, rosbridge, GStreamer and Node 22 + Yarn for the control panel.
 #
-# Install steps (host):
-#   1. Build image:  ./install.sh (recommended) — passes LUCY_* build-args. Ad-hoc docker build needs --platform + LUCY_FROM_PLATFORM, LUCY_BASE_IMAGE, LUCY_BOOTSTRAP_DESKTOP (see docker/ensure_image.sh).
-#   2. Run script:   ./launch_lucy.sh   (builds workspace, starts Vite control panel in container, interactive shell)
-#   3. In container: ros2 launch lucy_bringup lucy.launch.py gazebo:=true real:=false
-#   4. Control panel UI: http://localhost:5000 on host (PORT_CONTROL_PANEL); rosbridge :9090
+# Built and tagged as `lucy_ros2:humble` by docker/ensure_image.sh, which
+# also computes the LUCY_FROM_PLATFORM / LUCY_BASE_IMAGE / LUCY_BOOTSTRAP_DESKTOP
+# build args so the image is rebuilt whenever Dockerfile.humble or the target
+# platform changes (LABEL lucy.dockerfile.sha256 = "<sha>|<platform>").
 #
-# Rebuilding: install.sh / launch_lucy.sh compare Dockerfile checksum + platform to LABEL lucy.dockerfile.sha256 (see docker/ensure_image.sh).
-# Apple Silicon (Docker Desktop): ./install.sh --arm writes .lucy-docker-platform so images build/run as linux/arm64 (same tag lucy_ros2_control:humble).
+# Apple Silicon (Docker Desktop): osrf/ros:humble-desktop is amd64-only on Docker
+# Hub. `./install.sh --arm` switches to the multi-arch ros:humble-ros-base-jammy
+# base and installs `ros-humble-desktop` here (LUCY_BOOTSTRAP_DESKTOP=1).
 #
-# osrf/ros:humble-desktop on Docker Hub is linux/amd64 only (no arm64 digest). ARM builds use multi-arch ros:humble-ros-base-jammy
-# plus ros-humble-desktop (see LUCY_BOOTSTRAP_DESKTOP). LUCY_FROM_PLATFORM pins the stage OS/arch for the chosen base.
-ARG LUCY_FROM_PLATFORM
-ARG LUCY_BASE_IMAGE
+# At runtime the host workspace is bind-mounted at /workspace by install.sh and
+# launch_lucy.sh; this Dockerfile does not COPY any project source.
+
+ARG LUCY_FROM_PLATFORM=linux/amd64
+ARG LUCY_BASE_IMAGE=osrf/ros:humble-desktop
 FROM --platform=${LUCY_FROM_PLATFORM} ${LUCY_BASE_IMAGE}
 
 ARG LUCY_BOOTSTRAP_DESKTOP=0
@@ -21,57 +22,60 @@ ARG DOCKERFILE_SHA256=unknown
 ARG LUCY_DOCKER_BUILD_PLATFORM=unknown
 LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}|${LUCY_DOCKER_BUILD_PLATFORM}"
 
-# On ARM we start from ros-base; install desktop metapackage to approximate osrf humble-desktop (RViz, tutorials stack, etc.).
+# ARM path: the base is ros-base, so pull in the full desktop metapackage
+# (RViz, demos, etc.) to match what osrf/ros:humble-desktop provides on amd64.
 RUN if [ "${LUCY_BOOTSTRAP_DESKTOP}" = 1 ]; then \
-    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ros-humble-desktop \
-    && rm -rf /var/lib/apt/lists/*; \
-  fi
+      apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ros-humble-desktop \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
-# Jammy: universe + multiverse carry python3-pytest-mock, GStreamer, etc. The base image can list only "main".
+# Enable universe + multiverse — some bases only list `main`, which is missing
+# python3-pytest-mock, GStreamer plugins, etc. required by rosdep below.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates software-properties-common \
+      ca-certificates software-properties-common \
  && add-apt-repository -y universe \
  && add-apt-repository -y multiverse \
  && apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
-# Gazebo Fortress (gz sim binary) — required by ros_gz_sim launch
+# Gazebo Fortress (the `gz sim` binary used by ros_gz_sim launches).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl lsb-release gnupg \
-    && curl -sSL https://packages.osrfoundation.org/gazebo.gpg -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" > /etc/apt/sources.list.d/gazebo-stable.list \
-    && apt-get update && apt-get install -y --no-install-recommends ignition-fortress \
-    && rm -rf /var/lib/apt/lists/*
+      curl lsb-release gnupg \
+ && curl -sSL https://packages.osrfoundation.org/gazebo.gpg -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
+      > /etc/apt/sources.list.d/gazebo-stable.list \
+ && apt-get update && apt-get install -y --no-install-recommends ignition-fortress \
+ && rm -rf /var/lib/apt/lists/*
 
-# ROS sim/studio stack + rosdep prerequisites lucy_bringup/camera_ros expect from apt (see rosdep in install.sh).
+# ROS sim/control stack + apt prerequisites for the rosdep run in install.sh
+# (lucy_bringup / camera_ros / GStreamer / pytest).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ros-humble-ros-gz-sim \
-    ros-humble-ros-gz-bridge \
-    ros-humble-gz-ros2-control \
-    ros-humble-ros2-control \
-    ros-humble-ros2-control-cmake \
-    ros-humble-ros2-controllers \
-    ros-humble-xacro \
-    ros-humble-rosbridge-server \
-    ros-humble-realsense2-camera \
-    python3-colcon-common-extensions \
-    python3-rosdep2 \
-    python3-pytest-cov \
-    python3-pytest-mock \
-    gstreamer1.0-tools \
-    gstreamer1.0-plugins-good \
-    libgstreamer-plugins-good1.0-0 \
-    && rosdep update \
-    && rm -rf /var/lib/apt/lists/*
+      ros-humble-ros-gz-sim \
+      ros-humble-ros-gz-bridge \
+      ros-humble-gz-ros2-control \
+      ros-humble-ros2-control \
+      ros-humble-ros2-control-cmake \
+      ros-humble-ros2-controllers \
+      ros-humble-xacro \
+      ros-humble-rosbridge-server \
+      ros-humble-realsense2-camera \
+      python3-colcon-common-extensions \
+      python3-rosdep2 \
+      python3-pytest-cov \
+      python3-pytest-mock \
+      gstreamer1.0-tools \
+      gstreamer1.0-plugins-good \
+      libgstreamer-plugins-good1.0-0 \
+ && rosdep update \
+ && rm -rf /var/lib/apt/lists/*
 
-# Node 22 + yarn — lucy_control_panel (Vite dev server) runs inside this container
+# Node 22 + Yarn — the lucy_control_panel Vite dev server runs inside this image.
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g yarn \
-    && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends nodejs \
+ && npm install -g yarn \
+ && rm -rf /var/lib/apt/lists/*
 
-# Workspace will be mounted at /workspace (lucy_ws)
 WORKDIR /workspace
 ENTRYPOINT ["/bin/bash"]
 CMD ["-c", "source /opt/ros/humble/setup.bash && exec /bin/bash"]

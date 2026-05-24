@@ -1,12 +1,26 @@
 # shellcheck shell=bash
-# Rebuild the Lucy image when Dockerfile.humble or target platform changes (LABEL lucy.dockerfile.sha256 = sha256|platform).
-# Tag: lucy_ros2_control:humble. Platform: env LUCY_DOCKER_PLATFORM, else first line of ws_root/.lucy-docker-platform, else host CPU.
+# Helpers shared by install.sh and launch_lucy.sh:
+#
+#   ensure_lucy_docker_image   build (or rebuild) the lucy_ros2:humble image
+#                              when Dockerfile.humble or the target platform changes.
+#   docker_run_platform_flags  populate DOCKER_RUN_PLATFORM_ARGS for `docker run`.
+#   docker_run_it_flags        populate DOCKER_RUN_IT (-it locally, -i in CI / no TTY).
+#
+# Target platform priority:
+#   1. $LUCY_DOCKER_PLATFORM
+#   2. first line of <ws_root>/.lucy-docker-platform  (written by `./install.sh --arm`)
+#   3. host CPU architecture (linux/amd64 or linux/arm64)
+#
+# Rebuild detection:
+#   Each built image is stamped with LABEL lucy.dockerfile.sha256="<sha256>|<platform>".
+#   When that label does not match the current Dockerfile sha + target platform,
+#   the image is rebuilt; otherwise the existing image is reused.
 
 lucy_host_container_platform() {
   case "$(uname -m)" in
-    x86_64 | amd64) echo linux/amd64 ;;
+    x86_64 | amd64)  echo linux/amd64 ;;
     aarch64 | arm64) echo linux/arm64 ;;
-    *) echo "linux/$(uname -m)" ;;
+    *)               echo "linux/$(uname -m)" ;;
   esac
 }
 
@@ -27,7 +41,8 @@ lucy_workspace_target_platform() {
   lucy_host_container_platform
 }
 
-# Always pass --platform on docker run so the daemon never guesses (avoids "no specific platform was requested" vs image arch).
+# Always pass --platform on `docker run` so the daemon never guesses
+# (avoids the "no specific platform was requested" warning vs. image arch).
 docker_run_platform_flags() {
   local ws_root="$1"
   DOCKER_RUN_PLATFORM_ARGS=(--platform "$(lucy_workspace_target_platform "$ws_root")")
@@ -35,10 +50,10 @@ docker_run_platform_flags() {
 
 ensure_lucy_docker_image() {
   local ws_root="$1"
-  local image_name="${2:-lucy_ros2_control:humble}"
+  local image_name="${2:-lucy_ros2:humble}"
   local dockerfile="${3:-$ws_root/Dockerfile.humble}"
+  local target_platform base_image bootstrap_desktop
   local hash want want_id
-  local target_platform
   local build_platform_args
 
   if [ ! -f "$dockerfile" ]; then
@@ -49,8 +64,9 @@ ensure_lucy_docker_image() {
   target_platform=$(lucy_workspace_target_platform "$ws_root")
   build_platform_args=(--platform "$target_platform")
 
-  # osrf/ros:humble-desktop is amd64-only on Docker Hub; arm64 uses official multi-arch ros:humble-ros-base-jammy + desktop apt.
-  local base_image bootstrap_desktop
+  # osrf/ros:humble-desktop is amd64-only on Docker Hub; on arm64 we use the
+  # multi-arch ros:humble-ros-base-jammy + apt-install ros-humble-desktop in the
+  # Dockerfile (LUCY_BOOTSTRAP_DESKTOP=1).
   case "$target_platform" in
     linux/arm64)
       base_image="ros:humble-ros-base-jammy"
@@ -66,14 +82,16 @@ ensure_lucy_docker_image() {
   want_id="${hash}|${target_platform}"
 
   if docker image inspect "$image_name" &>/dev/null; then
-    want=$(docker image inspect "$image_name" --format '{{index .Config.Labels "lucy.dockerfile.sha256"}}' 2>/dev/null || true)
+    want=$(docker image inspect "$image_name" \
+             --format '{{index .Config.Labels "lucy.dockerfile.sha256"}}' 2>/dev/null || true)
     if [ "$want" = "$want_id" ]; then
       return 0
     fi
-    echo "Lucy Dockerfile or platform changed (label mismatch); rebuilding $image_name ..."
+    echo "Lucy Dockerfile or platform changed; rebuilding $image_name ..."
   else
     echo "Building Docker image $image_name ..."
   fi
+
   docker build "${build_platform_args[@]}" -f "$dockerfile" \
     --build-arg "LUCY_FROM_PLATFORM=$target_platform" \
     --build-arg "LUCY_BASE_IMAGE=$base_image" \
@@ -83,11 +101,11 @@ ensure_lucy_docker_image() {
     -t "$image_name" "$ws_root"
 }
 
-# docker run -it breaks without a TTY (e.g. GitHub Actions); use -i only there.
+# `docker run -it` fails without a TTY (e.g. GitHub Actions); fall back to `-i`.
 docker_run_it_flags() {
   if [ -n "${CI:-}" ] || ! [ -t 1 ]; then
-    DOCKER_RUN_IT=( -i )
+    DOCKER_RUN_IT=(-i)
   else
-    DOCKER_RUN_IT=( -it )
+    DOCKER_RUN_IT=(-it)
   fi
 }

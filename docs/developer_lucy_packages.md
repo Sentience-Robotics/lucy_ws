@@ -1,12 +1,88 @@
-# Cross-repository developer index (Sentience `lucy_ws`)
+# Lucy `lucy_ws` developer guide
 
-ROS 2 **Humble**. Maintainer documentation for the Lucy stack is **owned per repository** (easier to version and review with code).
+ROS 2 **Humble**. This document covers everything beyond the basic install/launch flow in the top-level [`README.md`](../README.md): per-repository docs, all install/launch flags, dev mode, ports, environment overrides, and an overview of the packages dropped under `src/`.
+
+## Cross-repository docs
+
+Maintainer documentation for each Lucy sub-repository is **owned per repository**:
 
 | Repository | Developer documentation |
 |------------|-------------------------|
-| **lucy_ros_packages** | [`doc/DEVELOPER.md`](../src/lucy_ros_packages/doc/DEVELOPER.md) — bringup, `lucy_ros2_control`, `camera_ros`, CI; [**ros2_control on Lucy**](../src/lucy_ros_packages/doc/ROS2_CONTROL.md) |
-| **thais_urdf** | [`src/thais_urdf/doc/DEVELOPER.md`](../src/thais_urdf/doc/DEVELOPER.md) — URDF/xacro, meshes, launches, RViz |
+| **lucy_ros_packages** | [`lucy_ros_packages/docs/DEVELOPER.md`](../src/lucy_ros_packages/docs/DEVELOPER.md) — bringup, `lucy_ros2_control`, `camera_ros`, CI; [**ros2_control on Lucy**](../src/lucy_ros_packages/doc/ROS2_CONTROL.md) |
+| **inmoov_urdf** | [`thais_urdf/docs/DEVELOPER.md`](../src/thais_urdf/docs/DEVELOPER.md) — URDF/xacro, meshes, launches, RViz |
 
-**End-to-end pipeline** (control panel, sim time, TF, known gaps): [`simulation_and_visualization.md`](simulation_and_visualization.md).
+Repository-level READMEs: [`lucy_ros_packages`](../src/lucy_ros_packages/README.md), [`inmoov_urdf`](../src/thais_urdf/README.md).
 
-**Repository overview** (users / clone layout): [lucy_ros_packages README](../src/lucy_ros_packages/README.md), [thais_urdf README](../src/thais_urdf/README.md).
+## Packages dropped under `src/` by `install.sh`
+
+- **inmoov_urdf** — InMoov URDF, RViz config, `control.launch.py`, `gazebo.launch.py`, `rviz_standalone.launch.py` (robot + viz; the web stack lives in `lucy_bringup`).
+- **lucy_ros_packages** — `lucy_bringup`, `lucy_ros2_control`, `camera_ros`, etc.
+- **lucy_control_panel** — Vite web app exposing the robot state and controls.
+
+The exact set of repositories, branches and clone URLs is in [`config/repos.json`](../config/repos.json).
+
+## `install.sh`
+
+The first run clones missing sub-repositories, builds the Docker image (`lucy_ros2:humble`), and runs `rosdep` + `colcon build` + `yarn install` inside the container.
+
+Subsequent runs fast-forward each clone to the branch declared in `config/repos.json` and rebuild the workspace.
+
+| Command | What it does |
+|---------|--------------|
+| `./install.sh` | Clone missing repos, pull existing ones, rebuild the workspace |
+| `./install.sh --repair` | Wipe each repo under `src/` then re-clone and rebuild |
+| `./install.sh --build-only` | Skip git; just rebuild the workspace inside the container |
+| `./install.sh --arm[...]` | Build / run the image as `linux/arm64` (Apple Silicon under Docker Desktop). Persists in `.lucy-docker-platform`; combine with any other flag |
+
+### Apple Silicon notes
+
+Docker Desktop on Apple Silicon defaults to `linux/amd64` ROS images and runs them under emulation, producing platform warnings and unreliable `apt` / `rosdep`. The image `osrf/ros:humble-desktop` on Docker Hub is **amd64-only**; `--arm` switches to `ros:humble-ros-base-jammy` + `ros-humble-desktop` so a real `linux/arm64` base exists.
+
+### SSH vs HTTPS clones (`DEV=true`)
+
+`config/repos.json` carries both `url_https` (default) and `url_ssh` for each repo. To clone over SSH, copy `.env.example` to `.env` and set `DEV=true` before running `install.sh`. SSH keys must be configured for the relevant host.
+
+## `launch_lucy.sh`
+
+Builds the Docker image if needed, mounts the workspace at `/workspace`, sources the built ROS overlay, then:
+
+- **Normal mode (default)** — starts the control panel (Vite) in the background and runs `ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true` in the foreground. GUI / X11 forwarded automatically when available.
+- **Dev mode (`DEV=true` in env or `.env`)** — same control panel in the background, but drops you into an interactive Humble shell so you can run any `ros2 launch` yourself (the script prints typical commands).
+
+| Command | What it does |
+|---------|--------------|
+| `./launch_lucy.sh` | Default launch (Control Panel + RViz + Gazebo, or dev shell when `DEV=true`) |
+| `./launch_lucy.sh --headless` | Same flow without GUI / X11 (Gazebo runs headless, RViz is disabled) |
+| `./launch_lucy.sh <command>` | Run a single command in the container — no control panel, no auto-launch |
+| `DEV=true ./launch_lucy.sh` | Force dev mode for one run |
+
+### `ros2 launch` cheat sheet (dev mode)
+
+Run these inside the dev-mode shell — `lucy_bringup` already brings up `rosbridge` and the `/config/*` services via `web_ros_api`:
+
+| What you want | Command |
+|---------------|---------|
+| Default Jetson stack (no RViz / no Gazebo) | `ros2 launch lucy_bringup lucy.launch.py real:=true` |
+| Jetson + RViz | `ros2 launch lucy_bringup lucy.launch.py real:=true rviz:=true` |
+| Dev + panel + RViz (no micro-ROS / cameras) | `ros2 launch lucy_bringup lucy.launch.py rviz:=true` |
+| Gazebo sim + panel (`rviz:=false` = headless Gazebo) | `ros2 launch lucy_bringup lucy.launch.py gazebo:=true` |
+
+`gazebo:=true` cannot be combined with `real:=true` (the launch aborts). With Gazebo, `rviz` maps to `start_rviz` in `inmoov_urdf/gazebo.launch.py`.
+
+## Ports and environment overrides
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `DEV` | unset | `true` → use `url_ssh` in `repos.json` (install) and the interactive dev shell (launch) |
+| `PORT_CONTROL_PANEL` | matches container port | Host port the control panel is published on |
+| `PORT_CONTROL_PANEL_CONTAINER` | `VITE_PORT` from `src/lucy_control_panel/.env`, else `5000` | Port the Vite dev server listens on inside the container |
+| `DOCKER_GUI_DISPLAY` | host `$DISPLAY` | X display string passed to the container (use when the host `DISPLAY` doesn't reach Docker, e.g. Docker Desktop) |
+| `DOCKER_GUI_USE_HOST_NETWORK` | unset | Run with `--network=host` and `DISPLAY=:0` (alternative GUI path) |
+| `LUCY_DOCKER_PLATFORM` | content of `.lucy-docker-platform`, else host CPU | Docker `--platform` to build/run with (e.g. `linux/arm64`) |
+| `LUCY_INSTALL_SKIP_XHOST` | unset | Skip the `xhost` requirement in `install.sh` (set automatically when `CI=true`) |
+
+Inside the container, Vite proxies `/rosbridge` to `ws://127.0.0.1:9090`, and rosbridge is published on host port `9090`.
+
+## Docker image rebuilds
+
+`docker/ensure_image.sh` stamps each built image with `LABEL lucy.dockerfile.sha256="<sha256>|<platform>"`. Both `install.sh` and `launch_lucy.sh` rebuild the image when the label no longer matches the current `Dockerfile.humble` + target platform.
