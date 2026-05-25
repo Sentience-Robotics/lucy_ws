@@ -149,7 +149,7 @@ source /opt/ros/humble/setup.bash \
   && cd /workspace \
   && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common micro_ros_agent" \
   && rm -rf build/camera_ros install/camera_ros \
-  && colcon build \
+  && colcon build --symlink-install \
   && if [ -f src/lucy_control_panel/package.json ]; then \
        ( cd src/lucy_control_panel && yarn install ); \
      fi

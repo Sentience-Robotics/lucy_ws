@@ -23,7 +23,9 @@ The exact set of repositories, branches and clone URLs is in [`config/repos.json
 
 ## `install.sh`
 
-The first run clones missing sub-repositories, builds the Docker image (`lucy_ros2:humble`), and runs `rosdep` + `colcon build` + `yarn install` inside the container.
+The first run clones missing sub-repositories, builds the Docker image (`lucy_ros2:humble`), and runs `rosdep` + `colcon build --symlink-install` + `yarn install` inside the container.
+
+`--symlink-install` keeps `install/share/<robot_package>/config/controllers.yaml` pointing at the **source tree** paths that `lucy_config_pipeline` writes (`src/thais_urdf/config/controllers.yaml`), so launch files and the pipeline stay aligned during iterative hardware edits.
 
 Subsequent runs fast-forward each clone to the branch declared in `config/repos.json` and rebuild the workspace.
 
@@ -68,6 +70,14 @@ Run these inside the dev-mode shell — `lucy_bringup` already brings up `rosbri
 | Gazebo sim + panel (`rviz:=false` = headless Gazebo) | `ros2 launch lucy_bringup lucy.launch.py gazebo:=true` |
 
 `gazebo:=true` cannot be combined with `real:=true` (the launch aborts). With Gazebo, `rviz` maps to `start_rviz` in `inmoov_urdf/gazebo.launch.py`.
+
+### SIMULATION ONLY + RELOAD (control panel)
+
+From **Configuration → ACTIVATE**, enable **SIMULATION ONLY** to run **VALIDATE → ACTIVATE → RELOAD** without BUILD/FLASH. The pipeline generates a single mock `ros2_control` block and `lucy_sim_controller`, installs `inmoov_ros2_control.xacro` + `controllers.yaml` into the source robot tree, then calls **`/lucy_control/restart`** (`lucy_control_supervisor`) to restart `robot_state_publisher`, `ros2_control_node` (RViz-only), and controller spawners.
+
+Hardware mode runs the same **RELOAD** step after BUILD/FLASH once ros2_control artifacts are regenerated.
+
+**Gazebo caveat:** spawners and RSP can be restarted without relaunching the world; if you add/remove joints in the URDF hardware blocks, `gz_ros2_control` may require a full Gazebo restart — the supervisor response notes this when `use_gazebo_sim:=true`.
 
 ## Ports and environment overrides
 
