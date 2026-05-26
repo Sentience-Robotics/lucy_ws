@@ -67,6 +67,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       gstreamer1.0-tools \
       gstreamer1.0-plugins-good \
       libgstreamer-plugins-good1.0-0 \
+      tmux \
  && rosdep update \
  && rm -rf /var/lib/apt/lists/*
 
