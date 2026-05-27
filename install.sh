@@ -147,7 +147,7 @@ docker_workspace_install() {
   read -r -d '' inner_cmd <<'EOS' || true
 source /opt/ros/humble/setup.bash \
   && cd /workspace \
-  && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common micro_ros_agent" \
+  && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common" \
   && rm -rf build/camera_ros install/camera_ros \
   && colcon build --symlink-install \
   && if [ -f src/lucy_control_panel/package.json ]; then \

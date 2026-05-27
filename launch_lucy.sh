@@ -120,9 +120,7 @@ SOURCE_WORKSPACE="cd $WORKSPACE && source install/setup.bash"
 LAUNCH_GAZEBO_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
 LAUNCH_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py rviz:=true"
 
-# Preamble run inside the container: source ROS + overlay, then start the Vite
-# control panel in the background. An EXIT/INT/TERM trap stops Vite when the
-# foreground command (bash -i in dev mode, or `ros2 launch` in normal mode) ends.
+# Preamble run inside the container: source ROS + overlay.
 read -r -d '' CONTAINER_PREAMBLE <<'EOS' || true
 set -e
 source /opt/ros/humble/setup.bash
@@ -132,30 +130,6 @@ if [[ ! -f install/setup.bash ]]; then
   exit 1
 fi
 source install/setup.bash
-
-cleanup_lucy_bg() {
-  [[ -n "${CP_PID:-}" ]] && kill "$CP_PID" 2>/dev/null || true
-}
-trap cleanup_lucy_bg EXIT INT TERM
-
-CP_PID=
-if [[ -f src/lucy_control_panel/package.json ]]; then
-  cd src/lucy_control_panel
-  if command -v yarn >/dev/null 2>&1; then
-    yarn dev > /tmp/lucy-control-panel-vite.log 2>&1 &
-    CP_PID=$!
-  elif command -v npm >/dev/null 2>&1; then
-    npm run dev > /tmp/lucy-control-panel-vite.log 2>&1 &
-    CP_PID=$!
-  else
-    echo "Control panel: yarn/npm missing in image; rebuild Docker image." >&2
-  fi
-  cd /workspace
-  if [[ -n "${CP_PID:-}" ]]; then
-    disown "$CP_PID" 2>/dev/null || true
-    echo "Control panel (Vite) in background (PID $CP_PID). Host UI: http://localhost:${LUCY_CP_PUBLISHED_HOST_PORT}/ — log: tail -f /tmp/lucy-control-panel-vite.log"
-  fi
-fi
 EOS
 
 INTERACTIVE_CONTAINER_SCRIPT="${CONTAINER_PREAMBLE}
@@ -173,16 +147,16 @@ ${LAUNCH_GAZEBO_RVIZ_BRIDGE_CP}
 if [ $# -eq 0 ]; then
   if [ "$DEV_MODE" = 1 ]; then
     echo "DEV mode: interactive Humble shell (workspace already built by ./install.sh). Mount: $WORKSPACE"
-    echo "  Control panel: http://localhost:${PORT_CONTROL_PANEL}/ — log: tail -f /tmp/lucy-control-panel-vite.log"
+    echo "  Control panel: Use tui_lucy.py to start"
     echo "  Rosbridge on host: port ${PORT_ROSBRIDGE}"
     echo ""
-    echo "  Typical launches:"
-    echo "    • Gazebo + RViz + Control Panel  ->  $LAUNCH_GAZEBO_RVIZ_BRIDGE_CP"
-    echo "    • RViz + Control Panel           ->  $LAUNCH_RVIZ_BRIDGE_CP"
+    echo "  Typical launches (or use tui_lucy.py):"
+    echo "    • Gazebo + RViz  ->  ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
+    echo "    • RViz           ->  ros2 launch lucy_bringup lucy.launch.py rviz:=true"
     CONTAINER_SCRIPT="$INTERACTIVE_CONTAINER_SCRIPT"
   else
-    echo "Starting Lucy stack: Control Panel + RViz + Gazebo (set DEV=true for an interactive shell)."
-    echo "  Control panel: http://localhost:${PORT_CONTROL_PANEL}/ — log: tail -f /tmp/lucy-control-panel-vite.log"
+    echo "Starting Lucy stack: RViz + Gazebo (set DEV=true for an interactive shell)."
+    echo "  Control panel: Use tui_lucy.py to start"
     echo "  Rosbridge on host: port ${PORT_ROSBRIDGE}"
     echo "  Launching: $LAUNCH_GAZEBO_RVIZ_BRIDGE_CP"
     CONTAINER_SCRIPT="$NORMAL_CONTAINER_SCRIPT"
