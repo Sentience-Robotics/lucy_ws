@@ -63,6 +63,16 @@
       "conflicts": [],
       "command": "ros2 run lucy_cli tui",
       "default_on": false
+    },
+    {
+      "id": "console",
+      "name": "Open Console",
+      "description": "Opens a new interactive terminal window",
+      "type": "standalone",
+      "dependencies": [],
+      "conflicts": [],
+      "command": "echo \"To navigate, press Ctrl+B then W\" && bash -i",
+      "default_on": false
     }
   ]
 }

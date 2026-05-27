@@ -61,7 +61,7 @@ class Package:
             self.selected = self.id in running_modifiers
         elif self.type == 'core':
             self.selected = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
-            if not self.selected: # If core isn't running, clear modifier state
+            if not self.selected:
                 save_state({"modifiers": []})
         elif self.type == 'standalone':
              self.selected = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
@@ -99,16 +99,16 @@ class LauncherState:
             pkg.selected = False
         return None
 
-def draw_tui(stdscr, state, current_idx, error_msg):
+def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
     stdscr.clear()
     h, w = stdscr.getmaxyx()
-    title = "Lucy Configurable Launcher (TMUX)"
+    title = "Lucy Control Center"
     stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
-    
-    # Updated footer to include the Exit Workspace option
-    stdscr.addstr(h - 1, 2, "Enter: Apply | Space: Toggle | Q: Close Launcher | X: Stop All & Exit Docker", curses.A_DIM)
+    stdscr.addstr(h - 1, 2, "Enter: Apply | Space: Toggle | X: Stop All & Exit Docker", curses.A_DIM)
 
-    if error_msg:
+    if status_msg:
+        stdscr.addstr(h - 2, 2, status_msg, curses.A_BOLD)
+    elif error_msg:
         stdscr.addstr(h - 2, 2, f"Warning: {error_msg}", curses.color_pair(2))
 
     cores_and_mods = [p for p in state.packages if p.type in ['core', 'modifier']]
@@ -139,6 +139,38 @@ def draw_tui(stdscr, state, current_idx, error_msg):
     stdscr.refresh()
     return display_list
 
+def apply_changes(state):
+    last_launched_window = None
+
+    for pkg in state.packages:
+        if pkg.is_complex_command():
+            was_running = run_shell_command(pkg.command['is_running'], capture_output=True)
+            if pkg.selected and not was_running:
+                run_shell_command(pkg.command['start'])
+            elif not pkg.selected and was_running:
+                run_shell_command(pkg.command['stop'])
+        elif pkg.type == 'core':
+             if pkg.selected:
+                run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
+                base_cmd = pkg.command
+                selected_modifiers = [p for p in state.packages if p.type == 'modifier' and p.selected]
+                modifier_args = [p.command for p in selected_modifiers]
+                modifier_ids = [p.id for p in selected_modifiers]
+                full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
+                run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}; echo \"--- Process finished, press any key to close ---\"; read'")
+                save_state({"modifiers": modifier_ids})
+             else:
+                run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
+                save_state({"modifiers": []})
+        elif pkg.type == 'standalone':
+            run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+            if pkg.selected:
+                run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
+                last_launched_window = pkg.id
+    
+    if last_launched_window:
+        run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
+
 def main(stdscr):
     curses.curs_set(0)
     stdscr.nodelay(0)
@@ -154,10 +186,12 @@ def main(stdscr):
     state = LauncherState(load_config())
     current_idx = 0
     error_msg = None
+    status_msg = None
 
     while True:
-        display_list = draw_tui(stdscr, state, current_idx, error_msg)
+        display_list = draw_tui(stdscr, state, current_idx, error_msg, status_msg)
         error_msg = None
+        status_msg = None
         
         key = stdscr.getch()
 
@@ -169,11 +203,19 @@ def main(stdscr):
             pkg_to_toggle = display_list[current_idx]
             error_msg = state.toggle(pkg_to_toggle.id)
         elif key == ord('\n'):
-            return "Launch", state
+            apply_changes(state)
+            status_msg = "Configuration Applied!"
+            state = LauncherState(load_config())
         elif key in [ord('x'), ord('X')]:
-            return "ExitWorkspace", state
+            h, w = stdscr.getmaxyx()
+            stdscr.addstr(h - 2, 2, "Stop all processes and exit Docker? (y/n)", curses.A_BOLD | curses.color_pair(2))
+            stdscr.refresh()
+            confirm_key = stdscr.getch()
+            if confirm_key in [ord('y'), ord('Y')]:
+                return "ExitWorkspace", state
         elif key in [ord('q'), ord('Q'), 27]:
-            return "Quit", None
+            # Q is now a no-op, but we can keep it for future use if needed
+            pass
 
 if __name__ == "__main__":
     if not is_in_docker() or not is_in_tmux():
@@ -186,72 +228,16 @@ if __name__ == "__main__":
         print(f"A terminal error occurred: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if status == "Quit":
-        print("No action taken.")
-        sys.exit(0)
-
     if status == "ExitWorkspace":
         print("\nStopping all processes and exiting workspace...")
-        
-        # 1. Gracefully stop complex background processes (like the Control Panel)
         for pkg in state.packages:
             if pkg.is_complex_command():
                 run_shell_command(pkg.command['stop'])
-        
-        # 2. Clear state file to avoid stale data on next boot
         if os.path.exists(STATE_FILE):
             os.remove(STATE_FILE)
-
-        # 3. Kill the entire tmux session.
-        # This will shut down tmux, end the launch_lucy.sh script, and exit the container!
         print("Terminating tmux session...")
         time.sleep(0.5)
         run_shell_command("tmux kill-session -t lucy_ws 2>/dev/null")
-        sys.exit(0)
-
-    if status == "Launch":
-        last_launched_window = None
-
-        # 1. Handle Complex/Background Standalones
-        for pkg in state.packages:
-            if pkg.is_complex_command():
-                was_running = run_shell_command(pkg.command['is_running'], capture_output=True)
-                if pkg.selected and not was_running:
-                    print(f"Executing start command for {pkg.name}...")
-                    run_shell_command(pkg.command['start'])
-                elif not pkg.selected and was_running:
-                    print(f"Executing stop command for {pkg.name}...")
-                    run_shell_command(pkg.command['stop'])
-
-        # 2. Handle Core/Modifier Processes
-        core_pkg = next((p for p in state.packages if p.type == 'core'), None)
-        if core_pkg.selected:
-            run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
-            base_cmd = core_pkg.command
-            
-            selected_modifiers = [p for p in state.packages if p.type == 'modifier' and p.selected]
-            modifier_args = [p.command for p in selected_modifiers]
-            modifier_ids = [p.id for p in selected_modifiers]
-            
-            full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
-            print(f"Launching Core in 'core' window: {full_cmd}")
-            run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}; echo \"--- Process finished, press any key to close ---\"; read'")
-            save_state({"modifiers": modifier_ids})
-        else:
-            run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
-            save_state({"modifiers": []})
-
-        # 3. Handle Simple Standalone Processes
-        for pkg in state.packages:
-            if not pkg.is_complex_command() and pkg.type == 'standalone':
-                run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
-                if pkg.selected:
-                    print(f"Launching {pkg.name} in '{pkg.id}' window...")
-                    run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
-                    last_launched_window = pkg.id
-        
-        if last_launched_window:
-            run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
-
-        print("\nConfiguration applied. Check tmux windows for status.")
-        print("Use `Ctrl+B, w` to see all windows.")
+    else:
+        # If we quit the loop for any other reason, just exit the script
+        pass

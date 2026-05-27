@@ -135,9 +135,18 @@ EOS
 # In DEV mode, attach to a tmux session. Exiting the last tmux window will exit the container.
 read -r -d '' TMUX_SCRIPT <<'EOS' || true
 if [ -z "$TMUX" ]; then
-  # Attach to session if it exists, otherwise create it.
+  # Start tmux server and create session if it doesn't exist
+  tmux start-server
+  if ! tmux has-session -t lucy_ws 2>/dev/null; then
+    tmux new-session -d -s lucy_ws -n 'Lucy Workspace'
+  fi
+
+  # Send the command
+  tmux send-keys -t lucy_ws "launcher" C-m
+
+  # Attach to session.
   # When the last window is closed, the server exits, the script ends, and the container stops.
-  tmux attach-session -t lucy_ws || tmux new-session -s lucy_ws -n 'Lucy Workspace'
+  tmux attach-session -t lucy_ws
 else
   # Already inside tmux, do nothing special.
   bash -i
