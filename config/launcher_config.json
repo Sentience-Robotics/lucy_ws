@@ -73,6 +73,16 @@
       "conflicts": [],
       "command": "echo \"To navigate, press Ctrl+B then W\" && bash -i",
       "default_on": false
+    },
+    {
+      "id": "rqt",
+      "name": "rqt GUI",
+      "description": "Main ROS 2 GUI tool",
+      "type": "standalone",
+      "dependencies": ["core"],
+      "conflicts": [],
+      "command": "rqt",
+      "default_on": false
     }
   ]
 }

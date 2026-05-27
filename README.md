@@ -18,10 +18,26 @@ chmod +x install.sh launch_lucy.sh
 ./launch_lucy.sh
 ```
 
-Starts the **control panel** in the background and runs `lucy_bringup` with Gazebo and RViz inside the container (GUI / X11 forwarded automatically when available).
+Starts the workspace, running everything inside a single **tmux** session in the Docker container. 
+
+You will immediately see the **Lucy Control Center** TUI:
+- Use **Up/Down Arrows** to navigate.
+- Press **Space** to toggle a package or tool on/off.
+- Press **Enter** to apply your changes. (New tools open in their own background windows).
+- Press **X** to stop all processes and exit the Docker container entirely.
+
+### Managing Tmux Windows
+
+Because all tools (like the console or the control panel) run in background windows, you need to know a few basic `tmux` commands to navigate between them:
+
+- **`Ctrl+B` then `W`**: Opens a menu of all running windows. Use the arrows to select one and press Enter to switch to it.
+- **`Ctrl+B` then `N`**: Go to the next window.
+- **`Ctrl+B` then `P`**: Go to the previous window.
+- **`Ctrl+B` then `D`**: Detach from the session (keeps the container running in the background).
 
 Open the control panel at **http://localhost:5000/**.
 
 ## More
 
 - [`docs/developer_lucy_packages.md`](docs/developer_lucy_packages.md) — developer guide: per-repo docs, all `install.sh` / `launch_lucy.sh` flags, dev mode, ports, environment overrides, packages overview.
+- [`docs/launcher_packages.md`](docs/launcher_packages.md) — launcher guide: how to add new packages to the launcher UI and understand the configuration fields.
