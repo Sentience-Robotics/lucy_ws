@@ -4,21 +4,29 @@ Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Humble, Gaze
 
 ## Install
 
+> For UNIX based system:
 ```bash
 chmod +x install.sh launch_lucy.sh
-./install.sh              # Linux, Intel Mac, Windows WSL, x86_64 VMs
-./install.sh --arm        # Apple Silicon (M1 / M2 / M3) under Docker Desktop
 ```
 
-`install.sh` clones the sub-repositories listed in `config/repos.json` into `src/`, builds the Docker image, and compiles the workspace inside the container.
+The installation is handled by the `Lucy.py` script. Only use the `./install.sh` script as a fallback.
 
-## Launch
+## Launch & Manage
 
-```bash
-./launch_lucy.sh
-```
+We provide a Python-based Text User Interface (TUI) to easily manage the workspace. It handles installing, rebuilding, and launching the environment.
 
-Starts the workspace, running everything inside a single **tmux** session in the Docker container. 
+From the repository root, run the manager for your platform:
+
+| OS | Command                                                            |
+| :--- |:-------------------------------------------------------------------|
+| **Linux / macOS** | `python3 Lucy.py`                                                  |
+| **Windows** | `python windows/Lucy.py` (See [Windows README](windows/README.md)) |
+
+The manager includes a **Developer Mode** toggle. When ON, it configures the installer to pull repositories using SSH instead of HTTP.
+
+### Using the Workspace
+
+Selecting **Launch** from the manager starts the workspace, running everything inside a single **tmux** session within the Docker container. 
 
 You will immediately see the **Lucy Control Center** TUI:
 - Use **Up/Down Arrows** to navigate.
