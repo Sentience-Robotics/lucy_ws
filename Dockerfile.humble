@@ -79,6 +79,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 
 # Setup bashrc with alias for the TUI launcher
 RUN echo "alias launcher='python3 /workspace/launcher.py'" >> ~/.bashrc
+RUN echo "alias exit=''" >> ~/.bashrc # Disable 'exit' to force launcher usage
 
 WORKDIR /workspace
 ENTRYPOINT ["/bin/bash"]
