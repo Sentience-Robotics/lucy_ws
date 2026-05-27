@@ -63,7 +63,7 @@ class Package:
             self.selected = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
             if not self.selected:
                 save_state({"modifiers": []})
-        elif self.type == 'standalone':
+        elif self.type in ['tool', 'interface']:
              self.selected = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
 
     def is_complex_command(self):
@@ -112,8 +112,9 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
         stdscr.addstr(h - 2, 2, f"Warning: {error_msg}", curses.color_pair(2))
 
     cores_and_mods = [p for p in state.packages if p.type in ['core', 'modifier']]
-    standalones = [p for p in state.packages if p.type == 'standalone']
-    display_list = cores_and_mods + standalones
+    interfaces = [p for p in state.packages if p.type == 'interface']
+    tools = [p for p in state.packages if p.type == 'tool']
+    display_list = cores_and_mods + interfaces + tools
 
     row = 2
     stdscr.addstr(row, 2, "Primary Launch Targets", curses.A_BOLD | curses.color_pair(1))
@@ -128,10 +129,19 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
         stdscr.addstr(row + i, 4, f"{prefix}{indent}{checkbox} {p.name}", attr)
 
     row += len(cores_and_mods) + 1
-    stdscr.addstr(row, 2, "Standalone Tools", curses.A_BOLD | curses.color_pair(3))
+    stdscr.addstr(row, 2, "Interfaces", curses.A_BOLD | curses.color_pair(3))
     row += 1
-    for i, p in enumerate(standalones):
+    for i, p in enumerate(interfaces):
         list_idx = i + len(cores_and_mods)
+        prefix = "> " if current_idx == list_idx else "  "
+        checkbox = "[x]" if p.selected else "[ ]"
+        stdscr.addstr(row + i, 4, f"{prefix}{checkbox} {p.name}", curses.A_NORMAL)
+
+    row += len(interfaces) + 1
+    stdscr.addstr(row, 2, "Tools", curses.A_BOLD | curses.color_pair(3))
+    row += 1
+    for i, p in enumerate(tools):
+        list_idx = i + len(cores_and_mods) + len(interfaces)
         prefix = "> " if current_idx == list_idx else "  "
         checkbox = "[x]" if p.selected else "[ ]"
         stdscr.addstr(row + i, 4, f"{prefix}{checkbox} {p.name}", curses.A_NORMAL)
@@ -162,7 +172,7 @@ def apply_changes(state):
              else:
                 run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
                 save_state({"modifiers": []})
-        elif pkg.type == 'standalone':
+        elif pkg.type in ['tool', 'interface']:
             run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
             if pkg.selected:
                 run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
