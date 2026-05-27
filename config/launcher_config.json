@@ -1,0 +1,68 @@
+{
+  "packages": [
+    {
+      "id": "core",
+      "name": "Core (Lucy Bringup)",
+      "description": "Base robot software stack",
+      "type": "core",
+      "dependencies": [],
+      "conflicts": [],
+      "command": "ros2 launch lucy_bringup lucy.launch.py",
+      "default_on": false
+    },
+    {
+      "id": "gazebo",
+      "name": "... with Simulator",
+      "description": "(Gazebo)",
+      "type": "modifier",
+      "dependencies": ["core"],
+      "conflicts": ["real"],
+      "command": "gazebo:=true",
+      "default_on": false
+    },
+    {
+      "id": "rviz",
+      "name": "... with Visualizer",
+      "description": "(RViz)",
+      "type": "modifier",
+      "dependencies": ["core"],
+      "conflicts": [],
+      "command": "rviz:=true",
+      "default_on": false
+    },
+    {
+      "id": "real",
+      "name": "... with Real Hardware",
+      "description": "(Connect to physical robot)",
+      "type": "modifier",
+      "dependencies": ["core"],
+      "conflicts": ["gazebo"],
+      "command": "real:=true",
+      "default_on": false
+    },
+    {
+      "id": "control_panel",
+      "name": "Control Panel",
+      "description": "Web-based UI",
+      "type": "standalone",
+      "dependencies": [],
+      "conflicts": ["lucy_cli"],
+      "command": {
+        "start": "cd /workspace/src/lucy_control_panel && yarn dev",
+        "stop": "pkill -9 -f 'vite'",
+        "is_running": "ps aux | grep '[v]ite'"
+      },
+      "default_on": false
+    },
+    {
+      "id": "lucy_cli",
+      "name": "Lucy CLI",
+      "description": "Command Line Interface",
+      "type": "standalone",
+      "dependencies": ["core"],
+      "conflicts": ["control_panel", "core"],
+      "command": "ros2 run lucy_cli tui",
+      "default_on": false
+    }
+  ]
+}

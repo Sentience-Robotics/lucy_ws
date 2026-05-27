@@ -5,23 +5,89 @@ import os
 import sys
 import subprocess
 import time
+import json
+
+CONFIG_FILE = "/workspace/config/launcher_config.json"
 
 def is_in_docker():
-    """Check if the script is running inside a Docker container."""
     return os.path.exists('/.dockerenv')
 
-def is_cp_running():
-    """Check if the Control Panel (Vite) is running."""
-    result = subprocess.run("ps aux | grep '[v]ite'", shell=True, capture_output=True, text=True)
-    return result.returncode == 0
+def load_config():
+    if not os.path.exists(CONFIG_FILE):
+        print(f"Error: Configuration file not found at {CONFIG_FILE}", file=sys.stderr)
+        sys.exit(1)
+    with open(CONFIG_FILE, 'r') as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"Error parsing config file: {e}", file=sys.stderr)
+            sys.exit(1)
 
-def stop_cp():
-    """Stop the Control Panel completely."""
-    os.system("pkill -9 -f 'vite' > /dev/null 2>&1")
-    time.sleep(0.5)
+def run_shell_command(cmd, capture_output=False):
+    """Utility to run a shell command."""
+    if capture_output:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        return result.returncode == 0
+    else:
+        subprocess.run(cmd, shell=True)
+
+class Package:
+    def __init__(self, data):
+        self.id = data['id']
+        self.name = data['name']
+        self.description = data.get('description', '')
+        self.type = data['type']
+        self.dependencies = data.get('dependencies', [])
+        self.conflicts = data.get('conflicts', [])
+        self.command = data.get('command', '')
+        self.selected = data.get('default_on', False)
+        
+        # Determine initial state for complex standalone apps (like control panel)
+        if isinstance(self.command, dict) and 'is_running' in self.command:
+            self.selected = run_shell_command(self.command['is_running'], capture_output=True)
+
+    def is_standalone_background(self):
+        return isinstance(self.command, dict)
+
+class LauncherState:
+    def __init__(self, config_data):
+        self.packages = [Package(p) for p in config_data['packages']]
+        self.package_map = {p.id: p for p in self.packages}
+
+    def get_by_id(self, pkg_id):
+        return self.package_map.get(pkg_id)
+
+    def toggle(self, pkg_id):
+        pkg = self.get_by_id(pkg_id)
+        if not pkg: return
+
+        # If turning ON
+        if not pkg.selected:
+            # Check dependencies
+            missing_deps = [dep for dep in pkg.dependencies if not self.get_by_id(dep).selected]
+            if missing_deps:
+                return f"Cannot enable '{pkg.name}'. Missing dependencies: {', '.join(missing_deps)}"
+
+            # Resolve conflicts (turn off conflicting packages)
+            for conflict_id in pkg.conflicts:
+                conflict_pkg = self.get_by_id(conflict_id)
+                if conflict_pkg and conflict_pkg.selected:
+                    conflict_pkg.selected = False
+
+            pkg.selected = True
+        
+        # If turning OFF
+        else:
+            # Turn off anything that depends on this
+            for other_pkg in self.packages:
+                if pkg_id in other_pkg.dependencies and other_pkg.selected:
+                    other_pkg.selected = False
+            
+            pkg.selected = False
+            
+        return None # No error
 
 def main(stdscr):
-    """Main function to run the TUI."""
     curses.curs_set(0)
     stdscr.nodelay(0)
     stdscr.timeout(-1)
@@ -37,83 +103,77 @@ def main(stdscr):
         curses.init_pair(2, 0, 0)
         curses.init_pair(3, 0, 0)
 
-    # Use lists instead of tuples so they are mutable
-    options = [
-        ["Core (Lucy Bringup)", "Base robot software stack", False, 'core'],
-        ["... with Simulator", "(Gazebo)", False, 'modifier'],
-        ["... with Visualizer", "(RViz)", False, 'modifier'],
-        ["... with Real Hardware", "(Connect to physical robot)", False, 'modifier'],
-        ["Control Panel", "Web-based UI (standalone)", is_cp_running(), 'standalone'],
-        ["Lucy CLI", "Command Line Interface (standalone)", False, 'standalone'],
-    ]
-    current_option = 0
+    config_data = load_config()
+    state = LauncherState(config_data)
+    
+    current_idx = 0
+    error_msg = None
 
     while True:
-        # --- Logic updates based on state ---
-        core_selected = options[0][2]
-        
-        for i in range(1, 4): 
-            if not core_selected:
-                options[i][2] = False
-        
-        sim_selected = options[1][2]
-        real_selected = options[3][2]
-
-        # --- Drawing ---
         stdscr.clear()
         h, w = stdscr.getmaxyx()
-        title = "Lucy In-Container Launcher"
+        title = "Lucy Configurable Launcher"
         stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
         stdscr.addstr(h - 1, 2, "Enter: Launch | Space: Toggle | Q: Quit", curses.A_DIM)
 
-        stdscr.addstr(2, 2, "Primary Launch Target", curses.A_BOLD | curses.color_pair(1))
+        if error_msg:
+            stdscr.addstr(h - 2, 2, f"Warning: {error_msg}", curses.color_pair(2))
+            error_msg = None # Clear after displaying once
+
+        # Group packages for display
+        cores_and_mods = [p for p in state.packages if p.type in ['core', 'modifier']]
+        standalones = [p for p in state.packages if p.type == 'standalone']
+
+        display_list = []
         
-        prefix = "> " if current_option == 0 else "  "
-        checkbox = "[x]" if options[0][2] else "[ ]"
-        stdscr.addstr(4, 4, f"{prefix}{checkbox} {options[0][0]}", curses.A_BOLD)
-        stdscr.addstr(4, 4 + len(prefix) + len(checkbox) + len(options[0][0]) + 1, f"- {options[0][1]}", curses.A_DIM)
+        row = 2
+        stdscr.addstr(row, 2, "Primary Launch Targets", curses.A_BOLD | curses.color_pair(1))
+        row += 2
+        for p in cores_and_mods:
+            display_list.append(p)
+            prefix = "> " if current_idx == len(display_list) - 1 else "  "
+            checkbox = "[x]" if p.selected else "[ ]"
+            
+            # Determine visual state based on dependencies
+            can_enable = all(state.get_by_id(dep).selected for dep in p.dependencies)
+            attr = curses.A_NORMAL if can_enable else curses.A_DIM
+            if p.type == 'core': attr |= curses.A_BOLD
+            
+            indent = "    " if p.type == 'modifier' else ""
+            stdscr.addstr(row, 4, f"{prefix}{indent}{checkbox} {p.name}", attr)
+            stdscr.addstr(row, 4 + len(prefix) + len(indent) + len(checkbox) + len(p.name) + 1, f"- {p.description}", attr | curses.A_DIM)
+            row += 1
 
-        for i in range(1, 4):
-            prefix = "> " if current_option == i else "  "
-            checkbox = "[x]" if options[i][2] else "[ ]"
-            line_attr = curses.A_NORMAL if core_selected else curses.A_DIM
-            stdscr.addstr(5 + i, 6, f"{prefix}{checkbox} {options[i][0]}", line_attr)
-            stdscr.addstr(5 + i, 6 + len(prefix) + len(checkbox) + len(options[i][0]) + 1, f"{options[i][1]}", line_attr | curses.A_DIM)
-
-        stdscr.addstr(10, 2, "Standalone Tools", curses.A_BOLD | curses.color_pair(3))
-        for i in range(4, 6):
-            prefix = "> " if current_option == i else "  "
-            checkbox = "[x]" if options[i][2] else "[ ]"
-            stdscr.addstr(11 + (i - 4), 4, f"{prefix}{checkbox} {options[i][0]}", curses.A_NORMAL)
-            stdscr.addstr(11 + (i - 4), 4 + len(prefix) + len(checkbox) + len(options[i][0]) + 1, f"- {options[i][1]}", curses.A_DIM)
-
-        if sim_selected and real_selected:
-             stdscr.addstr(h - 2, 2, "Warning: Simulator and Real Hardware are mutually exclusive.", curses.color_pair(2))
+        row += 1
+        stdscr.addstr(row, 2, "Standalone Tools", curses.A_BOLD | curses.color_pair(3))
+        row += 1
+        for p in standalones:
+            display_list.append(p)
+            prefix = "> " if current_idx == len(display_list) - 1 else "  "
+            checkbox = "[x]" if p.selected else "[ ]"
+            stdscr.addstr(row, 4, f"{prefix}{checkbox} {p.name}", curses.A_NORMAL)
+            stdscr.addstr(row, 4 + len(prefix) + len(checkbox) + len(p.name) + 1, f"- {p.description}", curses.A_DIM)
+            row += 1
 
         stdscr.refresh()
 
-        # --- Input Handling ---
         key = stdscr.getch()
 
         if key == curses.KEY_UP:
-            current_option = (current_option - 1) % len(options)
+            current_idx = (current_idx - 1) % len(display_list)
         elif key == curses.KEY_DOWN:
-            current_option = (current_option + 1) % len(options)
+            current_idx = (current_idx + 1) % len(display_list)
         elif key == ord(' '):
-            options[current_option][2] = not options[current_option][2]
-            
-            if current_option == 1 and options[1][2]:
-                options[3][2] = False
-            elif current_option == 3 and options[3][2]:
-                options[1][2] = False
-                
+            pkg_to_toggle = display_list[current_idx]
+            err = state.toggle(pkg_to_toggle.id)
+            if err:
+                error_msg = err
         elif key == ord('\n'):
             break
         elif key == ord('q') or key == ord('Q') or key == 27:
             return "Quit", None
 
-    selections = [opt[2] for opt in options]
-    return "Launch", selections
+    return "Launch", state
 
 
 if __name__ == "__main__":
@@ -126,7 +186,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
-        status, message = curses.wrapper(main)
+        status, state = curses.wrapper(main)
     except Exception as e:
         print(f"A terminal error occurred: {e}", file=sys.stderr)
         sys.exit(1)
@@ -134,43 +194,50 @@ if __name__ == "__main__":
     if status == "Quit":
         print("No action taken.")
         sys.exit(0)
-        
-    if status == "Error":
-        print(f"\nError: {message}", file=sys.stderr)
-        sys.exit(1)
 
     if status == "Launch":
-        core, sim, rviz, real, cp, cli = message
-        
-        cp_is_running = is_cp_running()
-        if cp and not cp_is_running:
-            print("Starting Control Panel...")
-            subprocess.Popen(["yarn", "dev"], cwd="/workspace/src/lucy_control_panel", stdout=open("/tmp/lucy-cp.log", "w"), stderr=subprocess.STDOUT, preexec_fn=os.setpgrp)
-        elif not cp and cp_is_running:
-            print("Stopping Control Panel...")
-            stop_cp()
+        # 1. Handle Background Standalones (like Control Panel)
+        for pkg in state.packages:
+            if pkg.is_standalone_background():
+                was_running = run_shell_command(pkg.command['is_running'], capture_output=True)
+                if pkg.selected and not was_running:
+                    print(f"Starting {pkg.name}...")
+                    # Using Popen to run in background
+                    subprocess.Popen(
+                        pkg.command['start'], 
+                        shell=True, 
+                        stdout=subprocess.DEVNULL, 
+                        stderr=subprocess.DEVNULL, 
+                        preexec_fn=os.setpgrp
+                    )
+                elif not pkg.selected and was_running:
+                    print(f"Stopping {pkg.name}...")
+                    run_shell_command(pkg.command['stop'])
+                    time.sleep(0.5)
 
-        ros_cmd = ""
-        if cli:
-            if core:
-                print("Warning: Lucy CLI is a standalone tool. Ignoring Core launch options.", file=sys.stderr)
-            ros_cmd = "ros2 run lucy_cli tui"
-        elif core:
-            launch_args = []
-            if sim:
-                launch_args.append("gazebo:=true")
-            if rviz:
-                launch_args.append("rviz:=true")
-            if real:
-                launch_args.append("real:=true")
-            ros_cmd = f"ros2 launch lucy_bringup lucy.launch.py {' '.join(launch_args)}"
+        # 2. Build Primary Execution Command
+        core_pkg = next((p for p in state.packages if p.type == 'core' and p.selected), None)
+        cli_pkg = next((p for p in state.packages if p.id == 'lucy_cli' and p.selected), None)
         
-        if ros_cmd:
-            print(f"\nExecuting: {ros_cmd}")
+        final_cmd = ""
+        
+        if cli_pkg:
+            final_cmd = cli_pkg.command
+        elif core_pkg:
+            base_cmd = core_pkg.command
+            args = []
+            for pkg in state.packages:
+                if pkg.type == 'modifier' and pkg.selected and pkg.command:
+                    args.append(pkg.command)
+            final_cmd = f"{base_cmd} {' '.join(args)}"
+
+        # 3. Execute
+        if final_cmd:
+            print(f"\nExecuting: {final_cmd}")
             print("-" * 50)
             try:
-                subprocess.run(ros_cmd, shell=True, check=True)
+                subprocess.run(final_cmd, shell=True, check=True)
             except (subprocess.CalledProcessError, KeyboardInterrupt):
                 print("\nCommand terminated.")
         else:
-            print("\nNo primary target selected to launch.")
+            print("\nConfiguration applied. No foreground command to execute.")
