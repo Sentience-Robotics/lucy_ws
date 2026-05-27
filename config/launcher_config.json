@@ -43,14 +43,14 @@
     {
       "id": "control_panel",
       "name": "Control Panel",
-      "description": "Web-based UI",
+      "description": "Web-based UI (background)",
       "type": "standalone",
       "dependencies": [],
-      "conflicts": ["lucy_cli"],
+      "conflicts": [],
       "command": {
-        "start": "cd /workspace/src/lucy_control_panel && yarn dev",
-        "stop": "pkill -9 -f 'vite'",
-        "is_running": "ps aux | grep '[v]ite'"
+        "start": "tmux new-window -d -n control_panel 'cd /workspace/src/lucy_control_panel && yarn dev'",
+        "stop": "tmux kill-window -t lucy_ws:control_panel 2>/dev/null || true",
+        "is_running": "tmux list-windows -F '#{window_name}' | grep -q '^control_panel$'"
       },
       "default_on": false
     },
@@ -60,7 +60,7 @@
       "description": "Command Line Interface",
       "type": "standalone",
       "dependencies": ["core"],
-      "conflicts": ["control_panel", "core"],
+      "conflicts": [],
       "command": "ros2 run lucy_cli tui",
       "default_on": false
     }

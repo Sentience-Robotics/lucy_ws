@@ -8,31 +8,41 @@ import time
 import json
 
 CONFIG_FILE = "/workspace/config/launcher_config.json"
+STATE_FILE = "/tmp/launcher_state.json"
 
 def is_in_docker():
     return os.path.exists('/.dockerenv')
 
+def is_in_tmux():
+    return 'TMUX' in os.environ
+
 def load_config():
     if not os.path.exists(CONFIG_FILE):
-        print(f"Error: Configuration file not found at {CONFIG_FILE}", file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(f"Configuration file not found at {CONFIG_FILE}")
     with open(CONFIG_FILE, 'r') as f:
+        return json.load(f)
+
+def load_state():
+    if not os.path.exists(STATE_FILE):
+        return {"modifiers": []}
+    with open(STATE_FILE, 'r') as f:
         try:
             return json.load(f)
-        except json.JSONDecodeError as e:
-            print(f"Error parsing config file: {e}", file=sys.stderr)
-            sys.exit(1)
+        except json.JSONDecodeError:
+            return {"modifiers": []}
+
+def save_state(state_data):
+    with open(STATE_FILE, 'w') as f:
+        json.dump(state_data, f)
 
 def run_shell_command(cmd, capture_output=False):
-    """Utility to run a shell command."""
     if capture_output:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        return result.returncode == 0
+        return subprocess.run(cmd, shell=True, capture_output=True, text=True).returncode == 0
     else:
         subprocess.run(cmd, shell=True)
 
 class Package:
-    def __init__(self, data):
+    def __init__(self, data, running_modifiers):
         self.id = data['id']
         self.name = data['name']
         self.description = data.get('description', '')
@@ -42,16 +52,27 @@ class Package:
         self.command = data.get('command', '')
         self.selected = data.get('default_on', False)
         
-        # Determine initial state for complex standalone apps (like control panel)
-        if isinstance(self.command, dict) and 'is_running' in self.command:
-            self.selected = run_shell_command(self.command['is_running'], capture_output=True)
+        self.update_running_status(running_modifiers)
 
-    def is_standalone_background(self):
+    def update_running_status(self, running_modifiers):
+        if self.is_complex_command():
+            self.selected = run_shell_command(self.command['is_running'], capture_output=True)
+        elif self.type == 'modifier':
+            self.selected = self.id in running_modifiers
+        elif self.type == 'core':
+            self.selected = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
+            if not self.selected: # If core isn't running, clear modifier state
+                save_state({"modifiers": []})
+        elif self.type == 'standalone':
+             self.selected = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
+
+    def is_complex_command(self):
         return isinstance(self.command, dict)
 
 class LauncherState:
     def __init__(self, config_data):
-        self.packages = [Package(p) for p in config_data['packages']]
+        running_state = load_state()
+        self.packages = [Package(p, running_state['modifiers']) for p in config_data['packages']]
         self.package_map = {p.id: p for p in self.packages}
 
     def get_by_id(self, pkg_id):
@@ -59,33 +80,64 @@ class LauncherState:
 
     def toggle(self, pkg_id):
         pkg = self.get_by_id(pkg_id)
-        if not pkg: return
+        if not pkg: return None
 
-        # If turning ON
         if not pkg.selected:
-            # Check dependencies
             missing_deps = [dep for dep in pkg.dependencies if not self.get_by_id(dep).selected]
             if missing_deps:
-                return f"Cannot enable '{pkg.name}'. Missing dependencies: {', '.join(missing_deps)}"
-
-            # Resolve conflicts (turn off conflicting packages)
+                return f"Needs: {', '.join(missing_deps)}"
+            
             for conflict_id in pkg.conflicts:
                 conflict_pkg = self.get_by_id(conflict_id)
                 if conflict_pkg and conflict_pkg.selected:
                     conflict_pkg.selected = False
-
             pkg.selected = True
-        
-        # If turning OFF
         else:
-            # Turn off anything that depends on this
             for other_pkg in self.packages:
                 if pkg_id in other_pkg.dependencies and other_pkg.selected:
                     other_pkg.selected = False
-            
             pkg.selected = False
-            
-        return None # No error
+        return None
+
+def draw_tui(stdscr, state, current_idx, error_msg):
+    stdscr.clear()
+    h, w = stdscr.getmaxyx()
+    title = "Lucy Configurable Launcher (TMUX)"
+    stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
+    
+    # Updated footer to include the Exit Workspace option
+    stdscr.addstr(h - 1, 2, "Enter: Apply | Space: Toggle | Q: Close Launcher | X: Stop All & Exit Docker", curses.A_DIM)
+
+    if error_msg:
+        stdscr.addstr(h - 2, 2, f"Warning: {error_msg}", curses.color_pair(2))
+
+    cores_and_mods = [p for p in state.packages if p.type in ['core', 'modifier']]
+    standalones = [p for p in state.packages if p.type == 'standalone']
+    display_list = cores_and_mods + standalones
+
+    row = 2
+    stdscr.addstr(row, 2, "Primary Launch Targets", curses.A_BOLD | curses.color_pair(1))
+    row += 2
+    for i, p in enumerate(cores_and_mods):
+        prefix = "> " if current_idx == i else "  "
+        checkbox = "[x]" if p.selected else "[ ]"
+        can_enable = all(state.get_by_id(dep).selected for dep in p.dependencies)
+        attr = curses.A_NORMAL if can_enable else curses.A_DIM
+        if p.type == 'core': attr |= curses.A_BOLD
+        indent = "    " if p.type == 'modifier' else ""
+        stdscr.addstr(row + i, 4, f"{prefix}{indent}{checkbox} {p.name}", attr)
+
+    row += len(cores_and_mods) + 1
+    stdscr.addstr(row, 2, "Standalone Tools", curses.A_BOLD | curses.color_pair(3))
+    row += 1
+    for i, p in enumerate(standalones):
+        list_idx = i + len(cores_and_mods)
+        prefix = "> " if current_idx == list_idx else "  "
+        checkbox = "[x]" if p.selected else "[ ]"
+        stdscr.addstr(row + i, 4, f"{prefix}{checkbox} {p.name}", curses.A_NORMAL)
+
+    stdscr.refresh()
+    return display_list
 
 def main(stdscr):
     curses.curs_set(0)
@@ -98,65 +150,15 @@ def main(stdscr):
         curses.init_pair(1, curses.COLOR_YELLOW, -1)
         curses.init_pair(2, curses.COLOR_RED, -1)
         curses.init_pair(3, curses.COLOR_CYAN, -1)
-    else:
-        curses.init_pair(1, 0, 0)
-        curses.init_pair(2, 0, 0)
-        curses.init_pair(3, 0, 0)
 
-    config_data = load_config()
-    state = LauncherState(config_data)
-    
+    state = LauncherState(load_config())
     current_idx = 0
     error_msg = None
 
     while True:
-        stdscr.clear()
-        h, w = stdscr.getmaxyx()
-        title = "Lucy Configurable Launcher"
-        stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
-        stdscr.addstr(h - 1, 2, "Enter: Launch | Space: Toggle | Q: Quit", curses.A_DIM)
-
-        if error_msg:
-            stdscr.addstr(h - 2, 2, f"Warning: {error_msg}", curses.color_pair(2))
-            error_msg = None # Clear after displaying once
-
-        # Group packages for display
-        cores_and_mods = [p for p in state.packages if p.type in ['core', 'modifier']]
-        standalones = [p for p in state.packages if p.type == 'standalone']
-
-        display_list = []
+        display_list = draw_tui(stdscr, state, current_idx, error_msg)
+        error_msg = None
         
-        row = 2
-        stdscr.addstr(row, 2, "Primary Launch Targets", curses.A_BOLD | curses.color_pair(1))
-        row += 2
-        for p in cores_and_mods:
-            display_list.append(p)
-            prefix = "> " if current_idx == len(display_list) - 1 else "  "
-            checkbox = "[x]" if p.selected else "[ ]"
-            
-            # Determine visual state based on dependencies
-            can_enable = all(state.get_by_id(dep).selected for dep in p.dependencies)
-            attr = curses.A_NORMAL if can_enable else curses.A_DIM
-            if p.type == 'core': attr |= curses.A_BOLD
-            
-            indent = "    " if p.type == 'modifier' else ""
-            stdscr.addstr(row, 4, f"{prefix}{indent}{checkbox} {p.name}", attr)
-            stdscr.addstr(row, 4 + len(prefix) + len(indent) + len(checkbox) + len(p.name) + 1, f"- {p.description}", attr | curses.A_DIM)
-            row += 1
-
-        row += 1
-        stdscr.addstr(row, 2, "Standalone Tools", curses.A_BOLD | curses.color_pair(3))
-        row += 1
-        for p in standalones:
-            display_list.append(p)
-            prefix = "> " if current_idx == len(display_list) - 1 else "  "
-            checkbox = "[x]" if p.selected else "[ ]"
-            stdscr.addstr(row, 4, f"{prefix}{checkbox} {p.name}", curses.A_NORMAL)
-            stdscr.addstr(row, 4 + len(prefix) + len(checkbox) + len(p.name) + 1, f"- {p.description}", curses.A_DIM)
-            row += 1
-
-        stdscr.refresh()
-
         key = stdscr.getch()
 
         if key == curses.KEY_UP:
@@ -165,24 +167,17 @@ def main(stdscr):
             current_idx = (current_idx + 1) % len(display_list)
         elif key == ord(' '):
             pkg_to_toggle = display_list[current_idx]
-            err = state.toggle(pkg_to_toggle.id)
-            if err:
-                error_msg = err
+            error_msg = state.toggle(pkg_to_toggle.id)
         elif key == ord('\n'):
-            break
-        elif key == ord('q') or key == ord('Q') or key == 27:
+            return "Launch", state
+        elif key in [ord('x'), ord('X')]:
+            return "ExitWorkspace", state
+        elif key in [ord('q'), ord('Q'), 27]:
             return "Quit", None
 
-    return "Launch", state
-
-
 if __name__ == "__main__":
-    if not is_in_docker():
-        print("Error: This script must be run inside the Lucy Docker container.", file=sys.stderr)
-        sys.exit(1)
-
-    if not sys.stdout.isatty():
-        print("Error: This TUI must be run in a terminal.", file=sys.stderr)
+    if not is_in_docker() or not is_in_tmux():
+        print("Error: This script must be run inside the 'lucy_ws' tmux session within the Docker container.", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -195,49 +190,68 @@ if __name__ == "__main__":
         print("No action taken.")
         sys.exit(0)
 
-    if status == "Launch":
-        # 1. Handle Background Standalones (like Control Panel)
+    if status == "ExitWorkspace":
+        print("\nStopping all processes and exiting workspace...")
+        
+        # 1. Gracefully stop complex background processes (like the Control Panel)
         for pkg in state.packages:
-            if pkg.is_standalone_background():
+            if pkg.is_complex_command():
+                run_shell_command(pkg.command['stop'])
+        
+        # 2. Clear state file to avoid stale data on next boot
+        if os.path.exists(STATE_FILE):
+            os.remove(STATE_FILE)
+
+        # 3. Kill the entire tmux session.
+        # This will shut down tmux, end the launch_lucy.sh script, and exit the container!
+        print("Terminating tmux session...")
+        time.sleep(0.5)
+        run_shell_command("tmux kill-session -t lucy_ws 2>/dev/null")
+        sys.exit(0)
+
+    if status == "Launch":
+        last_launched_window = None
+
+        # 1. Handle Complex/Background Standalones
+        for pkg in state.packages:
+            if pkg.is_complex_command():
                 was_running = run_shell_command(pkg.command['is_running'], capture_output=True)
                 if pkg.selected and not was_running:
-                    print(f"Starting {pkg.name}...")
-                    # Using Popen to run in background
-                    subprocess.Popen(
-                        pkg.command['start'], 
-                        shell=True, 
-                        stdout=subprocess.DEVNULL, 
-                        stderr=subprocess.DEVNULL, 
-                        preexec_fn=os.setpgrp
-                    )
+                    print(f"Executing start command for {pkg.name}...")
+                    run_shell_command(pkg.command['start'])
                 elif not pkg.selected and was_running:
-                    print(f"Stopping {pkg.name}...")
+                    print(f"Executing stop command for {pkg.name}...")
                     run_shell_command(pkg.command['stop'])
-                    time.sleep(0.5)
 
-        # 2. Build Primary Execution Command
-        core_pkg = next((p for p in state.packages if p.type == 'core' and p.selected), None)
-        cli_pkg = next((p for p in state.packages if p.id == 'lucy_cli' and p.selected), None)
-        
-        final_cmd = ""
-        
-        if cli_pkg:
-            final_cmd = cli_pkg.command
-        elif core_pkg:
+        # 2. Handle Core/Modifier Processes
+        core_pkg = next((p for p in state.packages if p.type == 'core'), None)
+        if core_pkg.selected:
+            run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
             base_cmd = core_pkg.command
-            args = []
-            for pkg in state.packages:
-                if pkg.type == 'modifier' and pkg.selected and pkg.command:
-                    args.append(pkg.command)
-            final_cmd = f"{base_cmd} {' '.join(args)}"
-
-        # 3. Execute
-        if final_cmd:
-            print(f"\nExecuting: {final_cmd}")
-            print("-" * 50)
-            try:
-                subprocess.run(final_cmd, shell=True, check=True)
-            except (subprocess.CalledProcessError, KeyboardInterrupt):
-                print("\nCommand terminated.")
+            
+            selected_modifiers = [p for p in state.packages if p.type == 'modifier' and p.selected]
+            modifier_args = [p.command for p in selected_modifiers]
+            modifier_ids = [p.id for p in selected_modifiers]
+            
+            full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
+            print(f"Launching Core in 'core' window: {full_cmd}")
+            run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}; echo \"--- Process finished, press any key to close ---\"; read'")
+            save_state({"modifiers": modifier_ids})
         else:
-            print("\nConfiguration applied. No foreground command to execute.")
+            run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
+            save_state({"modifiers": []})
+
+        # 3. Handle Simple Standalone Processes
+        for pkg in state.packages:
+            if not pkg.is_complex_command() and pkg.type == 'standalone':
+                run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+                if pkg.selected:
+                    print(f"Launching {pkg.name} in '{pkg.id}' window...")
+                    run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
+                    last_launched_window = pkg.id
+        
+        if last_launched_window:
+            run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
+
+        print("\nConfiguration applied. Check tmux windows for status.")
+        print("Use `Ctrl+B, w` to see all windows.")

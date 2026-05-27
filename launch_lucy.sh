@@ -132,8 +132,20 @@ fi
 source install/setup.bash
 EOS
 
+# In DEV mode, attach to a tmux session. Exiting the last tmux window will exit the container.
+read -r -d '' TMUX_SCRIPT <<'EOS' || true
+if [ -z "$TMUX" ]; then
+  # Attach to session if it exists, otherwise create it.
+  # When the last window is closed, the server exits, the script ends, and the container stops.
+  tmux attach-session -t lucy_ws || tmux new-session -s lucy_ws -n 'Lucy Workspace'
+else
+  # Already inside tmux, do nothing special.
+  bash -i
+fi
+EOS
+
 INTERACTIVE_CONTAINER_SCRIPT="${CONTAINER_PREAMBLE}
-bash -i
+${TMUX_SCRIPT}
 "
 
 NORMAL_CONTAINER_SCRIPT="${CONTAINER_PREAMBLE}
@@ -145,23 +157,9 @@ ${LAUNCH_GAZEBO_RVIZ_BRIDGE_CP}
 # ----------------------------------------------------------------------------
 
 if [ $# -eq 0 ]; then
-  if [ "$DEV_MODE" = 1 ]; then
-    echo "DEV mode: interactive Humble shell (workspace already built by ./install.sh). Mount: $WORKSPACE"
-    echo "  Control panel: Use tui_lucy.py to start"
-    echo "  Rosbridge on host: port ${PORT_ROSBRIDGE}"
-    echo ""
-    echo "  Typical launches (or use tui_lucy.py):"
-    echo "    • Gazebo + RViz  ->  ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
-    echo "    • RViz           ->  ros2 launch lucy_bringup lucy.launch.py rviz:=true"
-    CONTAINER_SCRIPT="$INTERACTIVE_CONTAINER_SCRIPT"
-  else
-    echo "Starting Lucy stack: RViz + Gazebo (set DEV=true for an interactive shell)."
-    echo "  Control panel: Use tui_lucy.py to start"
-    echo "  Rosbridge on host: port ${PORT_ROSBRIDGE}"
-    echo "  Launching: $LAUNCH_GAZEBO_RVIZ_BRIDGE_CP"
-    CONTAINER_SCRIPT="$NORMAL_CONTAINER_SCRIPT"
-  fi
+  CONTAINER_SCRIPT="$INTERACTIVE_CONTAINER_SCRIPT"
   docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
+    --name lucy_dev \
     "${DOCKER_PORT_ARGS[@]}" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \
@@ -170,6 +168,7 @@ if [ $# -eq 0 ]; then
     "$IMAGE_NAME" -c "$CONTAINER_SCRIPT"
 else
   docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
+    --name lucy_dev \
     "${DOCKER_PORT_ARGS[@]}" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \
