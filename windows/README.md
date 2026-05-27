@@ -4,27 +4,22 @@ This directory contains a Windows-native version of the main TUI (`Lucy.py`). It
 
 ## How it Works
 
-The script is designed to be run from a **Git Bash** terminal. It executes the project's `.sh` scripts (`install.sh`, `launch_lucy.sh`) directly using the bash interpreter that comes with Git for Windows.
+The script is a standalone Python application that calls `git.exe` and `docker.exe` directly. It does not have any external dependencies and can be run in a standard Windows Command Prompt or PowerShell.
 
-If the script is run outside of Git Bash, it will attempt to fall back to using **WSL (Windows Subsystem for Linux)**.
+It can also be compiled into a single `.exe` file using a tool like PyInstaller.
 
 ## Prerequisites
 
-1.  **Git for Windows**: You must have Git for Windows installed, which includes Git Bash.
-2.  **Docker Desktop**: Ensure Docker Desktop for Windows is installed and running.
-3.  **Python 3**: Python must be installed on your Windows system.
-4.  **questionary library**: This script depends on the `questionary` library to create the interactive command-line interface.
-
-    Install it using pip:
-    ```bash
-    pip install questionary
-    ```
+1.  **Python 3**: Must be installed and in your system's PATH.
+2.  **Git for Windows**: Must be installed and in your system's PATH.
+3.  **Docker Desktop**: Must be installed and running.
 
 ## Usage
 
-1.  **Open Git Bash**: Open a Git Bash terminal.
-2.  **Navigate to the project root**: `cd /path/to/lucy_ws`
-3.  **Run the script**:
-    ```bash
-    python windows/Lucy.py
-    ```
+From the project root, run the script using Python:
+
+```bash
+python windows/Lucy.py
+```
+
+You will be presented with a simple numbered menu to manage the workspace.

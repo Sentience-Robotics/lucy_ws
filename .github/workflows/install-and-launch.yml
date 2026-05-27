@@ -70,3 +70,28 @@ jobs:
       # Single command in the container -> bypasses the control-panel / Gazebo / RViz auto-launch.
       - name: Launch smoke test (headless, no TTY)
         run: ./launch_lucy.sh --headless ros2 doctor --report
+
+  build-windows-exe:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    needs: install-and-launch # Optional: run only if the main tests pass
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build the executable
+        run: pyinstaller --onefile --name Lucy windows/Lucy.py
+
+      - name: Upload the executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lucy-windows-exe
+          path: dist/Lucy.exe

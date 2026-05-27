@@ -1,27 +1,33 @@
 # This script provides a native Windows TUI for managing the Lucy workspace.
 # It replicates the logic of the .sh scripts by calling git and docker directly.
+# This script is designed to be compiled into a standalone .exe file.
 #
-# PREREQUISITES:
+# PREREQUISITES for running from source:
 # 1. Python 3
 # 2. Git for Windows (must be in the system's PATH)
 # 3. Docker Desktop for Windows (must be running)
-# 4. The 'questionary' library: pip install questionary
 #
 
 import os
 import subprocess
 import sys
 import json
-import questionary
 
 # --- Platform Check ---
 if sys.platform != "win32":
     print("Error: This script is designed for Windows only.", file=sys.stderr)
-    print("On Linux or macOS, please use the main './tui.py' script.", file=sys.stderr)
     sys.exit(1)
 
 # --- Configuration ---
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# When running as a PyInstaller executable, the script is extracted to a temp folder.
+# We need to determine the project root relative to the executable's location.
+if getattr(sys, 'frozen', False):
+    # Running as a compiled executable
+    PROJECT_ROOT = os.path.dirname(sys.executable)
+else:
+    # Running as a .py script
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
 REPOS_FILE = os.path.join(PROJECT_ROOT, "config", "repos.json")
 DOCKERFILE = os.path.join(PROJECT_ROOT, "Dockerfile.humble")
@@ -116,7 +122,6 @@ def build_docker_image():
 def build_workspace():
     """Runs the colcon build process inside the container."""
     print("Building workspace inside the container...")
-    # Using single quotes for the python string avoids escaping issues with the inner double quotes.
     inner_cmd = (
         'source /opt/ros/humble/setup.bash && '
         'cd /workspace && '
@@ -128,7 +133,7 @@ def build_workspace():
     )
     docker_cmd = [
         'docker', 'run', '--rm',
-        '-v', f'{WORKSPACE_DIR_HOST}:{WORKSPACE_DIR_CONTAINER}',
+        '-v', f'"{WORKSPACE_DIR_HOST}:{WORKSPACE_DIR_CONTAINER}"',
         IMAGE_NAME,
         'bash', '-c', inner_cmd
     ]
@@ -153,7 +158,7 @@ def launch_workspace():
         '--name', 'lucy_dev_win',
         '-p', '9090:9090',
         '-p', '5000:5000',
-        '-v', f'{WORKSPACE_DIR_HOST}:{WORKSPACE_DIR_CONTAINER}',
+        '-v', f'"{WORKSPACE_DIR_HOST}:{WORKSPACE_DIR_CONTAINER}"',
         IMAGE_NAME,
         'bash', '-c', container_script
     ]
@@ -164,49 +169,50 @@ def launch_workspace():
 # --- Main TUI ---
 
 def main():
-    is_dev_mode = get_dev_mode()
-
     while True:
+        is_dev_mode = get_dev_mode()
         dev_status = "ON" if is_dev_mode else "OFF"
         
-        choice = questionary.select(
-            "Lucy Workspace Manager (Native Windows)",
-            choices=[
-                f"Toggle Developer Mode (Currently: {dev_status})",
-                "Install (Full)",
-                "Rebuild (Workspace only)",
-                "Launch",
-                "Exit"
-            ],
-            use_indicator=True
-        ).ask()
-
-        if choice is None or choice == "Exit":
-            break
+        print("\n--- Lucy Workspace Manager (Native Windows) ---")
+        print(f"1. Toggle Developer Mode (Currently: {dev_status})")
+        print("2. Install (Full)")
+        print("3. Rebuild (Workspace only)")
+        print("4. Launch")
+        print("5. Exit")
         
-        if choice.startswith("Toggle"):
-            is_dev_mode = not is_dev_mode
-            set_dev_mode(is_dev_mode)
-            print(f"Developer mode set to: {'ON' if is_dev_mode else 'OFF'}")
+        try:
+            choice = input("\nEnter your choice (1-5): ").strip()
+        except KeyboardInterrupt:
+            break
 
-        elif choice == "Install (Full)":
+        if choice == '1':
+            set_dev_mode(not is_dev_mode)
+            print(f"Developer mode set to: {'ON' if not is_dev_mode else 'OFF'}")
+        
+        elif choice == '2':
             clone_or_update_repos()
             build_docker_image()
             build_workspace()
             print("--- Full install complete! ---")
-
-        elif choice == "Rebuild (Workspace only)":
+        
+        elif choice == '3':
             build_workspace()
             print("--- Workspace rebuild complete! ---")
-
-        elif choice == "Launch":
+        
+        elif choice == '4':
             launch_workspace()
-
-        if choice != "Launch":
-            print("\nPress Enter to return to the menu.")
-            input()
+            
+        elif choice == '5':
+            break
+        
+        else:
+            print("Invalid choice, please try again.")
+            
+        if choice != '4' and choice != '5':
+            input("\nPress Enter to continue...")
 
 if __name__ == "__main__":
+    # This needs to be at the top level for PyInstaller to see it.
     os.chdir(PROJECT_ROOT)
     try:
         main()
