@@ -4,7 +4,7 @@
 #
 # PREREQUISITES for running from source:
 # 1. Python 3
-# 2. Git for Windows (must be in the system's PATH)
+# 2. Git for Windows (must be in your PATH)
 # 3. Docker Desktop for Windows (must be running)
 #
 
@@ -85,13 +85,25 @@ def set_dev_mode(is_enabled):
         if not dev_found:
             f.write(f"DEV={str(is_enabled).lower()}\n")
 
+def _format_volume_mapping(host_path, container_path):
+    """
+    Return a Docker -v mapping string without extra quotes.
+    Normalize host path to an absolute path and use forward slashes to avoid
+    passing literal quote characters into the docker CLI.
+    """
+    host_abs = os.path.abspath(host_path)
+    # Use forward slashes to reduce issues with escaping backslashes;
+    # Docker Desktop accepts Windows-style paths with forward slashes.
+    host_normalized = host_abs.replace('\\', '/')
+    return f"{host_normalized}:{container_path}"
+
 # --- Core Logic Functions ---
 
 def clone_or_update_repos():
     """Clones or updates repositories based on repos.json."""
     is_dev = get_dev_mode()
     print(f"Developer mode is {'ON' if is_dev else 'OFF'}.")
-    
+
     with open(REPOS_FILE, 'r') as f:
         repos = json.load(f)['repos']
 
@@ -131,36 +143,118 @@ def build_workspace():
         '(cd src/lucy_control_panel && yarn install); '
         'fi'
     )
+    volume_mapping = _format_volume_mapping(WORKSPACE_DIR_HOST, WORKSPACE_DIR_CONTAINER)
+    # Do NOT include an extra 'bash' argument; the image sets ENTRYPOINT to /bin/bash.
+    # Provide '-c' so the entrypoint receives the command string correctly.
     docker_cmd = [
         'docker', 'run', '--rm',
-        '-v', f'"{WORKSPACE_DIR_HOST}:{WORKSPACE_DIR_CONTAINER}"',
+        '-v', volume_mapping,
         IMAGE_NAME,
-        'bash', '-c', inner_cmd
+        '-c', inner_cmd
     ]
     run_command(docker_cmd)
+
+
+def _docker_gui_args():
+    """Return Docker args for optional GUI/X11 forwarding."""
+    gui_display = os.environ.get('DOCKER_GUI_DISPLAY', os.environ.get('DISPLAY', '')).strip()
+    if sys.platform == 'win32' and not gui_display:
+        # Docker Desktop can reach the Windows X server at host.docker.internal.
+        gui_display = 'host.docker.internal:0'
+
+    if not gui_display:
+        return []
+
+    args = ['-e', f'DISPLAY={gui_display}', '-e', 'QT_X11_NO_MITSHM=1']
+
+    if os.environ.get('DOCKER_GUI_USE_HOST_NETWORK'):
+        if sys.platform == 'win32':
+            print("WARNING: DOCKER_GUI_USE_HOST_NETWORK is not supported on Windows; using DISPLAY only.")
+            return args
+        return ['--network=host', '-e', 'DISPLAY=:0', '-e', 'QT_X11_NO_MITSHM=1']
+
+    if sys.platform == 'win32':
+        if 'host.docker.internal' in gui_display:
+            args.extend(['--add-host', 'host.docker.internal:host-gateway'])
+        return args
+
+    return args + ['-v', '/tmp/.X11-unix:/tmp/.X11-unix:rw']
+
+
+def _parse_display_host_port(display_value):
+    if display_value.startswith(':'):
+        return 'localhost', 6000 + int(display_value[1:].split('.')[0])
+    host, _, display_str = display_value.rpartition(':')
+    if not host:
+        host = 'localhost'
+    try:
+        display_num = int(display_str)
+    except ValueError:
+        display_num = 0
+    return host, 6000 + display_num
+
+
+def _docker_gui_diagnostics(gui_display, gui_args):
+    print("--- GUI diagnostics ---")
+    print(f"DISPLAY value used inside the container: {gui_display}")
+    host, port = _parse_display_host_port(gui_display)
+    print(f"Checking TCP connectivity to X server at {host}:{port}...")
+
+    python_check = (
+        "import os, socket, sys\n"
+        "display = os.environ.get('DISPLAY', '')\n"
+        "print('container DISPLAY=' + display)\n"
+        f"host = '{host}'\n"
+        f"port = {port}\n"
+        "try:\n"
+        "    s = socket.create_connection((host, port), timeout=3)\n"
+        "    print('OK: connected to', host, port)\n"
+        "    s.close()\n"
+        "except Exception as e:\n"
+        "    print('FAIL: could not connect to', host, port, e)\n"
+        "    sys.exit(1)\n"
+    )
+
+    docker_cmd = ['docker', 'run', '--rm'] + gui_args + [IMAGE_NAME, '-c', f'python3 -c "{python_check}"']
+    run_command(docker_cmd, check=False)
+
 
 def launch_workspace():
     """Launches the main tmux session in the container."""
     print("Launching workspace...")
-    
+
     container_script = (
-        'source /opt/ros/humble/setup.bash && '
-        'cd /workspace && source install/setup.bash && '
-        'tmux start-server && '
+        "source /opt/ros/humble/setup.bash && "
+        "cd /workspace && source install/setup.bash && "
+        "tmux start-server && "
         "if ! tmux has-session -t lucy_ws 2>/dev/null; then "
-        "tmux new-session -d -s lucy_ws -n 'Lucy Workspace' 'launcher'; "
-        'fi && '
-        'tmux attach-session -t lucy_ws'
+        "tmux new-session -d -s lucy_ws -n 'Lucy Workspace' 'python3 /workspace/launcher.py'; "
+        "fi && "
+        "tmux attach-session -t lucy_ws"
     )
 
+    volume_mapping = _format_volume_mapping(WORKSPACE_DIR_HOST, WORKSPACE_DIR_CONTAINER)
+    gui_args = _docker_gui_args()
+    display_value = os.environ.get('DOCKER_GUI_DISPLAY', os.environ.get('DISPLAY', ''))
+    if sys.platform == 'win32' and not display_value:
+        display_value = 'host.docker.internal:0'
+
+    if gui_args:
+        print(f"Enabling GUI forwarding with DISPLAY={display_value}")
+        _docker_gui_diagnostics(display_value, gui_args)
+    else:
+        print("No DISPLAY configured; running without GUI.")
+
+    # Remove the extra 'bash' token; pass '-c' so the ENTRYPOINT (/bin/bash) runs the script.
     docker_cmd = [
         'docker', 'run', '-it', '--rm',
         '--name', 'lucy_dev_win',
         '-p', '9090:9090',
         '-p', '5000:5000',
-        '-v', f'"{WORKSPACE_DIR_HOST}:{WORKSPACE_DIR_CONTAINER}"',
+        '-v', volume_mapping,
+    ] + gui_args + [
         IMAGE_NAME,
-        'bash', '-c', container_script
+        '-c', container_script
     ]
     
     run_command(docker_cmd, interactive=True)

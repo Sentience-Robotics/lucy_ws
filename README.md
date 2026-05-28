@@ -22,6 +22,8 @@ From the repository root, run the manager for your platform:
 | **Linux / macOS** | `python3 Lucy.py`                                                  |
 | **Windows** | `python windows/Lucy.py` (See [Windows README](windows/README.md)) |
 
+> The windows installation require the installation of a 3rd party software, as a Windows X Server is needed.
+
 The manager includes a **Developer Mode** toggle. When ON, it configures the installer to pull repositories using SSH instead of HTTP.
 
 ### Using the Workspace

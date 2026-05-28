@@ -13,6 +13,12 @@ It can also be compiled into a single `.exe` file using a tool like PyInstaller.
 1.  **Python 3**: Must be installed and in your system's PATH.
 2.  **Git for Windows**: Must be installed and in your system's PATH.
 3.  **Docker Desktop**: Must be installed and running.
+4.  **Windows X server**: Required for GUI apps such as `rqt` inside the Docker container.
+    - We recommend [VcXsrv](https://github.com/marchaesen/vcxsrv/releases).
+    - Start VcXsrv on display `0`, allow TCP connections, and disable access control if needed.
+    - Make sure Windows Firewall allows port `6000`.
+
+> If you intend to solely use the control panel visualizer alongside commande lines tools, you can skip the installation of a third-party Windows X Server.
 
 ## Usage
 
