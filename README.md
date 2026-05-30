@@ -2,6 +2,11 @@
 
 Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Humble, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host (plus **`xhost`** on Linux for GUI forwarding).
 
+## Requirements
+
+- Python3
+- Docker
+
 ## Install
 
 > For UNIX based system:

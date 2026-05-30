@@ -268,10 +268,11 @@ def main():
         dev_status = "ON" if is_dev_mode else "OFF"
         
         print("\n--- Lucy Workspace Manager (Native Windows) ---")
-        print(f"1. Toggle Developer Mode (Currently: {dev_status})")
-        print("2. Install (Full)")
-        print("3. Rebuild (Workspace only)")
-        print("4. Launch")
+        print("1. Install (Full)")
+        print("2. Rebuild (Workspace only)")
+        print("3. Launch")
+        print("---------------------------------------------")
+        print(f"4. Toggle Developer Mode (Currently: {dev_status})")
         print("5. Exit")
         
         try:
@@ -280,29 +281,38 @@ def main():
             break
 
         if choice == '1':
-            set_dev_mode(not is_dev_mode)
-            print(f"Developer mode set to: {'ON' if not is_dev_mode else 'OFF'}")
-        
+            try:
+                clone_or_update_repos()
+                build_docker_image()
+                build_workspace()
+                print("--- Full install complete! ---")
+                input("\nPress Enter to continue...")
+            except Exception as e:
+                print(f"Install failed: {e}")
+                input("\nPress Enter to exit...")
+
         elif choice == '2':
-            clone_or_update_repos()
-            build_docker_image()
-            build_workspace()
-            print("--- Full install complete! ---")
-        
+            try:
+                build_workspace()
+                print("--- Workspace rebuild complete! ---")
+                input("\nPress Enter to continue...")
+            except Exception as e:
+                print(f"Rebuild failed: {e}")
+                input("\nPress Enter to exit...")
+
         elif choice == '3':
-            build_workspace()
-            print("--- Workspace rebuild complete! ---")
-        
-        elif choice == '4':
             launch_workspace()
             
+        elif choice == '4':
+            set_dev_mode(not is_dev_mode)
+            print(f"Developer mode set to: {'ON' if not is_dev_mode else 'OFF'}")
+            input("\nPress Enter to continue...")
+
         elif choice == '5':
             break
         
         else:
             print("Invalid choice, please try again.")
-            
-        if choice != '4' and choice != '5':
             input("\nPress Enter to continue...")
 
 if __name__ == "__main__":

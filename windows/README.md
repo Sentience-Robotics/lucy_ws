@@ -29,3 +29,11 @@ python windows/Lucy.py
 ```
 
 You will be presented with a simple numbered menu to manage the workspace.
+
+## Terminal choice
+
+To run the project, you will need to have access to a terminal, you have multiple choices:
+
+- Default "command" application, will require `windows/Lucy.py`
+- WSL, you will use the default `Lucy.py`. Be sure to enable WSL support in docker if you are using docker desktop
+- Git bash, you will use the default `Lucy.py`.

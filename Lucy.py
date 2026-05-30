@@ -70,7 +70,7 @@ def main_tui(stdscr):
 
     is_dev_mode = get_dev_mode()
     current_idx = 0
-    options = ["Developer Mode", "Install", "Rebuild", "Launch", "Exit"]
+    options = ["Install/Update", "Rebuild", "Launch", "---", "Exit", "---", "Developer Mode"]
 
     while True:
         stdscr.clear()
@@ -79,6 +79,10 @@ def main_tui(stdscr):
         stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
 
         for i, option in enumerate(options):
+            if option == "---":
+                stdscr.addstr(2 + i, 4, "----------------------")
+                continue
+
             prefix = "> " if current_idx == i else "  "
             
             if option == "Developer Mode":
@@ -93,21 +97,25 @@ def main_tui(stdscr):
         key = stdscr.getch()
 
         if key == curses.KEY_UP:
-            current_idx = (current_idx - 1) % len(options)
+            current_idx = (current_idx - 1 + len(options)) % len(options)
+            if options[current_idx] == "---":
+                current_idx = (current_idx - 1 + len(options)) % len(options)
         elif key == curses.KEY_DOWN:
             current_idx = (current_idx + 1) % len(options)
+            if options[current_idx] == "---":
+                current_idx = (current_idx + 1) % len(options)
         elif key in [ord(' '), ord('\n')]:
             selected_option = options[current_idx]
 
             if selected_option == "Developer Mode":
                 is_dev_mode = not is_dev_mode
                 set_dev_mode(is_dev_mode)
-            elif selected_option == "Install":
-                return {"cmd": ["./install.sh"], "interactive": False}
+            elif selected_option == "Install/Update":
+                return {"cmd": ["./install.sh"], "interactive": False, "name": "Install"}
             elif selected_option == "Rebuild":
-                return {"cmd": ["./install.sh", "--build-only"], "interactive": False}
+                return {"cmd": ["./install.sh", "--build-only"], "interactive": False, "name": "Rebuild"}
             elif selected_option == "Launch":
-                return {"cmd": ["./launch_lucy.sh"], "interactive": True}
+                return {"cmd": ["./launch_lucy.sh"], "interactive": True, "name": "Launch"}
             elif selected_option == "Exit":
                 return None
 
@@ -123,8 +131,12 @@ if __name__ == "__main__":
     if task:
         rc = run_command(task["cmd"], interactive=task.get("interactive", False))
         if not task.get("interactive", False):
-            print(f"--- Command finished with exit code {rc} ---")
-            print("Press Enter to exit.")
+            task_name = task.get("name")
+            if task_name == "Install" and rc == 0:
+                print("Press Enter to continue.")
+            else:
+                print(f"--- Command finished with exit code {rc} ---")
+                print("Press Enter to exit.")
             input()
 
     sys.exit(0)
