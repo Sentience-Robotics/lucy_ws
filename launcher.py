@@ -64,19 +64,26 @@ class Package:
         self.command = data.get('command', '')
         self.lifecycle_hooks = data.get('lifecycle_hooks', {})
         self.selected = data.get('default_on', False)
+        
+        # New property to store the actual running state
+        self.is_running = False
         self.update_running_status(running_modifiers)
+        
+        # Initialize selected state to match running state initially
+        if self.is_running:
+            self.selected = True
 
     def update_running_status(self, running_modifiers):
         if self.is_complex_command():
-            self.selected = run_shell_command(self.command['is_running'], capture_output=True)
+            self.is_running = run_shell_command(self.command['is_running'], capture_output=True)
         elif self.type == 'modifier':
-            self.selected = self.id in running_modifiers
+            self.is_running = self.id in running_modifiers
         elif self.type == 'core':
-            self.selected = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
-            if not self.selected:
+            self.is_running = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
+            if not self.is_running:
                 save_state({"modifiers": []})
         elif self.type in ['tool', 'interface']:
-             self.selected = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
+             self.is_running = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
 
     def is_complex_command(self):
         return isinstance(self.command, dict)
@@ -174,27 +181,48 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
 
 def apply_changes(state):
     last_launched_window = None
-    for pkg in state.packages:
-        if pkg.is_complex_command():
-            was_running = run_shell_command(pkg.command['is_running'], capture_output=True)
-            if not pkg.selected and was_running:
-                run_shell_command(pkg.command['stop'])
-        elif pkg.type == 'modifier':
-             if not pkg.selected and 'stop' in pkg.lifecycle_hooks:
-                  run_shell_command(pkg.lifecycle_hooks['stop'])
-        elif pkg.type == 'core' and not pkg.selected:
-             run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
-             save_state({"modifiers": []})
-        elif pkg.type in ['tool', 'interface'] and not pkg.selected:
-            run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+    core_pkg = state.get_by_id('core')
+    
+    # Check if core modifiers have changed
+    modifiers_changed = False
+    if core_pkg and core_pkg.selected:
+        selected_modifier_ids = set(p.id for p in state.packages if p.type == 'modifier' and p.selected)
+        running_modifier_ids = set(p.id for p in state.packages if p.type == 'modifier' and p.is_running)
+        if selected_modifier_ids != running_modifier_ids:
+            modifiers_changed = True
 
+    # Force core restart if it's selected but modifiers changed
+    if modifiers_changed and core_pkg and core_pkg.selected:
+         run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
+         save_state({"modifiers": []})
+         # Update state to reflect it's stopped so it gets restarted
+         core_pkg.is_running = False
+         for mod in state.packages:
+             if mod.type == 'modifier':
+                 if mod.is_running and 'stop' in mod.lifecycle_hooks:
+                     run_shell_command(mod.lifecycle_hooks['stop'])
+                 mod.is_running = False
+
+    # First Pass: Stop processes that should be turned off (or were forced off)
     for pkg in state.packages:
-         if pkg.is_complex_command():
-            was_running = run_shell_command(pkg.command['is_running'], capture_output=True)
-            if pkg.selected and not was_running:
-                run_shell_command(pkg.command['start'])
-         elif pkg.type == 'core' and pkg.selected:
+        if not pkg.selected and pkg.is_running:
+            if pkg.is_complex_command():
+                run_shell_command(pkg.command['stop'])
+            elif pkg.type == 'modifier' and 'stop' in pkg.lifecycle_hooks:
+                run_shell_command(pkg.lifecycle_hooks['stop'])
+            elif pkg.type == 'core':
                 run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
+                save_state({"modifiers": []})
+            elif pkg.type in ['tool', 'interface']:
+                run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+            pkg.is_running = False # Update local state
+
+    # Second Pass: Start processes that should be turned on
+    for pkg in state.packages:
+         if pkg.selected and not pkg.is_running:
+            if pkg.is_complex_command():
+                run_shell_command(pkg.command['start'])
+            elif pkg.type == 'core':
                 base_cmd = pkg.command
                 selected_modifiers = [p for p in state.packages if p.type == 'modifier' and p.selected]
                 modifier_args = [p.command for p in selected_modifiers]
@@ -202,10 +230,10 @@ def apply_changes(state):
                 full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
                 run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}; echo \"--- Process finished, press any key to close ---\"; read'")
                 save_state({"modifiers": modifier_ids})
-         elif pkg.type in ['tool', 'interface'] and pkg.selected:
-            run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
-            run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
-            last_launched_window = pkg.id
+            elif pkg.type in ['tool', 'interface']:
+                run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
+                last_launched_window = pkg.id
+            pkg.is_running = True # Update local state
 
     if last_launched_window:
         run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
