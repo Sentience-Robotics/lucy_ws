@@ -1,0 +1,88 @@
+{
+    "packages": [
+        {
+            "id": "core",
+            "name": "Core (Lucy Bringup)",
+            "description": "Base robot software stack",
+            "type": "core",
+            "dependencies": [],
+            "conflicts": [],
+            "command": "ros2 launch lucy_bringup lucy.launch.py",
+            "default_on": false
+        },
+        {
+            "id": "gazebo",
+            "name": "... with Simulator",
+            "description": "(Gazebo)",
+            "type": "modifier",
+            "dependencies": ["core"],
+            "conflicts": ["real"],
+            "command": "gazebo:=true",
+            "default_on": false
+        },
+        {
+            "id": "rviz",
+            "name": "... with Visualizer",
+            "description": "(RViz)",
+            "type": "modifier",
+            "dependencies": ["core"],
+            "conflicts": [],
+            "command": "rviz:=true",
+            "default_on": false
+        },
+        {
+            "id": "real",
+            "name": "... with Real Hardware",
+            "description": "(Connect to physical robot)",
+            "type": "modifier",
+            "dependencies": ["core"],
+            "conflicts": ["gazebo"],
+            "command": "real:=true",
+            "default_on": false
+        },
+        {
+            "id": "control_panel",
+            "name": "Control Panel",
+            "description": "Web-based UI (http://localhost:5000/)",
+            "type": "interface",
+            "dependencies": [],
+            "conflicts": [],
+            "command": {
+                "start": "tmux new-window -d -n control_panel 'cd /workspace/src/lucy_control_panel && yarn dev'",
+                "stop": "tmux kill-window -t lucy_ws:control_panel 2>/dev/null || true",
+                "is_running": "tmux list-windows -F '#{window_name}' | grep -q '^control_panel$'"
+            },
+            "default_on": false
+        },
+        {
+            "id": "lucy_cli",
+            "name": "Lucy CLI",
+            "description": "Command Line Interface",
+            "type": "interface",
+            "dependencies": ["core"],
+            "conflicts": [],
+            "command": "ros2 run lucy_cli tui",
+            "default_on": false
+        },
+        {
+            "id": "console",
+            "name": "Open Console",
+            "description": "Opens a new interactive terminal window",
+            "type": "tool",
+            "dependencies": [],
+            "conflicts": [],
+            "command": "echo \"To navigate, press Ctrl+B then W\" && bash -i",
+            "default_on": false
+        },
+        {
+            "id": "rqt",
+            "name": "rqt GUI",
+            "description": "Main ROS 2 GUI tool",
+            "type": "tool",
+            "dependencies": ["core"],
+            "conflicts": [],
+            "command": "rqt",
+            "default_on": false
+        }
+    ]
+}

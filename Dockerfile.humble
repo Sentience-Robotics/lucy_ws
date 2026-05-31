@@ -77,6 +77,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && npm install -g yarn \
  && rm -rf /var/lib/apt/lists/*
 
+# Setup bashrc with alias for the TUI launcher
+RUN echo "alias launcher='python3 /workspace/launcher.py'" >> ~/.bashrc
+RUN echo "alias exit=''" >> ~/.bashrc # Disable 'exit' to force launcher usage
+
 WORKDIR /workspace
 ENTRYPOINT ["/bin/bash"]
 CMD ["-c", "source /opt/ros/humble/setup.bash && exec /bin/bash"]

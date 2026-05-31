@@ -147,7 +147,7 @@ docker_workspace_install() {
   read -r -d '' inner_cmd <<'EOS' || true
 source /opt/ros/humble/setup.bash \
   && cd /workspace \
-  && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common micro_ros_agent" \
+  && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common" \
   && rm -rf build/camera_ros install/camera_ros \
   && colcon build --symlink-install \
   && if [ -f src/lucy_control_panel/package.json ]; then \
@@ -166,7 +166,7 @@ EOS
 if [ "$MODE" = "build-only" ]; then
   check_cmd docker
   docker_workspace_install
-  echo "Build complete. Run ./launch_lucy.sh to start the stack."
+  echo "Build complete. use `Launch` in `Lucy.py`"
   exit 0
 fi
 
@@ -233,4 +233,4 @@ done < <(parse_repos)
 # ----------------------------------------------------------------------------
 
 docker_workspace_install
-echo "Install complete. Run ./launch_lucy.sh to start the stack."
+echo "Install complete. Run `Launch` in `Lucy.py`"

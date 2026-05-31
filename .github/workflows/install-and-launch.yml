@@ -8,12 +8,14 @@
 # - The launch smoke test uses `./launch_lucy.sh --headless <command>`, which runs a
 #   single command inside the container (no control panel, no auto Gazebo/RViz).
 
-name: Install and launch
+name: Install, Launch & Release
 
 on:
   workflow_dispatch:
   push:
     branches: [master, dev]
+    tags:
+      - 'v*' # Run on version tags like v1.0, v2.3.4
   pull_request:
     branches: [master, dev]
 
@@ -70,3 +72,33 @@ jobs:
       # Single command in the container -> bypasses the control-panel / Gazebo / RViz auto-launch.
       - name: Launch smoke test (headless, no TTY)
         run: ./launch_lucy.sh --headless ros2 doctor --report
+
+  build-and-release-windows-exe:
+    name: Build and Release Windows Executable
+    # Only run this job when a new tag is pushed
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    needs: install-and-launch
+    permissions:
+      contents: write # Required to create a release and upload assets
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build the executable
+        run: pyinstaller --onefile --name Lucy windows/Lucy.py
+
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Lucy.exe
+          # This creates a draft release. Remove `draft: true` to publish it automatically.
+          draft: true
