@@ -281,6 +281,9 @@ def main():
             break
 
         if choice == '1':
+            launch_workspace()
+
+        elif choice == '2':
             try:
                 clone_or_update_repos()
                 build_docker_image()
@@ -291,7 +294,7 @@ def main():
                 print(f"Install failed: {e}")
                 input("\nPress Enter to exit...")
 
-        elif choice == '2':
+        elif choice == '3':
             try:
                 build_workspace()
                 print("--- Workspace rebuild complete! ---")
@@ -299,9 +302,6 @@ def main():
             except Exception as e:
                 print(f"Rebuild failed: {e}")
                 input("\nPress Enter to exit...")
-
-        elif choice == '3':
-            launch_workspace()
             
         elif choice == '4':
             set_dev_mode(not is_dev_mode)

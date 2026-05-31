@@ -126,7 +126,7 @@ set -e
 source /opt/ros/humble/setup.bash
 cd /workspace
 if [[ ! -f install/setup.bash ]]; then
-  echo "Workspace not built. Run ./install.sh (or ./install.sh --build-only) on the host first." >&2
+  echo "Workspace not built. Run Install/Update via Lucy.py" >&2
   exit 1
 fi
 source install/setup.bash

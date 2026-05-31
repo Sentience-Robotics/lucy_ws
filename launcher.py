@@ -12,6 +12,16 @@ STATE_FILE = "/tmp/launcher_state.json"
 MIN_TERM_HEIGHT = 22
 MIN_TERM_WIDTH = 65
 
+def get_dev_mode():
+    env_path = "/workspace/.env"
+    if not os.path.exists(env_path):
+        return False
+    with open(env_path, "r") as f:
+        for line in f:
+            if line.strip().startswith("DEV="):
+                return line.strip().split("=")[1].lower() == "true"
+    return False
+
 def is_in_docker():
     return os.path.exists('/.dockerenv')
 
@@ -107,7 +117,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
     h, w = stdscr.getmaxyx()
     title = "Lucy Control Center"
     stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
-    stdscr.addstr(h - 1, 2, "Enter: Apply | Space: Toggle | X: Stop All & Exit Docker", curses.A_DIM)
+    stdscr.addstr(h - 1, 2, "Enter: Apply | Space: Toggle | X: Stop All & Exit Docker", curses.A_BOLD)
 
     if status_msg:
         stdscr.addstr(h - 2, 2, status_msg, curses.A_BOLD)
@@ -215,10 +225,30 @@ def main(stdscr):
     error_msg = None
     status_msg = None
 
+    # On first launch in production mode, start default services
+    if not get_dev_mode():
+        core_pkg = state.get_by_id('core')
+        cp_pkg = state.get_by_id('control_panel')
+        
+        should_apply_defaults = False
+        if core_pkg and not core_pkg.selected:
+            core_pkg.selected = True
+            should_apply_defaults = True
+        if cp_pkg and not cp_pkg.selected:
+            cp_pkg.selected = True
+            should_apply_defaults = True
+
+        if should_apply_defaults:
+            apply_changes(state)
+            status_msg = "Starting default services for production mode..."
+            # Reload state to reflect that services are now running
+            state = LauncherState(load_config())
+
+
     while True:
         display_list = draw_tui(stdscr, state, current_idx, error_msg, status_msg)
         error_msg = None
-        status_msg = None
+        status_msg = None # Reset status message after one display
 
         key = stdscr.getch()
 
@@ -232,6 +262,7 @@ def main(stdscr):
         elif key == ord('\n'):
             apply_changes(state)
             status_msg = "Configuration Applied!"
+            # Reload state to get the latest running status
             state = LauncherState(load_config())
         elif key in [ord('x'), ord('X')]:
             h, w = stdscr.getmaxyx()

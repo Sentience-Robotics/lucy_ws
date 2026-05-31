@@ -70,7 +70,7 @@ def main_tui(stdscr):
 
     is_dev_mode = get_dev_mode()
     current_idx = 0
-    options = ["Install/Update", "Rebuild", "Launch", "---", "Exit", "---", "Developer Mode"]
+    options = ["Launch", "---", "Install/Update", "Rebuild", "Exit", "---", "Developer Mode"]
 
     while True:
         stdscr.clear()
@@ -120,23 +120,37 @@ def main_tui(stdscr):
                 return None
 
 if __name__ == "__main__":
-    task = None
-    try:
-        # curses.wrapper handles all the init/deinit of the terminal
-        task = curses.wrapper(main_tui)
-    except KeyboardInterrupt:
-        print("\nExiting.")
-        sys.exit(0)
+    while True:
+        task = None
+        try:
+            # curses.wrapper handles all the init/deinit of the terminal
+            task = curses.wrapper(main_tui)
+        except KeyboardInterrupt:
+            print("\nExiting.")
+            sys.exit(0)
 
-    if task:
+        if not task:
+            # User selected Exit
+            break
+
         rc = run_command(task["cmd"], interactive=task.get("interactive", False))
-        if not task.get("interactive", False):
-            task_name = task.get("name")
-            if task_name == "Install" and rc == 0:
-                print("Press Enter to continue.")
-            else:
-                print(f"--- Command finished with exit code {rc} ---")
-                print("Press Enter to exit.")
+
+        if task.get("interactive", False):
+            # For interactive tasks like "Launch", when they finish, we exit the manager.
+            print(f"--- Session finished with exit code {rc} ---")
+            break
+        
+        # For non-interactive tasks
+        task_name = task.get("name")
+        if task_name in ["Install", "Rebuild"] and rc == 0:
+            print(f"\n--- Task '{task_name}' finished successfully. ---")
+            print("Press Enter to return to the menu.")
             input()
+            # Loop back to show the TUI again
+        else:
+            print(f"\n--- Task '{task_name}' finished with exit code {rc} ---")
+            print("Press Enter to exit.")
+            input()
+            break
 
     sys.exit(0)

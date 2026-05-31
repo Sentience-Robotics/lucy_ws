@@ -29,7 +29,13 @@ From the repository root, run the manager for your platform:
 
 > The windows installation require the installation of a 3rd party software, as a Windows X Server is needed.
 
-The manager includes a **Developer Mode** toggle. When ON, it configures the installer to pull repositories using SSH instead of HTTP.
+### Developer mode
+
+The manager includes a **Developer Mode** toggle. When ON: 
+- repositories are pulled using SSH instead of HTTP
+- The core & control panel aren't launch automatically
+
+This setting is stored in a .env file
 
 ### Using the Workspace
 
