@@ -166,7 +166,7 @@ EOS
 if [ "$MODE" = "build-only" ]; then
   check_cmd docker
   docker_workspace_install
-  echo "Build complete. use `Launch` in `Lucy.py`"
+  echo "Build complete. use 'Launch' in 'Lucy.py'"
   exit 0
 fi
 
@@ -233,4 +233,4 @@ done < <(parse_repos)
 # ----------------------------------------------------------------------------
 
 docker_workspace_install
-echo "Install complete. Run `Launch` in `Lucy.py`"
+echo "Install complete. Run 'Launch' in 'Lucy.py'"
