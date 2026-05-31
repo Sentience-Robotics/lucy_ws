@@ -5,6 +5,9 @@ import os
 import subprocess
 import sys
 
+MIN_TERM_HEIGHT = 15
+MIN_TERM_WIDTH = 65
+
 def get_dev_mode():
     if not os.path.exists(".env"):
         return False
@@ -61,6 +64,10 @@ def run_command(command, interactive=False):
 
 def main_tui(stdscr):
     """The main curses TUI function. Returns the command to run."""
+    h, w = stdscr.getmaxyx()
+    if h < MIN_TERM_HEIGHT or w < MIN_TERM_WIDTH:
+        return "TerminalTooSmall"
+
     curses.curs_set(0)
     stdscr.nodelay(0)
     stdscr.timeout(-1)
@@ -120,14 +127,36 @@ def main_tui(stdscr):
                 return None
 
 if __name__ == "__main__":
+    # This initial check is done before curses.wrapper to provide a clean error message
+    # without the screen flicker of initializing and de-initializing curses.
+    def check_initial_size():
+        stdscr = curses.initscr()
+        h, w = stdscr.getmaxyx()
+        curses.endwin()
+        return h >= MIN_TERM_HEIGHT and w >= MIN_TERM_WIDTH
+
+    if not check_initial_size():
+        print("Error: Terminal window is too small.", file=sys.stderr)
+        print(f"Please increase the terminal size to at least {MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} characters.", file=sys.stderr)
+        sys.exit(1)
+
     while True:
         task = None
         try:
-            # curses.wrapper handles all the init/deinit of the terminal
             task = curses.wrapper(main_tui)
         except KeyboardInterrupt:
             print("\nExiting.")
             sys.exit(0)
+        except curses.error as e:
+            print(f"A terminal error occurred: {e}", file=sys.stderr)
+            print("This might be due to resizing the window. Please restart.", file=sys.stderr)
+            sys.exit(1)
+
+        if isinstance(task, str) and task == "TerminalTooSmall":
+             # This case is handled by the pre-check, but as a fallback.
+            print("Error: Terminal window is too small.", file=sys.stderr)
+            print(f"Please increase the terminal size to at least {MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} characters.", file=sys.stderr)
+            sys.exit(1)
 
         if not task:
             # User selected Exit
@@ -136,17 +165,14 @@ if __name__ == "__main__":
         rc = run_command(task["cmd"], interactive=task.get("interactive", False))
 
         if task.get("interactive", False):
-            # For interactive tasks like "Launch", when they finish, we exit the manager.
             print(f"--- Session finished with exit code {rc} ---")
             break
         
-        # For non-interactive tasks
         task_name = task.get("name")
         if task_name in ["Install", "Rebuild"] and rc == 0:
             print(f"\n--- Task '{task_name}' finished successfully. ---")
             print("Press Enter to return to the menu.")
             input()
-            # Loop back to show the TUI again
         else:
             print(f"\n--- Task '{task_name}' finished with exit code {rc} ---")
             print("Press Enter to exit.")

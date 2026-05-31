@@ -64,7 +64,6 @@ class Package:
         self.command = data.get('command', '')
         self.lifecycle_hooks = data.get('lifecycle_hooks', {})
         self.selected = data.get('default_on', False)
-
         self.update_running_status(running_modifiers)
 
     def update_running_status(self, running_modifiers):
@@ -94,12 +93,10 @@ class LauncherState:
     def toggle(self, pkg_id):
         pkg = self.get_by_id(pkg_id)
         if not pkg: return None
-
         if not pkg.selected:
             missing_deps = [dep for dep in pkg.dependencies if not self.get_by_id(dep).selected]
             if missing_deps:
                 return f"Needs: {', '.join(missing_deps)}"
-
             for conflict_id in pkg.conflicts:
                 conflict_pkg = self.get_by_id(conflict_id)
                 if conflict_pkg and conflict_pkg.selected:
@@ -112,9 +109,22 @@ class LauncherState:
             pkg.selected = False
         return None
 
-def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
-    stdscr.clear()
+def draw_too_small_message(stdscr):
     h, w = stdscr.getmaxyx()
+    stdscr.clear()
+    message = "Please increase terminal size"
+    message2 = f"({MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} required)"
+    stdscr.addstr(h // 2 - 1, max(0, (w - len(message)) // 2), message, curses.A_BOLD)
+    stdscr.addstr(h // 2, max(0, (w - len(message2)) // 2), message2, curses.A_DIM)
+    stdscr.refresh()
+
+def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
+    h, w = stdscr.getmaxyx()
+    if h < MIN_TERM_HEIGHT or w < MIN_TERM_WIDTH:
+        draw_too_small_message(stdscr)
+        return None
+
+    stdscr.clear()
     title = "Lucy Control Center"
     stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
     stdscr.addstr(h - 1, 2, "Enter: Apply | Space: Toggle | X: Stop All & Exit Docker", curses.A_BOLD)
@@ -164,8 +174,6 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
 
 def apply_changes(state):
     last_launched_window = None
-
-    # First Pass: Stop processes that should be turned off
     for pkg in state.packages:
         if pkg.is_complex_command():
             was_running = run_shell_command(pkg.command['is_running'], capture_output=True)
@@ -174,14 +182,12 @@ def apply_changes(state):
         elif pkg.type == 'modifier':
              if not pkg.selected and 'stop' in pkg.lifecycle_hooks:
                   run_shell_command(pkg.lifecycle_hooks['stop'])
-
         elif pkg.type == 'core' and not pkg.selected:
              run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
              save_state({"modifiers": []})
         elif pkg.type in ['tool', 'interface'] and not pkg.selected:
             run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
 
-    # Second Pass: Start processes that should be turned on
     for pkg in state.packages:
          if pkg.is_complex_command():
             was_running = run_shell_command(pkg.command['is_running'], capture_output=True)
@@ -205,12 +211,8 @@ def apply_changes(state):
         run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
 
 def main(stdscr):
-    h, w = stdscr.getmaxyx()
-    if h < MIN_TERM_HEIGHT or w < MIN_TERM_WIDTH:
-        return "TerminalTooSmall", None
-
     curses.curs_set(0)
-    stdscr.nodelay(0)
+    stdscr.nodelay(0) 
     stdscr.timeout(-1)
     curses.start_color()
     curses.use_default_colors()
@@ -225,11 +227,9 @@ def main(stdscr):
     error_msg = None
     status_msg = None
 
-    # On first launch in production mode, start default services
     if not get_dev_mode():
         core_pkg = state.get_by_id('core')
         cp_pkg = state.get_by_id('control_panel')
-        
         should_apply_defaults = False
         if core_pkg and not core_pkg.selected:
             core_pkg.selected = True
@@ -237,42 +237,61 @@ def main(stdscr):
         if cp_pkg and not cp_pkg.selected:
             cp_pkg.selected = True
             should_apply_defaults = True
-
         if should_apply_defaults:
             apply_changes(state)
             status_msg = "Starting default services for production mode..."
-            # Reload state to reflect that services are now running
             state = LauncherState(load_config())
-
 
     while True:
-        display_list = draw_tui(stdscr, state, current_idx, error_msg, status_msg)
-        error_msg = None
-        status_msg = None # Reset status message after one display
+        try:
+            display_list = draw_tui(stdscr, state, current_idx, error_msg, status_msg)
+            error_msg = None
+            status_msg = None 
 
-        key = stdscr.getch()
+            if display_list is None:
+                # If display_list is None, it means the screen is too small.
+                # We switch to non-blocking getch to poll for resize events
+                stdscr.nodelay(1)
+                stdscr.timeout(100)
+                key = stdscr.getch()
+                if key != curses.KEY_RESIZE:
+                    time.sleep(0.1)
+                continue
+            else:
+                 # Normal operation, wait for input indefinitely
+                 stdscr.nodelay(0)
+                 stdscr.timeout(-1)
+                 key = stdscr.getch()
 
-        if key == curses.KEY_UP:
-            current_idx = (current_idx - 1) % len(display_list)
-        elif key == curses.KEY_DOWN:
-            current_idx = (current_idx + 1) % len(display_list)
-        elif key == ord(' '):
-            pkg_to_toggle = display_list[current_idx]
-            error_msg = state.toggle(pkg_to_toggle.id)
-        elif key == ord('\n'):
-            apply_changes(state)
-            status_msg = "Configuration Applied!"
-            # Reload state to get the latest running status
-            state = LauncherState(load_config())
-        elif key in [ord('x'), ord('X')]:
-            h, w = stdscr.getmaxyx()
-            stdscr.addstr(h - 2, 2, "Stop all processes and exit Docker? (y/n)", curses.A_BOLD | curses.color_pair(2))
-            stdscr.refresh()
-            confirm_key = stdscr.getch()
-            if confirm_key in [ord('y'), ord('Y')]:
-                return "ExitWorkspace", state
-        elif key in [ord('q'), ord('Q'), 27]:
-            return "Quit", None
+            if key == curses.KEY_RESIZE:
+                continue
+
+            if key == curses.KEY_UP:
+                current_idx = (current_idx - 1) % len(display_list)
+            elif key == curses.KEY_DOWN:
+                current_idx = (current_idx + 1) % len(display_list)
+            elif key == ord(' '):
+                pkg_to_toggle = display_list[current_idx]
+                error_msg = state.toggle(pkg_to_toggle.id)
+            elif key == ord('\n'):
+                apply_changes(state)
+                status_msg = "Configuration Applied!"
+                state = LauncherState(load_config())
+            elif key in [ord('x'), ord('X')]:
+                h, w = stdscr.getmaxyx()
+                stdscr.addstr(h - 2, 2, "Stop all processes and exit Docker? (y/n)", curses.A_BOLD | curses.color_pair(2))
+                stdscr.refresh()
+                confirm_key = stdscr.getch()
+                if confirm_key in [ord('y'), ord('Y')]:
+                    return "ExitWorkspace", state
+            elif key in [ord('q'), ord('Q'), 27]:
+                return "Quit", None
+        
+        except curses.error:
+            # This will catch errors from addstr if the window is resized
+            # between the size check and the drawing.
+            time.sleep(0.1)
+            continue
 
 if __name__ == "__main__":
     if not is_in_docker() or not is_in_tmux():
@@ -282,38 +301,24 @@ if __name__ == "__main__":
     status, state = None, None
     try:
         status, state = curses.wrapper(main)
-    except curses.error as e:
-        print(f"A terminal error occurred: {e}", file=sys.stderr)
-        sys.exit(1)
     except Exception as e:
+        # Clean up curses on any exception
+        curses.endwin()
         print(f"An unexpected error occurred: {e}", file=sys.stderr)
         sys.exit(1)
 
     if status == "ExitWorkspace":
         print("\nStopping all processes and exiting workspace...")
-        for pkg in state.packages:
-            if pkg.is_complex_command():
-                run_shell_command(pkg.command['stop'])
-            elif 'stop' in pkg.lifecycle_hooks:
-                 run_shell_command(pkg.lifecycle_hooks['stop'])
-
+        if state:
+            for pkg in state.packages:
+                if pkg.is_complex_command():
+                    run_shell_command(pkg.command['stop'])
+                elif 'stop' in pkg.lifecycle_hooks:
+                     run_shell_command(pkg.lifecycle_hooks['stop'])
         if os.path.exists(STATE_FILE):
             os.remove(STATE_FILE)
         print("Terminating tmux session...")
         time.sleep(0.5)
         run_shell_command("tmux kill-session -t lucy_ws 2>/dev/null")
-    elif status == "TerminalTooSmall":
-        print("Error: Terminal window is too small.", file=sys.stderr)
-        print(f"Please increase the terminal size to at least {MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} characters.", file=sys.stderr)
-        print("Alternatively, use the underlying shell scripts (install.sh, launch_lucy.sh).", file=sys.stderr)
-        print("\nPress any key to exit this session.", file=sys.stderr)
-        # Wait for a key press before exiting
-        curses.cbreak()
-        curses.noecho()
-        sys.stdin.read(1)
-        # Cleanly exit the tmux session
-        run_shell_command("tmux kill-session -t lucy_ws 2>/dev/null")
-        sys.exit(1)
     else:
-        # For "Quit" or other cases, just exit gracefully
         pass

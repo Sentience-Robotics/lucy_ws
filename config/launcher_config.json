@@ -18,9 +18,6 @@
             "dependencies": ["core"],
             "conflicts": ["real"],
             "command": "gazebo:=true",
-            "lifecycle_hooks": {
-                "stop": "pkill gzserver || true"
-            },
             "default_on": false
         },
         {
