@@ -4,6 +4,7 @@ import curses
 import os
 import sys
 import subprocess
+import threading
 import time
 import json
 
@@ -16,9 +17,24 @@ MIN_TERM_HEIGHT = 22
 MIN_TERM_WIDTH = 65
 
 LOADING_TIMEOUT = 30  # seconds before LOADING transitions to CRASHED
+STOPPING_TIMEOUT = 30  # seconds to show STOPPING before giving up
 
 _pkg_start_times = {}   # pkg_id -> float, timestamp when start was issued
 _intended_running = set()  # pkg_ids that should be running (for crash detection)
+_pkg_stop_times = {}    # pkg_id -> float, timestamp when an async stop was issued
+
+# Tearing down the core window with `tmux kill-window` alone orphans the GUI
+# processes ros2 launch spawned (notably `gz sim`), so they keep showing on the
+# VNC desktop. Send SIGINT first for a clean ros2 launch shutdown, wait for the
+# sim/RViz to exit, force-kill any stragglers, then remove the window.
+CORE_TEARDOWN = (
+    "tmux send-keys -t lucy_ws:core C-c 2>/dev/null; "
+    "for _ in $(seq 1 12); do "
+    "pgrep -f '[g]z sim' >/dev/null 2>&1 || pgrep -x rviz2 >/dev/null 2>&1 || break; sleep 0.25; "
+    "done; "
+    "pkill -f '[g]z sim' 2>/dev/null; pkill -x rviz2 2>/dev/null; "
+    "tmux kill-window -t lucy_ws:core 2>/dev/null"
+)
 
 def get_dev_mode():
     env_path = "/workspace/.env"
@@ -79,6 +95,17 @@ def run_shell_command(cmd, capture_output=False):
     else:
         subprocess.run(cmd, shell=True)
 
+def run_shell_command_async(cmd):
+    """Fire a shell command without blocking the UI (daemon thread reaps the child).
+
+    Used for stops so the TUI can show STOPPING while a slow shutdown runs."""
+    def _target():
+        try:
+            subprocess.run(cmd, shell=True)
+        except Exception:
+            pass
+    threading.Thread(target=_target, daemon=True).start()
+
 class Package:
     def __init__(self, data, running_modifiers):
         self.id = data['id']
@@ -94,14 +121,18 @@ class Package:
         # Without it, a package is considered "ready" the instant its window exists.
         self.readiness_check = data.get('readiness_check')
         self.readiness_timeout = data.get('readiness_timeout', LOADING_TIMEOUT)
+        # GUI app that renders to the in-container VNC desktop (Gazebo/RViz/rqt):
+        # drives the "(VNC)" hint and skips the tmux auto-switch on launch.
+        self.runs_on_vnc = data.get('runs_on_vnc', False)
 
         # is_running = window/process exists; ready = readiness probe passed.
         self.is_running = False
         self.ready = False
         self.update_running_status(running_modifiers)
-        
-        # Initialize selected state to match running state initially
-        if self.is_running:
+
+        # Reflect running state as ticked — but not while it is being stopped, so an
+        # in-progress shutdown doesn't re-check the box the user just unticked.
+        if self.is_running and self.id not in _pkg_stop_times:
             self.selected = True
 
     def update_running_status(self, running_modifiers):
@@ -161,6 +192,8 @@ class LauncherState:
     def toggle(self, pkg_id):
         pkg = self.get_by_id(pkg_id)
         if not pkg: return None
+        if pkg_id in _pkg_stop_times and not pkg.selected:
+            return "Still stopping…"
         if not pkg.selected:
             missing_deps = [dep for dep in pkg.dependencies if not self.get_by_id(dep).selected]
             if missing_deps:
@@ -183,8 +216,16 @@ def get_pkg_status(pkg):
     ``pkg.is_running`` means the tmux window / process merely exists; ``pkg.ready``
     means its readiness probe passed (the stack is actually up). A package we
     started (in ``_intended_running``) that isn't ready yet shows LOADING until its
-    timeout elapses, after which it is reported CRASHED.
+    timeout elapses, after which it is reported CRASHED. A package being shut down
+    (in ``_pkg_stop_times``) shows STOPPING until its process is gone.
     """
+    if pkg.id in _pkg_stop_times:
+        if not pkg.is_running:
+            _pkg_stop_times.pop(pkg.id, None)
+            return "stopped"
+        if time.time() - _pkg_stop_times[pkg.id] < STOPPING_TIMEOUT:
+            return "stopping"
+        _pkg_stop_times.pop(pkg.id, None)  # gave up; fall through to real state
     if pkg.ready:
         _pkg_start_times.pop(pkg.id, None)
         return "running"
@@ -202,18 +243,35 @@ def get_pkg_status(pkg):
         return "crashed"
     return "stopped"
 
-def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status):
+def _vnc_hint(pkg):
+    """'(VNC)' for GUI packages that render to the in-container VNC desktop when
+    they're ticked — a reminder that their window appears in the VNC/noVNC viewer,
+    not in this terminal. Empty off the VNC desktop (e.g. native X11 on Linux)."""
+    if pkg.runs_on_vnc and pkg.selected and _env_enabled("LUCY_GUI_VNC"):
+        return "(VNC)"
+    return ""
+
+def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hint=""):
     base = f"{prefix}{indent}{checkbox} {name}"
     stdscr.addstr(y, x, base, attr)
+    col = x + len(base)
+    if hint:
+        text = f" {hint}"
+        try:
+            stdscr.addstr(y, col, text, curses.color_pair(3))  # cyan
+        except curses.error:
+            pass
+        col += len(text)
     labels = {
         "running": (" [RUNNING]", curses.color_pair(4)),
         "loading": (" [LOADING]", curses.color_pair(1)),
+        "stopping": (" [STOPPING]", curses.color_pair(1)),
         "crashed": (" [CRASHED]", curses.color_pair(2) | curses.A_BOLD),
         "stopped": (" [STOPPED]", curses.A_DIM),
     }
     status_str, status_attr = labels.get(status, (" [STOPPED]", curses.A_DIM))
     try:
-        stdscr.addstr(y, x + len(base), status_str, status_attr)
+        stdscr.addstr(y, col, status_str, status_attr)
     except curses.error:
         pass
 
@@ -258,7 +316,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
         if p.type == 'core': attr |= curses.A_BOLD
         indent = "    " if p.type == 'modifier' else ""
         status = get_pkg_status(p)
-        _draw_pkg_row(stdscr, row + i, 4, prefix, indent, checkbox, p.name, attr, status)
+        _draw_pkg_row(stdscr, row + i, 4, prefix, indent, checkbox, p.name, attr, status, _vnc_hint(p))
 
     row += len(cores_and_mods) + 1
     stdscr.addstr(row, 2, "Interfaces", curses.A_BOLD | curses.color_pair(3))
@@ -268,7 +326,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
         prefix = "> " if current_idx == list_idx else "  "
         checkbox = "[x]" if p.selected else "[ ]"
         status = get_pkg_status(p)
-        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status)
+        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status, _vnc_hint(p))
 
     row += len(interfaces) + 1
     stdscr.addstr(row, 2, "Tools", curses.A_BOLD | curses.color_pair(3))
@@ -278,7 +336,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
         prefix = "> " if current_idx == list_idx else "  "
         checkbox = "[x]" if p.selected else "[ ]"
         status = get_pkg_status(p)
-        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status)
+        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status, _vnc_hint(p))
 
     stdscr.refresh()
     return display_list
@@ -295,9 +353,11 @@ def apply_changes(state):
         if selected_modifier_ids != running_modifier_ids:
             modifiers_changed = True
 
-    # Force core restart if it's selected but modifiers changed
+    # Force core restart if it's selected but modifiers changed. Tear down
+    # synchronously (kills gz sim / RViz, not just the window) so the old sim is
+    # gone before the new core launches.
     if modifiers_changed and core_pkg and core_pkg.selected:
-         run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
+         run_shell_command(CORE_TEARDOWN)
          save_state({"modifiers": []})
          core_pkg.is_running = False
          _pkg_start_times.pop('core', None)
@@ -310,29 +370,40 @@ def apply_changes(state):
                  _pkg_start_times.pop(mod.id, None)
                  _intended_running.discard(mod.id)
 
-    # First Pass: Stop processes that should be turned off (or were forced off)
+    # First Pass: Stop processes that should be turned off (or were forced off).
+    # Stops run asynchronously so the TUI stays responsive and can show STOPPING
+    # while a slow shutdown runs; the package leaves STOPPING once its probe reports
+    # it gone. A modifier with no stop action is just marked stopped (its teardown
+    # happens via the core restart above).
     for pkg in state.packages:
         if not pkg.selected and pkg.is_running:
+            stopping = True
             if pkg.is_complex_command():
-                run_shell_command(pkg.command['stop'])
-            elif pkg.type == 'modifier' and 'stop' in pkg.lifecycle_hooks:
-                run_shell_command(pkg.lifecycle_hooks['stop'])
+                run_shell_command_async(pkg.command['stop'])
             elif pkg.type == 'core':
-                run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
+                run_shell_command_async(CORE_TEARDOWN)
                 save_state({"modifiers": []})
                 for mod in state.packages:
                     if mod.type == 'modifier':
                         _pkg_start_times.pop(mod.id, None)
                         _intended_running.discard(mod.id)
             elif pkg.type in ['tool', 'interface']:
-                run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+                run_shell_command_async(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+            elif pkg.type == 'modifier' and 'stop' in pkg.lifecycle_hooks:
+                run_shell_command_async(pkg.lifecycle_hooks['stop'])
+            else:
+                stopping = False
             _pkg_start_times.pop(pkg.id, None)
             _intended_running.discard(pkg.id)
-            pkg.is_running = False
+            if stopping:
+                _pkg_stop_times[pkg.id] = time.time()
+            else:
+                pkg.is_running = False
 
-    # Second Pass: Start processes that should be turned on
+    # Second Pass: Start processes that should be turned on (never re-launch one
+    # that is still shutting down).
     for pkg in state.packages:
-         if pkg.selected and not pkg.is_running:
+         if pkg.selected and not pkg.is_running and pkg.id not in _pkg_stop_times:
             if pkg.is_complex_command():
                 run_shell_command(pkg.command['start'])
                 _pkg_start_times[pkg.id] = time.time()
@@ -352,7 +423,10 @@ def apply_changes(state):
                     _intended_running.add(mod.id)
             elif pkg.type in ['tool', 'interface']:
                 run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
-                last_launched_window = pkg.id
+                # Don't auto-switch to GUI tools that render on the VNC desktop
+                # (e.g. rqt) — their window is in the viewer, not this terminal.
+                if not pkg.runs_on_vnc:
+                    last_launched_window = pkg.id
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
             pkg.is_running = True
@@ -420,7 +494,7 @@ def main(stdscr):
                 # Poll fast while something is still coming up, slow once everything
                 # we launched is up (so a later crash still surfaces), and block
                 # entirely when nothing is running. Re-read state on each tick.
-                if _pkg_start_times:
+                if _pkg_start_times or _pkg_stop_times:
                     poll_ms = 1000
                 elif _intended_running:
                     poll_ms = 5000
