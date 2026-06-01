@@ -26,3 +26,6 @@ __pycache__/
 
 # Docker platform choice (./install.sh --arm)
 .lucy-docker-platform
+
+# Launcher remembered tick selection (persisted across container restarts)
+.lucy_launcher_state.json

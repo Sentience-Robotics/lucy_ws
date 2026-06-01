@@ -9,6 +9,9 @@ import json
 
 CONFIG_FILE = "/workspace/config/launcher_config.json"
 STATE_FILE = "/tmp/launcher_state.json"
+# Persisted across container restarts (lives on the bind-mounted workspace, not
+# /tmp): the set of packages the user last applied, so ticks are remembered.
+SELECTION_FILE = "/workspace/.lucy_launcher_state.json"
 MIN_TERM_HEIGHT = 22
 MIN_TERM_WIDTH = 65
 
@@ -51,6 +54,24 @@ def load_state():
 def save_state(state_data):
     with open(STATE_FILE, 'w') as f:
         json.dump(state_data, f)
+
+def load_selection():
+    """Set of package ids the user last applied, or None if never saved."""
+    if not os.path.exists(SELECTION_FILE):
+        return None
+    try:
+        with open(SELECTION_FILE) as f:
+            return set(json.load(f).get("selected", []))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+def save_selection(selected_ids):
+    """Persist the applied tick selection so it is restored on the next launch."""
+    try:
+        with open(SELECTION_FILE, 'w') as f:
+            json.dump({"selected": sorted(selected_ids)}, f)
+    except OSError:
+        pass
 
 def run_shell_command(cmd, capture_output=False):
     if capture_output:
@@ -339,6 +360,15 @@ def apply_changes(state):
     if last_launched_window:
         run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
 
+def restore_selection(state):
+    """Pre-tick the packages the user last applied (persisted), so they don't have
+    to re-select them after a restart. Running packages stay ticked regardless."""
+    saved = load_selection()
+    if saved is None:
+        return
+    for pkg in state.packages:
+        pkg.selected = (pkg.id in saved) or pkg.is_running
+
 def main(stdscr):
     curses.curs_set(0)
     stdscr.nodelay(0) 
@@ -353,24 +383,23 @@ def main(stdscr):
         curses.init_pair(4, curses.COLOR_GREEN, -1)
 
     state = LauncherState(load_config())
+    restore_selection(state)
     current_idx = 0
     error_msg = None
     status_msg = None
 
     if not get_dev_mode():
+        # Production: always ensure core + control panel, then start everything
+        # selected (including any restored selection).
         core_pkg = state.get_by_id('core')
         cp_pkg = state.get_by_id('control_panel')
-        should_apply_defaults = False
-        if core_pkg and not core_pkg.selected:
+        if core_pkg:
             core_pkg.selected = True
-            should_apply_defaults = True
-        if cp_pkg and not cp_pkg.selected:
+        if cp_pkg:
             cp_pkg.selected = True
-            should_apply_defaults = True
-        if should_apply_defaults:
-            apply_changes(state)
-            status_msg = "Starting default services for production mode..."
-            state = LauncherState(load_config())
+        apply_changes(state)
+        status_msg = "Starting default services for production mode..."
+        state = LauncherState(load_config())
 
     while True:
         try:
@@ -420,6 +449,7 @@ def main(stdscr):
                 error_msg = state.toggle(pkg_to_toggle.id)
             elif key == ord('\n'):
                 apply_changes(state)
+                save_selection({p.id for p in state.packages if p.selected})
                 status_msg = "Configuration Applied!"
                 state = LauncherState(load_config())
             elif key in [ord('x'), ord('X')]:
