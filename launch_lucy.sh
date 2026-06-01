@@ -50,9 +50,36 @@ ensure_docker_image() {
 # to share the host network namespace (DISPLAY=:0 inside the container).
 
 X11_ARGS=()
+GUI_PORT_ARGS=()
+GUI_VNC=0
 if [ "${1:-}" = "--headless" ]; then
   shift
   echo "Headless: no X11 (Gazebo runs headless; RViz is disabled by the launch)."
+elif [ "$(uname)" = "Darwin" ]; then
+  # macOS: XQuartz cannot give the container a usable OpenGL/GLX context, so RViz
+  # and Gazebo fail with "Unable to create a suitable GLXContext" no matter how X11
+  # is forwarded. Instead we run a self-contained virtual desktop inside the
+  # container (Xvfb + Mesa llvmpipe software GL, started by docker/gui_desktop.sh)
+  # and view it over VNC / noVNC. No XQuartz required.
+  GUI_VNC=1
+  GUI_VNC_PORT="${LUCY_GUI_VNC_PORT:-5901}"
+  GUI_NOVNC_PORT="${LUCY_GUI_NOVNC_PORT:-6080}"
+  GUI_VNC_PASSWORD="${LUCY_GUI_VNC_PASSWORD:-lucy}"
+  X11_ARGS=(
+    -e LUCY_GUI_VNC=1
+    -e DISPLAY=:99
+    -e LIBGL_ALWAYS_SOFTWARE=1
+    -e GALLIUM_DRIVER=llvmpipe
+    -e LUCY_GUI_VNC_PASSWORD="$GUI_VNC_PASSWORD"
+    -e LUCY_GUI_NOVNC_PASSWORDLESS=1
+  )
+  GUI_PORT_ARGS=(
+    -p "${GUI_VNC_PORT}:5901"
+    -p "${GUI_NOVNC_PORT}:6080"
+  )
+  echo "GUI: in-container virtual desktop (software OpenGL). View RViz/Gazebo via:"
+  echo "       - VNC Viewer / macOS Screen Sharing:  localhost:${GUI_VNC_PORT}  (password: ${GUI_VNC_PASSWORD})"
+  echo "       - Browser (noVNC):                    http://localhost:${GUI_NOVNC_PORT}/vnc.html  (no password)"
 else
   GUI_DISPLAY="${DOCKER_GUI_DISPLAY:-$DISPLAY}"
   if [ -n "$GUI_DISPLAY" ]; then
@@ -153,7 +180,18 @@ else
 fi
 EOS
 
+# macOS only: start the in-container virtual desktop (Xvfb + VNC) before tmux, so
+# RViz/Gazebo render with software GL. Gated on LUCY_GUI_VNC, which launch_lucy.sh
+# sets only on Darwin — on Linux this is a no-op and the host X11 path is used.
+read -r -d '' GUI_VNC_BOOTSTRAP <<'EOS' || true
+if [ "${LUCY_GUI_VNC:-0}" = "1" ]; then
+  echo "Starting in-container virtual desktop (VNC) ..."
+  bash /workspace/docker/gui_desktop.sh start || echo "WARNING: virtual desktop failed to start" >&2
+fi
+EOS
+
 INTERACTIVE_CONTAINER_SCRIPT="${CONTAINER_PREAMBLE}
+${GUI_VNC_BOOTSTRAP}
 ${TMUX_SCRIPT}
 "
 
@@ -170,6 +208,7 @@ if [ $# -eq 0 ]; then
   docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
     --name lucy_dev \
     "${DOCKER_PORT_ARGS[@]}" \
+    "${GUI_PORT_ARGS[@]}" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \
     -e LUCY_CP_PUBLISHED_HOST_PORT="$PORT_CONTROL_PANEL" \

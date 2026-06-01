@@ -56,6 +56,14 @@ ensure_lucy_docker_image() {
   local hash want want_id
   local build_platform_args
 
+  dockerfile_build_hash() {
+    awk '
+      /^[[:space:]]*#/ { next }
+      /^[[:space:]]*$/ { next }
+      { sub(/[[:space:]]+$/, "") ; print }
+    ' "$1" | sha256sum | awk '{print $1}'
+  }
+
   if [ ! -f "$dockerfile" ]; then
     echo "ensure_lucy_docker_image: missing $dockerfile" >&2
     return 1
@@ -78,7 +86,7 @@ ensure_lucy_docker_image() {
       ;;
   esac
 
-  hash=$(sha256sum "$dockerfile" | awk '{print $1}')
+  hash=$(dockerfile_build_hash "$dockerfile")
   want_id="${hash}|${target_platform}"
 
   if docker image inspect "$image_name" &>/dev/null; then

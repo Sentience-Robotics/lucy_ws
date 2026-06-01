@@ -8,6 +8,8 @@
             "dependencies": [],
             "conflicts": [],
             "command": "ros2 launch lucy_bringup lucy.launch.py",
+            "readiness_check": "pgrep -f rosbridge_websocket >/dev/null 2>&1",
+            "readiness_timeout": 60,
             "default_on": false
         },
         {
@@ -18,6 +20,8 @@
             "dependencies": ["core"],
             "conflicts": ["real"],
             "command": "gazebo:=true",
+            "readiness_check": "pgrep -f 'gz sim' >/dev/null 2>&1",
+            "readiness_timeout": 120,
             "default_on": false
         },
         {
@@ -28,6 +32,8 @@
             "dependencies": ["core"],
             "conflicts": [],
             "command": "rviz:=true",
+            "readiness_check": "pgrep -x rviz2 >/dev/null 2>&1",
+            "readiness_timeout": 60,
             "default_on": false
         },
         {
@@ -52,6 +58,8 @@
                 "stop": "tmux kill-window -t lucy_ws:control_panel 2>/dev/null || true",
                 "is_running": "tmux list-windows -F '#{window_name}' | grep -q '^control_panel$'"
             },
+            "readiness_check": "pgrep -f 'vite' >/dev/null 2>&1",
+            "readiness_timeout": 120,
             "default_on": false
         },
         {

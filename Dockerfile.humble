@@ -91,6 +91,21 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && npm install -g yarn \
  && rm -rf /var/lib/apt/lists/*
 
+# Virtual GUI desktop: Xvfb + a window manager + VNC + noVNC. On hosts whose X
+# server cannot provide OpenGL to the container (notably macOS XQuartz, where GLX
+# context creation fails), RViz/Gazebo render into this in-container display with
+# Mesa llvmpipe software GL and are viewed over VNC / noVNC. mesa-utils ships
+# glxinfo for diagnostics. See docker/gui_desktop.sh and launch_lucy.sh.
+# WARNING: Only useful for macOS hosts, consider multiple images to reduce image size on Linux.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      xvfb \
+      x11vnc \
+      fluxbox \
+      novnc \
+      websockify \
+      mesa-utils \
+ && rm -rf /var/lib/apt/lists/*
+
 # Setup bashrc with alias for the TUI launcher
 RUN echo "alias launcher='python3 /workspace/launcher.py'" >> ~/.bashrc
 RUN echo "alias exit=''" >> ~/.bashrc # Disable 'exit' to force launcher usage

@@ -1,6 +1,6 @@
 # Lucy ROS 2 workspace (Humble)
 
-Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Humble, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host (plus **`xhost`** on Linux for GUI forwarding).
+Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Humble, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host (plus **`xhost`** on Linux for GUI forwarding; on macOS the GUI is viewed over VNC with no extra software — see [GUI on macOS](#gui-on-macos)).
 
 ## Requirements
 
@@ -34,6 +34,7 @@ From the repository root, run the manager for your platform:
 The manager includes a **Developer Mode** toggle. When ON: 
 - repositories are pulled using SSH instead of HTTP
 - The core & control panel aren't launch automatically
+- the launch menu also shows **Headless mode for Gazebo** without GUI / X11
 
 This setting is stored in a .env file
 
@@ -57,6 +58,39 @@ Because all tools (like the console or the control panel) run in background wind
 - **`Ctrl+B` then `D`**: Detach from the session (keeps the container running in the background).
 
 Open the control panel at **http://localhost:5000/**.
+
+## GUI on macOS
+
+On Apple Silicon, XQuartz cannot give the container an OpenGL.
+
+Instead, `launch_lucy.sh` runs a **self-contained virtual desktop inside the
+container** — `Xvfb` rendered by Mesa `llvmpipe` (software OpenGL), a small window manager,
+and a VNC + noVNC server (see [`docker/gui_desktop.sh`](docker/gui_desktop.sh)). RViz/Gazebo
+render there and you view the desktop from your Mac. This is automatic; there is no setup.
+
+**View RViz/Gazebo** after launching (Core + Simulator/Visualizer).
+
+> NoVNC in the browser has no password
+> On RealVNC Viewer and other VNC clients, the VNC server is password-protected (default **`lucy`**).
+
+| How | Address | Password |
+| :-- | :-- | :-- |
+| **Browser** (noVNC) | http://localhost:6080/vnc.html | (none) |
+| **RealVNC Viewer** etc. | `localhost:5901` | `lucy` |
+| macOS **Screen Sharing** | `open vnc://localhost:5901` | `lucy` |
+
+- RealVNC Viewer warns the connection is unencrypted — that's expected over localhost;
+  click through it.
+- Override with `LUCY_GUI_VNC_PORT` / `LUCY_GUI_NOVNC_PORT` (ports) and
+  `LUCY_GUI_VNC_PASSWORD` (max 8 chars) in a root `.env`.
+
+> **Software-rendered:** there is no GPU passthrough, so Gazebo runs but is CPU-slow. For
+> heavy simulation prefer a Linux host, or run headless (`./launch_lucy.sh --headless`) and
+> visualize through the web control panel.
+
+**Port 5000** is taken by macOS AirPlay Receiver. The control panel defaults there, so
+either disable **System Settings → General → AirDrop & Handoff → AirPlay Receiver**, or set
+`PORT_CONTROL_PANEL=5001` in a root `.env`.
 
 ## More
 

@@ -12,6 +12,11 @@ STATE_FILE = "/tmp/launcher_state.json"
 MIN_TERM_HEIGHT = 22
 MIN_TERM_WIDTH = 65
 
+LOADING_TIMEOUT = 30  # seconds before LOADING transitions to CRASHED
+
+_pkg_start_times = {}   # pkg_id -> float, timestamp when start was issued
+_intended_running = set()  # pkg_ids that should be running (for crash detection)
+
 def get_dev_mode():
     env_path = "/workspace/.env"
     if not os.path.exists(env_path):
@@ -64,9 +69,14 @@ class Package:
         self.command = data.get('command', '')
         self.lifecycle_hooks = data.get('lifecycle_hooks', {})
         self.selected = data.get('default_on', False)
-        
-        # New property to store the actual running state
+        # Optional shell probe that exits 0 only once the package is truly up.
+        # Without it, a package is considered "ready" the instant its window exists.
+        self.readiness_check = data.get('readiness_check')
+        self.readiness_timeout = data.get('readiness_timeout', LOADING_TIMEOUT)
+
+        # is_running = window/process exists; ready = readiness probe passed.
         self.is_running = False
+        self.ready = False
         self.update_running_status(running_modifiers)
         
         # Initialize selected state to match running state initially
@@ -84,6 +94,14 @@ class Package:
                 save_state({"modifiers": []})
         elif self.type in ['tool', 'interface']:
              self.is_running = run_shell_command(f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'", capture_output=True)
+
+        # Derive readiness: only meaningful while the window/process exists.
+        if not self.is_running:
+            self.ready = False
+        elif self.readiness_check:
+            self.ready = run_shell_command(self.readiness_check, capture_output=True)
+        else:
+            self.ready = True
 
     def is_complex_command(self):
         return isinstance(self.command, dict)
@@ -115,6 +133,46 @@ class LauncherState:
                     other_pkg.selected = False
             pkg.selected = False
         return None
+
+def get_pkg_status(pkg):
+    """Return one of: running, loading, crashed, stopped.
+
+    ``pkg.is_running`` means the tmux window / process merely exists; ``pkg.ready``
+    means its readiness probe passed (the stack is actually up). A package we
+    started (in ``_intended_running``) that isn't ready yet shows LOADING until its
+    timeout elapses, after which it is reported CRASHED.
+    """
+    if pkg.ready:
+        _pkg_start_times.pop(pkg.id, None)
+        return "running"
+    if pkg.id in _intended_running:
+        timeout = getattr(pkg, "readiness_timeout", LOADING_TIMEOUT)
+        started = _pkg_start_times.get(pkg.id)
+        if started is None:
+            if pkg.is_running:
+                _pkg_start_times[pkg.id] = time.time()
+                return "loading"
+            return "crashed"
+        if time.time() - started < timeout:
+            return "loading"
+        _pkg_start_times.pop(pkg.id, None)
+        return "crashed"
+    return "stopped"
+
+def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status):
+    base = f"{prefix}{indent}{checkbox} {name}"
+    stdscr.addstr(y, x, base, attr)
+    labels = {
+        "running": (" [RUNNING]", curses.color_pair(4)),
+        "loading": (" [LOADING]", curses.color_pair(1)),
+        "crashed": (" [CRASHED]", curses.color_pair(2) | curses.A_BOLD),
+        "stopped": (" [STOPPED]", curses.A_DIM),
+    }
+    status_str, status_attr = labels.get(status, (" [STOPPED]", curses.A_DIM))
+    try:
+        stdscr.addstr(y, x + len(base), status_str, status_attr)
+    except curses.error:
+        pass
 
 def draw_too_small_message(stdscr):
     h, w = stdscr.getmaxyx()
@@ -156,7 +214,8 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
         attr = curses.A_NORMAL if can_enable else curses.A_DIM
         if p.type == 'core': attr |= curses.A_BOLD
         indent = "    " if p.type == 'modifier' else ""
-        stdscr.addstr(row + i, 4, f"{prefix}{indent}{checkbox} {p.name}", attr)
+        status = get_pkg_status(p)
+        _draw_pkg_row(stdscr, row + i, 4, prefix, indent, checkbox, p.name, attr, status)
 
     row += len(cores_and_mods) + 1
     stdscr.addstr(row, 2, "Interfaces", curses.A_BOLD | curses.color_pair(3))
@@ -165,7 +224,8 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
         list_idx = i + len(cores_and_mods)
         prefix = "> " if current_idx == list_idx else "  "
         checkbox = "[x]" if p.selected else "[ ]"
-        stdscr.addstr(row + i, 4, f"{prefix}{checkbox} {p.name}", curses.A_NORMAL)
+        status = get_pkg_status(p)
+        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status)
 
     row += len(interfaces) + 1
     stdscr.addstr(row, 2, "Tools", curses.A_BOLD | curses.color_pair(3))
@@ -174,7 +234,8 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
         list_idx = i + len(cores_and_mods) + len(interfaces)
         prefix = "> " if current_idx == list_idx else "  "
         checkbox = "[x]" if p.selected else "[ ]"
-        stdscr.addstr(row + i, 4, f"{prefix}{checkbox} {p.name}", curses.A_NORMAL)
+        status = get_pkg_status(p)
+        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status)
 
     stdscr.refresh()
     return display_list
@@ -195,13 +256,16 @@ def apply_changes(state):
     if modifiers_changed and core_pkg and core_pkg.selected:
          run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
          save_state({"modifiers": []})
-         # Update state to reflect it's stopped so it gets restarted
          core_pkg.is_running = False
+         _pkg_start_times.pop('core', None)
+         _intended_running.discard('core')
          for mod in state.packages:
              if mod.type == 'modifier':
                  if mod.is_running and 'stop' in mod.lifecycle_hooks:
                      run_shell_command(mod.lifecycle_hooks['stop'])
                  mod.is_running = False
+                 _pkg_start_times.pop(mod.id, None)
+                 _intended_running.discard(mod.id)
 
     # First Pass: Stop processes that should be turned off (or were forced off)
     for pkg in state.packages:
@@ -213,15 +277,23 @@ def apply_changes(state):
             elif pkg.type == 'core':
                 run_shell_command("tmux kill-window -t lucy_ws:core 2>/dev/null")
                 save_state({"modifiers": []})
+                for mod in state.packages:
+                    if mod.type == 'modifier':
+                        _pkg_start_times.pop(mod.id, None)
+                        _intended_running.discard(mod.id)
             elif pkg.type in ['tool', 'interface']:
                 run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
-            pkg.is_running = False # Update local state
+            _pkg_start_times.pop(pkg.id, None)
+            _intended_running.discard(pkg.id)
+            pkg.is_running = False
 
     # Second Pass: Start processes that should be turned on
     for pkg in state.packages:
          if pkg.selected and not pkg.is_running:
             if pkg.is_complex_command():
                 run_shell_command(pkg.command['start'])
+                _pkg_start_times[pkg.id] = time.time()
+                _intended_running.add(pkg.id)
             elif pkg.type == 'core':
                 base_cmd = pkg.command
                 selected_modifiers = [p for p in state.packages if p.type == 'modifier' and p.selected]
@@ -230,10 +302,17 @@ def apply_changes(state):
                 full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
                 run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}; echo \"--- Process finished, press any key to close ---\"; read'")
                 save_state({"modifiers": modifier_ids})
+                _pkg_start_times[pkg.id] = time.time()
+                _intended_running.add(pkg.id)
+                for mod in selected_modifiers:
+                    _pkg_start_times[mod.id] = time.time()
+                    _intended_running.add(mod.id)
             elif pkg.type in ['tool', 'interface']:
                 run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
                 last_launched_window = pkg.id
-            pkg.is_running = True # Update local state
+                _pkg_start_times[pkg.id] = time.time()
+                _intended_running.add(pkg.id)
+            pkg.is_running = True
 
     if last_launched_window:
         run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
@@ -249,6 +328,7 @@ def main(stdscr):
         curses.init_pair(1, curses.COLOR_YELLOW, -1)
         curses.init_pair(2, curses.COLOR_RED, -1)
         curses.init_pair(3, curses.COLOR_CYAN, -1)
+        curses.init_pair(4, curses.COLOR_GREEN, -1)
 
     state = LauncherState(load_config())
     current_idx = 0
@@ -286,10 +366,25 @@ def main(stdscr):
                     time.sleep(0.1)
                 continue
             else:
-                 # Normal operation, wait for input indefinitely
-                 stdscr.nodelay(0)
-                 stdscr.timeout(-1)
-                 key = stdscr.getch()
+                # Poll fast while something is still coming up, slow once everything
+                # we launched is up (so a later crash still surfaces), and block
+                # entirely when nothing is running. Re-read state on each tick.
+                if _pkg_start_times:
+                    poll_ms = 1000
+                elif _intended_running:
+                    poll_ms = 5000
+                else:
+                    poll_ms = None
+                if poll_ms is None:
+                    stdscr.nodelay(0)
+                    stdscr.timeout(-1)
+                else:
+                    stdscr.nodelay(1)
+                    stdscr.timeout(poll_ms)
+                key = stdscr.getch()
+                if key == -1:
+                    state = LauncherState(load_config())
+                    continue
 
             if key == curses.KEY_RESIZE:
                 continue
