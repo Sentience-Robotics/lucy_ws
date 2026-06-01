@@ -189,6 +189,15 @@ class LauncherState:
     def get_by_id(self, pkg_id):
         return self.package_map.get(pkg_id)
 
+    def refresh_status(self):
+        """Re-probe running/ready state for all packages without touching selected.
+
+        Used by the poll timer so in-flight user tick changes aren't wiped out
+        between keypresses (LauncherState.__init__ resets selected to default_on)."""
+        running_state = load_state()
+        for pkg in self.packages:
+            pkg.update_running_status(running_state['modifiers'])
+
     def toggle(self, pkg_id):
         pkg = self.get_by_id(pkg_id)
         if not pkg: return None
@@ -243,6 +252,14 @@ def get_pkg_status(pkg):
         return "crashed"
     return "stopped"
 
+def _has_unapplied_changes(state):
+    for pkg in state.packages:
+        if pkg.id in _pkg_start_times or pkg.id in _pkg_stop_times:
+            continue
+        if pkg.selected != pkg.is_running:
+            return True
+    return False
+
 def _vnc_hint(pkg):
     """'(VNC)' for GUI packages that render to the in-container VNC desktop when
     they're ticked — a reminder that their window appears in the VNC/noVNC viewer,
@@ -284,7 +301,7 @@ def draw_too_small_message(stdscr):
     stdscr.addstr(h // 2, max(0, (w - len(message2)) // 2), message2, curses.A_DIM)
     stdscr.refresh()
 
-def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
+def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False):
     h, w = stdscr.getmaxyx()
     if h < MIN_TERM_HEIGHT or w < MIN_TERM_WIDTH:
         draw_too_small_message(stdscr)
@@ -299,6 +316,8 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg):
         stdscr.addstr(h - 2, 2, status_msg, curses.A_BOLD)
     elif error_msg:
         stdscr.addstr(h - 2, 2, f"Warning: {error_msg}", curses.color_pair(2))
+    elif unapplied:
+        stdscr.addstr(h - 2, 2, "Unapplied changes — press Enter to apply", curses.color_pair(1))
 
     cores_and_mods = [p for p in state.packages if p.type in ['core', 'modifier']]
     interfaces = [p for p in state.packages if p.type == 'interface']
@@ -461,6 +480,7 @@ def main(stdscr):
     current_idx = 0
     error_msg = None
     status_msg = None
+    status_msg_until = 0.0
 
     if not get_dev_mode():
         # Production: always ensure core + control panel, then start everything
@@ -477,9 +497,10 @@ def main(stdscr):
 
     while True:
         try:
-            display_list = draw_tui(stdscr, state, current_idx, error_msg, status_msg)
+            if status_msg and time.time() >= status_msg_until:
+                status_msg = None
+            display_list = draw_tui(stdscr, state, current_idx, error_msg, status_msg, _has_unapplied_changes(state))
             error_msg = None
-            status_msg = None 
 
             if display_list is None:
                 # If display_list is None, it means the screen is too small.
@@ -508,7 +529,7 @@ def main(stdscr):
                     stdscr.timeout(poll_ms)
                 key = stdscr.getch()
                 if key == -1:
-                    state = LauncherState(load_config())
+                    state.refresh_status()
                     continue
 
             if key == curses.KEY_RESIZE:
@@ -525,6 +546,7 @@ def main(stdscr):
                 apply_changes(state)
                 save_selection({p.id for p in state.packages if p.selected})
                 status_msg = "Configuration Applied!"
+                status_msg_until = time.time() + 2.0
                 state = LauncherState(load_config())
             elif key in [ord('x'), ord('X')]:
                 h, w = stdscr.getmaxyx()
