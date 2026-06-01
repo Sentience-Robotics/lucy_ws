@@ -63,6 +63,37 @@
             "default_on": false
         },
         {
+            "id": "novnc",
+            "name": "noVNC (Web Viewer)",
+            "description": "View the desktop in a browser (http://localhost:6080/vnc.html)",
+            "type": "tool",
+            "requires_env": "LUCY_GUI_VNC",
+            "dependencies": [],
+            "conflicts": [],
+            "command": {
+                "start": "bash /workspace/docker/gui_desktop.sh novnc start",
+                "stop": "bash /workspace/docker/gui_desktop.sh novnc stop",
+                "is_running": "bash /workspace/docker/gui_desktop.sh novnc status"
+            },
+            "default_on": false
+        },
+        {
+            "id": "vnc",
+            "name": "VNC Server",
+            "description": "Native VNC for Screen Sharing / RealVNC (localhost:5901, password: lucy)",
+            "type": "tool",
+            "requires_env": "LUCY_GUI_VNC",
+            "dev_only": true,
+            "dependencies": [],
+            "conflicts": [],
+            "command": {
+                "start": "bash /workspace/docker/gui_desktop.sh vnc start",
+                "stop": "bash /workspace/docker/gui_desktop.sh vnc stop",
+                "is_running": "bash /workspace/docker/gui_desktop.sh vnc status"
+            },
+            "default_on": false
+        },
+        {
             "id": "lucy_cli",
             "name": "Lucy CLI",
             "description": "Command Line Interface",

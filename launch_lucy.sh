@@ -71,15 +71,15 @@ elif [ "$(uname)" = "Darwin" ]; then
     -e LIBGL_ALWAYS_SOFTWARE=1
     -e GALLIUM_DRIVER=llvmpipe
     -e LUCY_GUI_VNC_PASSWORD="$GUI_VNC_PASSWORD"
-    -e LUCY_GUI_NOVNC_PASSWORDLESS=1
   )
   GUI_PORT_ARGS=(
     -p "${GUI_VNC_PORT}:5901"
     -p "${GUI_NOVNC_PORT}:6080"
   )
-  echo "GUI: in-container virtual desktop (software OpenGL). View RViz/Gazebo via:"
-  echo "       - VNC Viewer / macOS Screen Sharing:  localhost:${GUI_VNC_PORT}  (password: ${GUI_VNC_PASSWORD})"
+  echo "GUI: in-container virtual desktop (software OpenGL). Toggle the viewers in the"
+  echo "     launcher (Interfaces), then connect:"
   echo "       - Browser (noVNC):                    http://localhost:${GUI_NOVNC_PORT}/vnc.html  (no password)"
+  echo "       - VNC Viewer / macOS Screen Sharing:  localhost:${GUI_VNC_PORT}  (password: ${GUI_VNC_PASSWORD})"
 else
   GUI_DISPLAY="${DOCKER_GUI_DISPLAY:-$DISPLAY}"
   if [ -n "$GUI_DISPLAY" ]; then
@@ -185,8 +185,10 @@ EOS
 # sets only on Darwin — on Linux this is a no-op and the host X11 path is used.
 read -r -d '' GUI_VNC_BOOTSTRAP <<'EOS' || true
 if [ "${LUCY_GUI_VNC:-0}" = "1" ]; then
-  echo "Starting in-container virtual desktop (VNC) ..."
-  bash /workspace/docker/gui_desktop.sh start || echo "WARNING: virtual desktop failed to start" >&2
+  echo "Starting in-container virtual display (Xvfb) ..."
+  # Only the display (the "monitor") auto-starts; the VNC and noVNC viewers are
+  # toggled as interfaces in the launcher.
+  bash /workspace/docker/gui_desktop.sh display start || echo "WARNING: virtual display failed to start" >&2
 fi
 EOS
 

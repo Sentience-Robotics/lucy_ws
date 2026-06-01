@@ -106,10 +106,32 @@ class Package:
     def is_complex_command(self):
         return isinstance(self.command, dict)
 
+def _env_enabled(var_name):
+    """True when a package has no env gate, or its `requires_env` var is truthy.
+
+    Lets entries like the VNC/noVNC viewers appear only where they make sense
+    (the in-container virtual desktop sets LUCY_GUI_VNC=1; a normal Linux host
+    with native X11 leaves it unset, hiding them)."""
+    if not var_name:
+        return True
+    return os.environ.get(var_name, "").strip().lower() in ("1", "true", "yes")
+
+def _pkg_visible(pkg_config, dev_mode):
+    """Whether a package appears in the launcher: hidden when it is `dev_only` and
+    Developer Mode is off, or when its `requires_env` gate isn't satisfied."""
+    if pkg_config.get('dev_only') and not dev_mode:
+        return False
+    return _env_enabled(pkg_config.get('requires_env'))
+
 class LauncherState:
     def __init__(self, config_data):
         running_state = load_state()
-        self.packages = [Package(p, running_state['modifiers']) for p in config_data['packages']]
+        # Hide gated packages before building them, so their readiness probes don't run and they don't render.
+        dev_mode = get_dev_mode()
+        package_configs = [
+            p for p in config_data['packages'] if _pkg_visible(p, dev_mode)
+        ]
+        self.packages = [Package(p, running_state['modifiers']) for p in package_configs]
         self.package_map = {p.id: p for p in self.packages}
 
     def get_by_id(self, pkg_id):
