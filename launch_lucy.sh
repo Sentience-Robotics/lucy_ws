@@ -31,6 +31,29 @@ case "$(echo "${DEV:-}" | tr '[:upper:]' '[:lower:]')" in
   *) DEV_MODE=0 ;;
 esac
 
+# A free-host-port search so a port already taken (e.g. macOS AirPlay on 5000)
+# doesn't abort the launch — we publish on the next available one and the printed
+# URLs reflect it. Only the host side moves; the container keeps its fixed port.
+host_port_in_use() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  else
+    (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+  fi
+}
+
+resolve_host_port() {  # $1 = label, $2 = desired port -> echoes a free port
+  local p="$2" limit=$(( $2 + 50 ))
+  while [ "$p" -le "$limit" ]; do
+    if ! host_port_in_use "$p"; then
+      [ "$p" != "$2" ] && echo "Port $2 ($1) in use; using $p instead." >&2
+      echo "$p"; return 0
+    fi
+    p=$((p + 1))
+  done
+  echo "$2"  # nothing free in range; let docker surface the real error
+}
+
 IMAGE_NAME="lucy_ros2:humble"
 DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
 WORKSPACE="/workspace"
@@ -70,8 +93,8 @@ elif [ "$USE_VNC" = 1 ]; then
   # VNC desktop: native X11/GLX is unavailable or unreliable for GL apps (RViz,
   # Gazebo). Offer an opt-in virtual desktop via noVNC/VNC from the launcher. The
   # display is not started automatically — enable it in the launcher.
-  GUI_VNC_PORT="${LUCY_GUI_VNC_PORT:-5901}"
-  GUI_NOVNC_PORT="${LUCY_GUI_NOVNC_PORT:-6080}"
+  GUI_VNC_PORT="$(resolve_host_port VNC "${LUCY_GUI_VNC_PORT:-5901}")"
+  GUI_NOVNC_PORT="$(resolve_host_port noVNC "${LUCY_GUI_NOVNC_PORT:-6080}")"
   GUI_VNC_PASSWORD="${LUCY_GUI_VNC_PASSWORD:-lucy}"
   X11_ARGS=(
     -e LUCY_GUI_VNC_AVAILABLE=1
@@ -151,7 +174,7 @@ vite_scheme_from_envfile() {
   fi
 }
 
-PORT_ROSBRIDGE=9090
+PORT_ROSBRIDGE="$(resolve_host_port rosbridge "${PORT_ROSBRIDGE:-9090}")"
 if [[ -z "${PORT_CONTROL_PANEL_CONTAINER:-}" ]]; then
   if v="$(vite_listen_port_from_envfile)"; then
     PORT_CONTROL_PANEL_CONTAINER="$v"
@@ -159,7 +182,7 @@ if [[ -z "${PORT_CONTROL_PANEL_CONTAINER:-}" ]]; then
     PORT_CONTROL_PANEL_CONTAINER=5000
   fi
 fi
-PORT_CONTROL_PANEL="${PORT_CONTROL_PANEL:-$PORT_CONTROL_PANEL_CONTAINER}"
+PORT_CONTROL_PANEL="$(resolve_host_port 'control panel' "${PORT_CONTROL_PANEL:-$PORT_CONTROL_PANEL_CONTAINER}")"
 LCP_SCHEME="${LUCY_LCP_SCHEME:-$(vite_scheme_from_envfile)}"
 
 DOCKER_PORT_ARGS=(
