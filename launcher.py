@@ -106,6 +106,14 @@ def run_shell_command_async(cmd):
             pass
     threading.Thread(target=_target, daemon=True).start()
 
+def _pane_dead(pkg_id):
+    """True if the package's tmux window exists but its process has exited.
+    remain-on-exit keeps the dead pane (and its error output) for debugging."""
+    return run_shell_command(
+        f"tmux list-panes -t lucy_ws:{pkg_id} -F '#{{pane_dead}}' 2>/dev/null | grep -q '^1$'",
+        capture_output=True,
+    )
+
 class Package:
     def __init__(self, data, running_modifiers):
         self.id = data['id']
@@ -130,9 +138,11 @@ class Package:
         # reference env vars as ${VAR} — expanded at render time.
         self.url = data.get('url')
 
-        # is_running = window/process exists; ready = readiness probe passed.
+        # is_running = window/process exists; ready = readiness probe passed;
+        # pane_dead = service window kept open after its process crashed.
         self.is_running = False
         self.ready = False
+        self.pane_dead = False
         self.update_running_status(running_modifiers)
 
         # Reflect running state as ticked — but not while it is being stopped, so an
@@ -159,6 +169,13 @@ class Package:
             self.ready = run_shell_command(self.readiness_check, capture_output=True)
         else:
             self.ready = True
+
+        # A service whose window is still up (remain-on-exit) but whose process
+        # has exited: reported as CRASHED while the error stays visible.
+        self.pane_dead = (
+            self.is_running and bool(self.readiness_check)
+            and not self.ready and _pane_dead(self.id)
+        )
 
     def is_complex_command(self):
         return isinstance(self.command, dict)
@@ -240,6 +257,11 @@ def get_pkg_status(pkg):
         if time.time() - _pkg_stop_times[pkg.id] < STOPPING_TIMEOUT:
             return "stopping"
         _pkg_stop_times.pop(pkg.id, None)  # gave up; fall through to real state
+    # Service window left open by a crash (remain-on-exit): CRASHED right away,
+    # no waiting for the loading timeout, so the error can be read in tmux.
+    if pkg.pane_dead:
+        _pkg_start_times.pop(pkg.id, None)
+        return "crashed"
     if pkg.ready:
         _pkg_start_times.pop(pkg.id, None)
         return "running"
@@ -442,6 +464,8 @@ def apply_changes(state):
                 run_shell_command(pkg.command['stop'])
                 pkg.is_running = False
                 _pkg_stop_times.pop(pkg.id, None)
+                _pkg_start_times.pop(pkg.id, None)
+                _intended_running.discard(pkg.id)
 
     # First Pass: Stop processes that should be turned off (or were forced off).
     # Stops run asynchronously so the TUI stays responsive and can show STOPPING
@@ -474,11 +498,19 @@ def apply_changes(state):
                 pkg.is_running = False
 
     # Second Pass: Start processes that should be turned on (never re-launch one
-    # that is still shutting down).
+    # that is still shutting down). A crashed service (pane_dead) is relaunched
+    # too, after reaping the dead window left open for debugging.
     for pkg in state.packages:
-         if pkg.selected and not pkg.is_running and pkg.id not in _pkg_stop_times:
+         if pkg.selected and pkg.id not in _pkg_stop_times and (not pkg.is_running or pkg.pane_dead):
+            if pkg.pane_dead:
+                run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+                pkg.pane_dead = False
+                pkg.is_running = False
             if pkg.is_complex_command():
                 run_shell_command(pkg.command['start'])
+                # Keep a crashed service's window open with its error (see core).
+                if pkg.readiness_check:
+                    run_shell_command(f"tmux set-window-option -t lucy_ws:{pkg.id} remain-on-exit on 2>/dev/null")
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
             elif pkg.type == 'core':
@@ -487,7 +519,9 @@ def apply_changes(state):
                 modifier_args = [p.command for p in selected_modifiers]
                 modifier_ids = [p.id for p in selected_modifiers]
                 full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
-                run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}; echo \"--- Process finished, press any key to close ---\"; read'")
+                # remain-on-exit keeps the window (and the crash output) open if
+                # ros2 launch dies, so the failure is visible and detectable.
+                run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}'; tmux set-window-option -t lucy_ws:core remain-on-exit on")
                 save_state({"modifiers": modifier_ids})
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
