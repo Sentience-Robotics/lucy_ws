@@ -18,9 +18,10 @@ ARG LUCY_BASE_IMAGE=osrf/ros:humble-desktop
 FROM --platform=${LUCY_FROM_PLATFORM} ${LUCY_BASE_IMAGE}
 
 ARG LUCY_BOOTSTRAP_DESKTOP=0
+ARG LUCY_INSTALL_VNC=0
 ARG DOCKERFILE_SHA256=unknown
 ARG LUCY_DOCKER_BUILD_PLATFORM=unknown
-LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}|${LUCY_DOCKER_BUILD_PLATFORM}"
+LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}|${LUCY_DOCKER_BUILD_PLATFORM}|vnc=${LUCY_INSTALL_VNC}"
 
 # ARM path: the base is ros-base, so pull in the full desktop metapackage
 # (RViz, demos, etc.) to match what osrf/ros:humble-desktop provides on amd64.
@@ -91,20 +92,23 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && npm install -g yarn \
  && rm -rf /var/lib/apt/lists/*
 
-# Virtual GUI desktop: Xvfb + a window manager + VNC + noVNC. On hosts whose X
-# server cannot provide OpenGL to the container (notably macOS XQuartz, where GLX
-# context creation fails), RViz/Gazebo render into this in-container display with
-# Mesa llvmpipe software GL and are viewed over VNC / noVNC. mesa-utils ships
-# glxinfo for diagnostics. See docker/gui_desktop.sh and launch_lucy.sh.
-# WARNING: Only useful for macOS hosts, consider multiple images to reduce image size on Linux.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      xvfb \
-      x11vnc \
-      fluxbox \
-      novnc \
-      websockify \
-      mesa-utils \
- && rm -rf /var/lib/apt/lists/*
+# Virtual GUI desktop: Xvfb + a window manager + VNC + noVNC. Installed when
+# LUCY_INSTALL_VNC=1 — set by ensure_image.sh on arm64, or on any arch when the
+# host exports LUCY_FORCE_VNC=1. Where native X11/GLX is unavailable or unreliable
+# for GL apps, RViz/Gazebo render into this in-container display with Mesa llvmpipe
+# software GL and are viewed over VNC / noVNC. mesa-utils ships glxinfo for
+# diagnostics. AMD64 (without the override) uses native X11 and ships none of this.
+# See docker/gui_desktop.sh and launch_lucy.sh.
+RUN if [ "${LUCY_INSTALL_VNC}" = 1 ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        xvfb \
+        x11vnc \
+        fluxbox \
+        novnc \
+        websockify \
+        mesa-utils \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Setup bashrc with alias for the TUI launcher
 RUN echo "alias launcher='python3 /workspace/launcher.py'" >> ~/.bashrc

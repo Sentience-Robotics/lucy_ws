@@ -49,6 +49,8 @@ start_display() {
       sleep 0.25
     done
     log "Xvfb on :${DISPLAY_NUM} (${GEOMETRY}x${DEPTH})"
+    # Update tmux env so new windows (e.g. core relaunch) pick up the virtual display.
+    tmux set-environment -t lucy_ws DISPLAY ":${DISPLAY_NUM}" 2>/dev/null || true
   fi
   # Window manager so RViz/Gazebo windows are decorated, movable and resizable.
   if ! proc_up fluxbox; then
@@ -62,6 +64,13 @@ stop_display() {
   stop_vnc
   proc_up fluxbox && pkill -x fluxbox 2>/dev/null || true
   display_up && pkill -f "Xvfb :${DISPLAY_NUM}" 2>/dev/null || true
+  # Restore original DISPLAY in tmux env so relaunched apps use native X11 (if any).
+  orig="${LUCY_ORIGINAL_DISPLAY:-}"
+  if [ -n "$orig" ]; then
+    tmux set-environment -t lucy_ws DISPLAY "$orig" 2>/dev/null || true
+  else
+    tmux set-environment -t lucy_ws -u DISPLAY 2>/dev/null || true
+  fi
   log "display stopped"
 }
 

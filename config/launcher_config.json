@@ -51,7 +51,8 @@
         {
             "id": "control_panel",
             "name": "Control Panel",
-            "description": "Web-based UI (http://localhost:5000/)",
+            "description": "Web-based UI",
+            "url": "${LUCY_LCP_SCHEME}://localhost:${LUCY_LCP_PUBLISHED_HOST_PORT}",
             "type": "interface",
             "dependencies": [],
             "conflicts": [],
@@ -67,9 +68,11 @@
         {
             "id": "novnc",
             "name": "noVNC (Web Viewer)",
-            "description": "View the desktop in a browser (http://localhost:6080/vnc.html)",
+            "description": "View the desktop in a browser",
+            "url": "http://localhost:${LUCY_GUI_NOVNC_PUBLISHED_PORT}/vnc.html",
             "type": "tool",
-            "requires_env": "LUCY_GUI_VNC",
+            "requires_env": "LUCY_GUI_VNC_AVAILABLE",
+            "display_switch": true,
             "dependencies": [],
             "conflicts": [],
             "command": {
@@ -82,9 +85,11 @@
         {
             "id": "vnc",
             "name": "VNC Server",
-            "description": "Native VNC for Screen Sharing / RealVNC (localhost:5901, password: lucy)",
+            "description": "Native VNC for Screen Sharing / RealVNC (password: lucy)",
+            "url": "localhost:${LUCY_GUI_VNC_PUBLISHED_PORT}",
             "type": "tool",
-            "requires_env": "LUCY_GUI_VNC",
+            "requires_env": "LUCY_GUI_VNC_AVAILABLE",
+            "display_switch": true,
             "dev_only": true,
             "dependencies": [],
             "conflicts": [],

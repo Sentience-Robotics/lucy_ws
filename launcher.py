@@ -124,6 +124,11 @@ class Package:
         # GUI app that renders to the in-container VNC desktop (Gazebo/RViz/rqt):
         # drives the "(VNC)" hint and skips the tmux auto-switch on launch.
         self.runs_on_vnc = data.get('runs_on_vnc', False)
+        # Toggling this package switches the in-container virtual display on/off.
+        self.display_switch = data.get('display_switch', False)
+        # Access URL shown after [RUNNING] (control panel / VNC endpoints). May
+        # reference env vars as ${VAR} — expanded at render time.
+        self.url = data.get('url')
 
         # is_running = window/process exists; ready = readiness probe passed.
         self.is_running = False
@@ -260,25 +265,29 @@ def _has_unapplied_changes(state):
             return True
     return False
 
-def _vnc_hint(pkg):
-    """'(VNC)' for GUI packages that render to the in-container VNC desktop when
-    they're ticked — a reminder that their window appears in the VNC/noVNC viewer,
-    not in this terminal. Empty off the VNC desktop (e.g. native X11 on Linux)."""
-    if pkg.runs_on_vnc and pkg.selected and _env_enabled("LUCY_GUI_VNC"):
+def _vnc_hint(pkg, state):
+    """'(VNC)' for GUI packages when the virtual desktop is active (a display_switch
+    package is running). Tells the user the window appears in the VNC viewer."""
+    if not pkg.runs_on_vnc or not pkg.selected:
+        return ""
+    if any(p.display_switch and p.is_running for p in state.packages):
         return "(VNC)"
     return ""
 
-def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hint=""):
+def _status_url(pkg):
+    """Expanded access URL for a package, or '' if it has none / an env var in it
+    is unset (so we never show a half-resolved 'localhost:${...}')."""
+    if not pkg.url:
+        return ""
+    expanded = os.path.expandvars(pkg.url)
+    if "${" in expanded or expanded.endswith(":"):
+        return ""
+    return expanded
+
+def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hint="", url=""):
     base = f"{prefix}{indent}{checkbox} {name}"
     stdscr.addstr(y, x, base, attr)
     col = x + len(base)
-    if hint:
-        text = f" {hint}"
-        try:
-            stdscr.addstr(y, col, text, curses.color_pair(3))  # cyan
-        except curses.error:
-            pass
-        col += len(text)
     labels = {
         "running": (" [RUNNING]", curses.color_pair(4)),
         "loading": (" [LOADING]", curses.color_pair(1)),
@@ -289,8 +298,25 @@ def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hi
     status_str, status_attr = labels.get(status, (" [STOPPED]", curses.A_DIM))
     try:
         stdscr.addstr(y, col, status_str, status_attr)
+        col += len(status_str)
     except curses.error:
         pass
+    # Access URL after the status, shown only while actually running.
+    if url and status == "running":
+        text = f" ({url})"
+        try:
+            stdscr.addstr(y, col, text, curses.color_pair(3))  # cyan
+            col += len(text)
+        except curses.error:
+            pass
+    # '(VNC)' reminder after the status label.
+    if hint:
+        text = f" {hint}"
+        try:
+            stdscr.addstr(y, col, text, curses.color_pair(3))  # cyan
+            col += len(text)
+        except curses.error:
+            pass
 
 def draw_too_small_message(stdscr):
     h, w = stdscr.getmaxyx()
@@ -335,7 +361,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
         if p.type == 'core': attr |= curses.A_BOLD
         indent = "    " if p.type == 'modifier' else ""
         status = get_pkg_status(p)
-        _draw_pkg_row(stdscr, row + i, 4, prefix, indent, checkbox, p.name, attr, status, _vnc_hint(p))
+        _draw_pkg_row(stdscr, row + i, 4, prefix, indent, checkbox, p.name, attr, status, _vnc_hint(p, state), _status_url(p))
 
     row += len(cores_and_mods) + 1
     stdscr.addstr(row, 2, "Interfaces", curses.A_BOLD | curses.color_pair(3))
@@ -345,7 +371,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
         prefix = "> " if current_idx == list_idx else "  "
         checkbox = "[x]" if p.selected else "[ ]"
         status = get_pkg_status(p)
-        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status, _vnc_hint(p))
+        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status, _vnc_hint(p, state), _status_url(p))
 
     row += len(interfaces) + 1
     stdscr.addstr(row, 2, "Tools", curses.A_BOLD | curses.color_pair(3))
@@ -355,7 +381,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
         prefix = "> " if current_idx == list_idx else "  "
         checkbox = "[x]" if p.selected else "[ ]"
         status = get_pkg_status(p)
-        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status, _vnc_hint(p))
+        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status, _vnc_hint(p, state), _status_url(p))
 
     stdscr.refresh()
     return display_list
@@ -388,6 +414,34 @@ def apply_changes(state):
                  mod.is_running = False
                  _pkg_start_times.pop(mod.id, None)
                  _intended_running.discard(mod.id)
+
+    # Display switch: if a VNC tool (display_switch package) is being toggled,
+    # restart core first so GL apps open on the right DISPLAY after the virtual
+    # desktop starts or stops. VNC tools are applied synchronously here so the
+    # display is ready before core relaunches in the normal start pass below.
+    display_switch_pkgs = [p for p in state.packages if p.display_switch]
+    if any(p.selected != p.is_running for p in display_switch_pkgs):
+        if core_pkg and core_pkg.is_running:
+            run_shell_command(CORE_TEARDOWN)
+            save_state({"modifiers": []})
+            core_pkg.is_running = False
+            _pkg_start_times.pop('core', None)
+            _intended_running.discard('core')
+            for mod in state.packages:
+                if mod.type == 'modifier':
+                    mod.is_running = False
+                    _pkg_start_times.pop(mod.id, None)
+                    _intended_running.discard(mod.id)
+        for pkg in display_switch_pkgs:
+            if pkg.selected and not pkg.is_running:
+                run_shell_command(pkg.command['start'])
+                pkg.is_running = True
+                _pkg_start_times[pkg.id] = time.time()
+                _intended_running.add(pkg.id)
+            elif not pkg.selected and pkg.is_running:
+                run_shell_command(pkg.command['stop'])
+                pkg.is_running = False
+                _pkg_stop_times.pop(pkg.id, None)
 
     # First Pass: Stop processes that should be turned off (or were forced off).
     # Stops run asynchronously so the TUI stays responsive and can show STOPPING
@@ -486,11 +540,11 @@ def main(stdscr):
         # Production: always ensure core + control panel, then start everything
         # selected (including any restored selection).
         core_pkg = state.get_by_id('core')
-        cp_pkg = state.get_by_id('control_panel')
+        lcp_pkg = state.get_by_id('control_panel')
         if core_pkg:
             core_pkg.selected = True
-        if cp_pkg:
-            cp_pkg.selected = True
+        if lcp_pkg:
+            lcp_pkg.selected = True
         apply_changes(state)
         status_msg = "Starting default services for production mode..."
         state = LauncherState(load_config())
