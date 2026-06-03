@@ -8,6 +8,8 @@
             "dependencies": [],
             "conflicts": [],
             "command": "ros2 launch lucy_bringup lucy.launch.py",
+            "readiness_check": "pgrep -f '[r]osbridge_websocket' >/dev/null 2>&1",
+            "readiness_timeout": 60,
             "default_on": false
         },
         {
@@ -18,6 +20,9 @@
             "dependencies": ["core"],
             "conflicts": ["real"],
             "command": "gazebo:=true",
+            "runs_on_vnc": true,
+            "readiness_check": "pgrep -f '[g]azebo' >/dev/null 2>&1",
+            "readiness_timeout": 120,
             "default_on": false
         },
         {
@@ -28,6 +33,9 @@
             "dependencies": ["core"],
             "conflicts": [],
             "command": "rviz:=true",
+            "runs_on_vnc": true,
+            "readiness_check": "pgrep -x rviz2 >/dev/null 2>&1",
+            "readiness_timeout": 60,
             "default_on": false
         },
         {
@@ -43,7 +51,8 @@
         {
             "id": "control_panel",
             "name": "Control Panel",
-            "description": "Web-based UI (http://localhost:5000/)",
+            "description": "Web-based UI",
+            "url": "${LUCY_LCP_SCHEME}://localhost:${LUCY_LCP_PUBLISHED_HOST_PORT}",
             "type": "interface",
             "dependencies": [],
             "conflicts": [],
@@ -51,6 +60,43 @@
                 "start": "tmux new-window -d -n control_panel 'cd /workspace/src/lucy_control_panel && yarn dev'",
                 "stop": "tmux kill-window -t lucy_ws:control_panel 2>/dev/null || true",
                 "is_running": "tmux list-windows -F '#{window_name}' | grep -q '^control_panel$'"
+            },
+            "readiness_check": "pgrep -f '[v]ite' >/dev/null 2>&1",
+            "readiness_timeout": 120,
+            "default_on": false
+        },
+        {
+            "id": "novnc",
+            "name": "noVNC (Web Viewer)",
+            "description": "View the desktop in a browser",
+            "url": "http://localhost:${LUCY_GUI_NOVNC_PUBLISHED_PORT}/vnc.html",
+            "type": "tool",
+            "requires_env": "LUCY_GUI_VNC_AVAILABLE",
+            "display_switch": true,
+            "dependencies": [],
+            "conflicts": [],
+            "command": {
+                "start": "bash /workspace/docker/gui_desktop.sh novnc start",
+                "stop": "bash /workspace/docker/gui_desktop.sh novnc stop",
+                "is_running": "bash /workspace/docker/gui_desktop.sh novnc status"
+            },
+            "default_on": false
+        },
+        {
+            "id": "vnc",
+            "name": "VNC Server",
+            "description": "Native VNC for Screen Sharing / RealVNC (password: lucy)",
+            "url": "localhost:${LUCY_GUI_VNC_PUBLISHED_PORT}",
+            "type": "tool",
+            "requires_env": "LUCY_GUI_VNC_AVAILABLE",
+            "display_switch": true,
+            "dev_only": true,
+            "dependencies": [],
+            "conflicts": [],
+            "command": {
+                "start": "bash /workspace/docker/gui_desktop.sh vnc start",
+                "stop": "bash /workspace/docker/gui_desktop.sh vnc stop",
+                "is_running": "bash /workspace/docker/gui_desktop.sh vnc status"
             },
             "default_on": false
         },
@@ -82,6 +128,7 @@
             "dependencies": ["core"],
             "conflicts": [],
             "command": "rqt",
+            "runs_on_vnc": true,
             "default_on": false
         }
     ]

@@ -18,16 +18,20 @@ ARG LUCY_BASE_IMAGE=osrf/ros:humble-desktop
 FROM --platform=${LUCY_FROM_PLATFORM} ${LUCY_BASE_IMAGE}
 
 ARG LUCY_BOOTSTRAP_DESKTOP=0
+ARG LUCY_INSTALL_VNC=0
 ARG DOCKERFILE_SHA256=unknown
 ARG LUCY_DOCKER_BUILD_PLATFORM=unknown
-LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}|${LUCY_DOCKER_BUILD_PLATFORM}"
+LABEL lucy.dockerfile.sha256="${DOCKERFILE_SHA256}|${LUCY_DOCKER_BUILD_PLATFORM}|vnc=${LUCY_INSTALL_VNC}"
 
 # ARM path: the base is ros-base, so pull in the full desktop metapackage
 # (RViz, demos, etc.) to match what osrf/ros:humble-desktop provides on amd64.
 RUN if [ "${LUCY_BOOTSTRAP_DESKTOP}" = 1 ]; then \
-      apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ros-humble-desktop \
-      && rm -rf /var/lib/apt/lists/*; \
+      apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install \
+      -o Acquire::http::Pipeline-Depth=0 \
+      -o Acquire::http::No-Cache=true \
+      -y --no-install-recommends \
+      ros-humble-desktop \
+    && rm -rf /var/lib/apt/lists/*; \
     fi
 
 # Enable universe + multiverse — some bases only list `main`, which is missing
@@ -39,13 +43,24 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
  && apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
+# ports.ubuntu.com is fronted by Cloudflare and occasionally serves a stale
+# Packages index that references .deb filenames already rotated out of the pool
+# (404). Disable HTTP pipelining + caching and bump retries so apt copes with
+# transient mirror inconsistencies instead of failing the whole layer.
+RUN printf '%s\n' \
+      'Acquire::http::Pipeline-Depth "0";' \
+      'Acquire::http::No-Cache "true";' \
+      'Acquire::Retries "5";' \
+      > /etc/apt/apt.conf.d/99-lucy-mirror-resilience
+
 # Gazebo Fortress (the `gz sim` binary used by ros_gz_sim launches).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
       curl lsb-release gnupg \
  && curl -sSL https://packages.osrfoundation.org/gazebo.gpg -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
       > /etc/apt/sources.list.d/gazebo-stable.list \
- && apt-get update && apt-get install -y --no-install-recommends ignition-fortress \
+ && apt-get update && apt-get install -y --no-install-recommends --fix-missing ignition-fortress \
+
  && rm -rf /var/lib/apt/lists/*
 
 # ROS sim/control stack + apt prerequisites for the rosdep run in install.sh
@@ -76,6 +91,24 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && npm install -g yarn \
  && rm -rf /var/lib/apt/lists/*
+
+# Virtual GUI desktop: Xvfb + a window manager + VNC + noVNC. Installed when
+# LUCY_INSTALL_VNC=1 — set by ensure_image.sh on arm64, or on any arch when the
+# host exports LUCY_FORCE_VNC=1. Where native X11/GLX is unavailable or unreliable
+# for GL apps, RViz/Gazebo render into this in-container display with Mesa llvmpipe
+# software GL and are viewed over VNC / noVNC. mesa-utils ships glxinfo for
+# diagnostics. AMD64 (without the override) uses native X11 and ships none of this.
+# See docker/gui_desktop.sh and launch_lucy.sh.
+RUN if [ "${LUCY_INSTALL_VNC}" = 1 ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        xvfb \
+        x11vnc \
+        fluxbox \
+        novnc \
+        websockify \
+        mesa-utils \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Setup bashrc with alias for the TUI launcher
 RUN echo "alias launcher='python3 /workspace/launcher.py'" >> ~/.bashrc

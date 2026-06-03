@@ -52,9 +52,17 @@ ensure_lucy_docker_image() {
   local ws_root="$1"
   local image_name="${2:-lucy_ros2:humble}"
   local dockerfile="${3:-$ws_root/Dockerfile.humble}"
-  local target_platform base_image bootstrap_desktop
+  local target_platform base_image bootstrap_desktop install_vnc
   local hash want want_id
   local build_platform_args
+
+  dockerfile_build_hash() {
+    awk '
+      /^[[:space:]]*#/ { next }
+      /^[[:space:]]*$/ { next }
+      { sub(/[[:space:]]+$/, "") ; print }
+    ' "$1" | sha256sum | awk '{print $1}'
+  }
 
   if [ ! -f "$dockerfile" ]; then
     echo "ensure_lucy_docker_image: missing $dockerfile" >&2
@@ -78,8 +86,18 @@ ensure_lucy_docker_image() {
       ;;
   esac
 
-  hash=$(sha256sum "$dockerfile" | awk '{print $1}')
-  want_id="${hash}|${target_platform}"
+  # VNC virtual-desktop tooling: installed on arm64, or forced on any arch with
+  # LUCY_FORCE_VNC=1 (lets an amd64 host try the VNC path). Folded into want_id and
+  # the image label below so toggling it forces a rebuild even though the
+  # Dockerfile text — the only other rebuild trigger — is unchanged.
+  install_vnc=0
+  [ "$target_platform" = "linux/arm64" ] && install_vnc=1
+  case "$(echo "${LUCY_FORCE_VNC:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes) install_vnc=1 ;;
+  esac
+
+  hash=$(dockerfile_build_hash "$dockerfile")
+  want_id="${hash}|${target_platform}|vnc=${install_vnc}"
 
   if docker image inspect "$image_name" &>/dev/null; then
     want=$(docker image inspect "$image_name" \
@@ -96,6 +114,7 @@ ensure_lucy_docker_image() {
     --build-arg "LUCY_FROM_PLATFORM=$target_platform" \
     --build-arg "LUCY_BASE_IMAGE=$base_image" \
     --build-arg "LUCY_BOOTSTRAP_DESKTOP=$bootstrap_desktop" \
+    --build-arg "LUCY_INSTALL_VNC=$install_vnc" \
     --build-arg "DOCKERFILE_SHA256=$hash" \
     --build-arg "LUCY_DOCKER_BUILD_PLATFORM=$target_platform" \
     -t "$image_name" "$ws_root"
