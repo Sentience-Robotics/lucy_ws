@@ -39,20 +39,17 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
  && apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
-# Gazebo Fortress (the `gz sim` binary used by ros_gz_sim launches).
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl lsb-release gnupg \
- && curl -sSL https://packages.osrfoundation.org/gazebo.gpg -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
- && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
-      > /etc/apt/sources.list.d/gazebo-stable.list \
- && apt-get update && apt-get install -y --no-install-recommends ignition-fortress \
- && rm -rf /var/lib/apt/lists/*
+RUN sudo apt install curl lsb-release gnupg -y --no-install-recommends
+
+RUN sudo curl https://packages.osrfoundation.org/gazebo.gpg --output /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null \
+ && sudo apt-get update \
+ && sudo apt-get install gz-harmonic -y --no-install-recommends
 
 # ROS sim/control stack + apt prerequisites for the rosdep run in install.sh
 # (lucy_bringup / camera_ros / GStreamer / pytest).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ros-humble-ros-gz-sim \
-      ros-humble-ros-gz-bridge \
+      ros-humble-ros-gzharmonic \
       ros-humble-gz-ros2-control \
       ros-humble-ros2-control \
       ros-humble-ros2-control-cmake \
@@ -60,6 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-humble-xacro \
       ros-humble-rosbridge-server \
       ros-humble-realsense2-camera \
+      ros-humble-simulation-interfaces \
       python3-colcon-common-extensions \
       python3-rosdep2 \
       python3-pytest-cov \
