@@ -66,10 +66,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
 
 # ROS sim/control stack + apt prerequisites for the rosdep run in install.sh
 # (lucy_bringup / camera_ros / GStreamer / pytest).
+# ros-humble-ros-gzharmonic* debs are amd64-only on packages.osrfoundation.org;
+# arm64 builds ros_gz from source in the layer below (gazebosim/ros_gz#614).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git wget \
-      ros-humble-ros-gzharmonic \
-      ros-humble-ros-gzharmonic-bridge \
       ros-humble-simulation-interfaces \
       ros-humble-ros2-control \
       ros-humble-ros2-control-cmake \
@@ -90,18 +90,49 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rosdep update \
  && rm -rf /var/lib/apt/lists/*
 
-# gz_ros2_control has no Humble+Harmonic apt package; build humble branch from source.
+# amd64: OSRF hosts ros-humble-ros-gzharmonic debs (not built for arm64).
+RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-ros-gzharmonic \
+        ros-humble-ros-gzharmonic-bridge \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Humble+Harmonic: gz_ros2_control has no apt package on any arch; ros_gz has no
+# arm64 debs — build from source (humble branch, GZ_VERSION=harmonic).
 # https://control.ros.org/humble/doc/gz_ros2_control/doc/index.html
 RUN bash -c 'set -e \
+ && ARCH=$(dpkg --print-architecture) \
  && mkdir -p /opt/gz_ros2_control_ws/src \
+ && if [ "$ARCH" = "arm64" ]; then \
+      git clone --depth 1 --branch humble https://github.com/gazebosim/ros_gz.git \
+        /opt/gz_ros2_control_ws/src/ros_gz; \
+    fi \
  && git clone --depth 1 --branch humble https://github.com/ros-controls/gz_ros2_control.git \
       /opt/gz_ros2_control_ws/src/gz_ros2_control \
  && source /opt/ros/humble/setup.bash \
  && export GZ_VERSION=harmonic \
  && cd /opt/gz_ros2_control_ws \
- && rosdep install -r --from-paths src --ignore-src --rosdistro humble -y \
-      --skip-keys="ros_gz_bridge ros_gz_sim gz_ros2_control_demos" \
- && colcon build --packages-select gz_ros2_control \
+ && if [ "$ARCH" = "arm64" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        libgflags-dev \
+        ros-humble-actuator-msgs \
+        ros-humble-gps-msgs \
+        ros-humble-vision-msgs \
+      && rm -rf /var/lib/apt/lists/* \
+      && rosdep install -r --from-paths \
+           src/ros_gz/ros_gz_interfaces \
+           src/ros_gz/ros_gz_bridge \
+           src/ros_gz/ros_gz_sim \
+           src/gz_ros2_control \
+         --ignore-src --rosdistro humble -y \
+      && colcon build --parallel-workers=1 \
+         --packages-select ros_gz_interfaces ros_gz_bridge ros_gz_sim gz_ros2_control; \
+    else \
+      rosdep install -r --from-paths src --ignore-src --rosdistro humble -y \
+        --skip-keys="ros_gz_bridge ros_gz_sim gz_ros2_control_demos" \
+      && colcon build --packages-select gz_ros2_control; \
+    fi \
  && rm -rf /opt/gz_ros2_control_ws/build /opt/gz_ros2_control_ws/log \
       /opt/gz_ros2_control_ws/src'
 
