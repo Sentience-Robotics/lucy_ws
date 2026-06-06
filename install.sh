@@ -146,6 +146,7 @@ docker_workspace_install() {
   local inner_cmd
   read -r -d '' inner_cmd <<'EOS' || true
 source /opt/ros/humble/setup.bash \
+  && [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash \
   && cd /workspace \
   && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common" \
   && rm -rf build/camera_ros install/camera_ros \

@@ -136,6 +136,7 @@ def build_workspace():
     print("Building workspace inside the container...")
     inner_cmd = (
         'source /opt/ros/humble/setup.bash && '
+        '[ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash; '
         'cd /workspace && '
         'rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common" && '
         'colcon build --symlink-install && '
@@ -225,6 +226,7 @@ def launch_workspace():
 
     container_script = (
         "source /opt/ros/humble/setup.bash && "
+        "[ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash; "
         "cd /workspace && source install/setup.bash && "
         "tmux start-server && "
         "if ! tmux has-session -t lucy_ws 2>/dev/null; then "
