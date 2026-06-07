@@ -1,20 +1,20 @@
 {
   "repos": [
     {
-      "name": "thais_urdf",
-      "branch": "dev",
-      "url_https": "https://github.com/Sentience-Robotics/thais_urdf.git",
-      "url_ssh": "git@github.com:Sentience-Robotics/thais_urdf.git"
+      "name": "inmoov_urdf",
+      "branch": "master",
+      "url_https": "https://github.com/Sentience-Robotics/inmoov_urdf.git",
+      "url_ssh": "git@github.com:Sentience-Robotics/inmoov_urdf.git"
     },
     {
       "name": "lucy_ros_packages",
-      "branch": "dev",
+      "branch": "master",
       "url_https": "https://github.com/Sentience-Robotics/lucy_ros_packages.git",
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_ros_packages.git"
     },
     {
       "name": "lucy_control_panel",
-      "branch": "dev",
+      "branch": "master",
       "url_https": "https://github.com/Sentience-Robotics/lucy_control_panel.git",
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_control_panel.git"
     }

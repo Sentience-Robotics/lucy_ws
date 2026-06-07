@@ -125,6 +125,13 @@ class Package:
         self.command = data.get('command', '')
         self.lifecycle_hooks = data.get('lifecycle_hooks', {})
         self.selected = data.get('default_on', False)
+        # Robot-description package this entry selects (e.g. inmoov_urdf). When set,
+        # the entry is hidden unless that package is built, so only installed robots
+        # appear in the mutually-exclusive selector.
+        self.requires_pkg = data.get('requires_pkg')
+        # Render with a deeper indent so it reads as a sub-option of its dependency
+        # (e.g. headless under "... with Simulator").
+        self.subitem = data.get('subitem', False)
         # Optional shell probe that exits 0 only once the package is truly up.
         # Without it, a package is considered "ready" the instant its window exists.
         self.readiness_check = data.get('readiness_check')
@@ -145,9 +152,12 @@ class Package:
         self.pane_dead = False
         self.update_running_status(running_modifiers)
 
+        # Robot-package radios are mutually exclusive
+        if self.type == 'modifier' and self.requires_pkg:
+            self.selected = self.is_running
         # Reflect running state as ticked — but not while it is being stopped, so an
         # in-progress shutdown doesn't re-check the box the user just unticked.
-        if self.is_running and self.id not in _pkg_stop_times:
+        elif self.is_running and self.id not in _pkg_stop_times:
             self.selected = True
 
     def update_running_status(self, running_modifiers):
@@ -190,10 +200,22 @@ def _env_enabled(var_name):
         return True
     return os.environ.get(var_name, "").strip().lower() in ("1", "true", "yes")
 
+def _ros_pkg_installed(pkg_name):
+    """True when a ROS package is built in the workspace overlay (install/<pkg>).
+
+    Used to gate the robot-package selector entries so only robots that are
+    actually built show up — mirrors lucy.launch.py's runtime discovery."""
+    if not pkg_name:
+        return True
+    return os.path.isdir(os.path.join("/workspace", "install", pkg_name))
+
 def _pkg_visible(pkg_config, dev_mode):
     """Whether a package appears in the launcher: hidden when it is `dev_only` and
-    Developer Mode is off, or when its `requires_env` gate isn't satisfied."""
+    Developer Mode is off, when its `requires_env` gate isn't satisfied, or when a
+    `requires_pkg` robot package isn't built."""
     if pkg_config.get('dev_only') and not dev_mode:
+        return False
+    if not _ros_pkg_installed(pkg_config.get('requires_pkg')):
         return False
     return _env_enabled(pkg_config.get('requires_env'))
 
@@ -220,25 +242,44 @@ class LauncherState:
         for pkg in self.packages:
             pkg.update_running_status(running_state['modifiers'])
 
+    def _enable(self, pkg):
+        """Tick a package, clearing anything it conflicts with first."""
+        for conflict_id in pkg.conflicts:
+            conflict_pkg = self.get_by_id(conflict_id)
+            if conflict_pkg and conflict_pkg.selected:
+                conflict_pkg.selected = False
+        pkg.selected = True
+
+    def _enable_with_deps(self, pkg):
+        """Tick a package and any of its (transitive) dependencies that are off, so a
+        sub-option pulls in its parent (e.g. headless ticks the simulator)."""
+        for dep_id in pkg.dependencies:
+            dep = self.get_by_id(dep_id)
+            if dep and not dep.selected:
+                self._enable_with_deps(dep)
+        self._enable(pkg)
+
+    def _disable_with_dependents(self, pkg):
+        """Untick a package and any (transitive) dependents, so turning off a parent
+        also turns off its sub-options (e.g. unticking core drops the simulator and
+        headless together rather than leaving them orphaned)."""
+        for other_pkg in self.packages:
+            if pkg.id in other_pkg.dependencies and other_pkg.selected:
+                self._disable_with_dependents(other_pkg)
+        pkg.selected = False
+
     def toggle(self, pkg_id):
         pkg = self.get_by_id(pkg_id)
         if not pkg: return None
         if pkg_id in _pkg_stop_times and not pkg.selected:
             return "Still stopping…"
         if not pkg.selected:
-            missing_deps = [dep for dep in pkg.dependencies if not self.get_by_id(dep).selected]
-            if missing_deps:
-                return f"Needs: {', '.join(missing_deps)}"
-            for conflict_id in pkg.conflicts:
-                conflict_pkg = self.get_by_id(conflict_id)
-                if conflict_pkg and conflict_pkg.selected:
-                    conflict_pkg.selected = False
-            pkg.selected = True
+            # Ticking any option auto-enables its (transitive) dependencies instead
+            # of being blocked — e.g. the simulator/RViz/a robot pulls in core, and
+            # headless pulls in the simulator.
+            self._enable_with_deps(pkg)
         else:
-            for other_pkg in self.packages:
-                if pkg_id in other_pkg.dependencies and other_pkg.selected:
-                    other_pkg.selected = False
-            pkg.selected = False
+            self._disable_with_dependents(pkg)
         return None
 
 def get_pkg_status(pkg):
@@ -367,43 +408,47 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
     elif unapplied:
         stdscr.addstr(h - 2, 2, "Unapplied changes — press Enter to apply", curses.color_pair(1))
 
-    cores_and_mods = [p for p in state.packages if p.type in ['core', 'modifier']]
+    # Robot-package selectors are modifiers (their command is appended to the core
+    # launch), but get their own section so the robot choice reads as a distinct
+    # group rather than another core toggle.
+    robots = [p for p in state.packages if p.type == 'modifier' and p.requires_pkg]
+    cores_and_mods = [p for p in state.packages if p.type in ['core', 'modifier'] and not p.requires_pkg]
     interfaces = [p for p in state.packages if p.type == 'interface']
     tools = [p for p in state.packages if p.type == 'tool']
-    display_list = cores_and_mods + interfaces + tools
+    display_list = cores_and_mods + robots + interfaces + tools
+
+    def draw_section(title, color, items, offset, gap=1, indent_all=False):
+        nonlocal row
+        stdscr.addstr(row, 2, title, curses.A_BOLD | color)
+        row += gap
+        for i, p in enumerate(items):
+            list_idx = offset + i
+            prefix = "> " if current_idx == list_idx else "  "
+            checkbox = "[x]" if p.selected else "[ ]"
+            can_enable = all(state.get_by_id(dep).selected for dep in p.dependencies)
+            attr = curses.A_NORMAL if can_enable else curses.A_DIM
+            if p.type == 'core':
+                attr |= curses.A_BOLD
+            if p.subitem:
+                indent = "        "
+            elif indent_all or p.type == 'modifier':
+                indent = "    "
+            else:
+                indent = ""
+            status = get_pkg_status(p)
+            _draw_pkg_row(stdscr, row + i, 4, prefix, indent, checkbox, p.name, attr,
+                          status, _vnc_hint(p, state), _status_url(p))
+        row += len(items) + 1
 
     row = 2
-    stdscr.addstr(row, 2, "Primary Launch Targets", curses.A_BOLD | curses.color_pair(1))
-    row += 2
-    for i, p in enumerate(cores_and_mods):
-        prefix = "> " if current_idx == i else "  "
-        checkbox = "[x]" if p.selected else "[ ]"
-        can_enable = all(state.get_by_id(dep).selected for dep in p.dependencies)
-        attr = curses.A_NORMAL if can_enable else curses.A_DIM
-        if p.type == 'core': attr |= curses.A_BOLD
-        indent = "    " if p.type == 'modifier' else ""
-        status = get_pkg_status(p)
-        _draw_pkg_row(stdscr, row + i, 4, prefix, indent, checkbox, p.name, attr, status, _vnc_hint(p, state), _status_url(p))
-
-    row += len(cores_and_mods) + 1
-    stdscr.addstr(row, 2, "Interfaces", curses.A_BOLD | curses.color_pair(3))
-    row += 1
-    for i, p in enumerate(interfaces):
-        list_idx = i + len(cores_and_mods)
-        prefix = "> " if current_idx == list_idx else "  "
-        checkbox = "[x]" if p.selected else "[ ]"
-        status = get_pkg_status(p)
-        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status, _vnc_hint(p, state), _status_url(p))
-
-    row += len(interfaces) + 1
-    stdscr.addstr(row, 2, "Tools", curses.A_BOLD | curses.color_pair(3))
-    row += 1
-    for i, p in enumerate(tools):
-        list_idx = i + len(cores_and_mods) + len(interfaces)
-        prefix = "> " if current_idx == list_idx else "  "
-        checkbox = "[x]" if p.selected else "[ ]"
-        status = get_pkg_status(p)
-        _draw_pkg_row(stdscr, row + i, 4, prefix, "", checkbox, p.name, curses.A_NORMAL, status, _vnc_hint(p, state), _status_url(p))
+    draw_section("Primary Launch Targets", curses.color_pair(1), cores_and_mods, 0, gap=2)
+    offset = len(cores_and_mods)
+    if robots:
+        draw_section("Robot", curses.color_pair(1), robots, offset, gap=1, indent_all=True)
+        offset += len(robots)
+    draw_section("Interfaces", curses.color_pair(3), interfaces, offset, gap=1)
+    offset += len(interfaces)
+    draw_section("Tools", curses.color_pair(3), tools, offset, gap=1)
 
     stdscr.refresh()
     return display_list
@@ -547,8 +592,35 @@ def restore_selection(state):
     saved = load_selection()
     if saved is None:
         return
+    robots = [p for p in state.packages if p.requires_pkg]
     for pkg in state.packages:
+        if pkg.requires_pkg:
+            continue
         pkg.selected = (pkg.id in saved) or pkg.is_running
+    # Robot radios: at most one ticked (saved choice wins over stale is_running).
+    chosen = next((p for p in robots if p.id in saved), None)
+    if chosen is None:
+        running = [p for p in robots if p.is_running]
+        chosen = running[0] if len(running) == 1 else None
+    for pkg in robots:
+        pkg.selected = pkg is chosen
+
+def default_robot_selection(state):
+    """Auto-tick a robot-package modifier when none is selected yet (mirrors
+    lucy.launch.py: sole installed robot, or inmoov_urdf when several are built).
+    Gated on core being selected so it can be applied alongside core."""
+    core = state.get_by_id('core')
+    robots = [p for p in state.packages if p.requires_pkg]
+    if not robots or not (core and core.selected):
+        return
+    if any(p.selected for p in robots):
+        return
+    if len(robots) == 1:
+        robots[0].selected = True
+        return
+    inmoov = state.get_by_id('robot_inmoov')
+    if inmoov:
+        inmoov.selected = True
 
 def main(stdscr):
     curses.curs_set(0)
@@ -565,6 +637,7 @@ def main(stdscr):
 
     state = LauncherState(load_config())
     restore_selection(state)
+    default_robot_selection(state)
     current_idx = 0
     error_msg = None
     status_msg = None
@@ -579,9 +652,11 @@ def main(stdscr):
             core_pkg.selected = True
         if lcp_pkg:
             lcp_pkg.selected = True
+        default_robot_selection(state)
         apply_changes(state)
         status_msg = "Starting default services for production mode..."
         state = LauncherState(load_config())
+        restore_selection(state)
 
     while True:
         try:
@@ -636,6 +711,7 @@ def main(stdscr):
                 status_msg = "Configuration Applied!"
                 status_msg_until = time.time() + 2.0
                 state = LauncherState(load_config())
+                restore_selection(state)
             elif key in [ord('x'), ord('X')]:
                 h, w = stdscr.getmaxyx()
                 stdscr.addstr(h - 2, 2, "Stop all processes and exit Docker? (y/n)", curses.A_BOLD | curses.color_pair(2))

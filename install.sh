@@ -16,6 +16,7 @@
 #                                    combine with any other flag, e.g. --arm --build-only
 #
 # Optional .env (copy from .env.example): DEV=true selects `url_ssh` in repos.json (default: `url_https`).
+# Optional config/repos.json.local (gitignored): overrides config/repos.json to point repos at forks/branches.
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,7 +33,14 @@ fi
 IMAGE_NAME="lucy_ros2:humble"
 DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
 WORKSPACE="/workspace"
+# config/repos.json.local (gitignored) overrides the tracked config/repos.json,
+# so contributors can point repos at their own forks/branches without touching
+# the committed file. Falls back to repos.json when no local override exists.
 CONFIG_FILE="${SCRIPT_DIR}/config/repos.json"
+if [ -f "${SCRIPT_DIR}/config/repos.json.local" ]; then
+  CONFIG_FILE="${SCRIPT_DIR}/config/repos.json.local"
+  echo "install.sh: using local repo override config/repos.json.local"
+fi
 
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/docker/ensure_image.sh"
