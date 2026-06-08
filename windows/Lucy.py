@@ -29,7 +29,12 @@ else:
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
-REPOS_FILE = os.path.join(PROJECT_ROOT, "config", "repos.json")
+# config/repos.json.local (gitignored) overrides the tracked config/repos.json
+# so contributors can point repos at their own forks/branches. Falls back to
+# repos.json when no local override exists (mirrors install.sh).
+_REPOS_FILE_DEFAULT = os.path.join(PROJECT_ROOT, "config", "repos.json")
+_REPOS_FILE_LOCAL = os.path.join(PROJECT_ROOT, "config", "repos.json.local")
+REPOS_FILE = _REPOS_FILE_LOCAL if os.path.exists(_REPOS_FILE_LOCAL) else _REPOS_FILE_DEFAULT
 DOCKERFILE = os.path.join(PROJECT_ROOT, "Dockerfile.humble")
 IMAGE_NAME = "lucy_ros2:humble"
 WORKSPACE_DIR_HOST = PROJECT_ROOT
@@ -136,6 +141,7 @@ def build_workspace():
     print("Building workspace inside the container...")
     inner_cmd = (
         'source /opt/ros/humble/setup.bash && '
+        '[ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash; '
         'cd /workspace && '
         'rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common" && '
         'colcon build --symlink-install && '
@@ -225,6 +231,7 @@ def launch_workspace():
 
     container_script = (
         "source /opt/ros/humble/setup.bash && "
+        "[ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash; "
         "cd /workspace && source install/setup.bash && "
         "tmux start-server && "
         "if ! tmux has-session -t lucy_ws 2>/dev/null; then "

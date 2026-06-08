@@ -44,6 +44,27 @@ Docker Desktop on Apple Silicon defaults to `linux/amd64` ROS images and runs th
 
 `config/repos.json` carries both `url_https` (default) and `url_ssh` for each repo. To clone over SSH, copy `.env.example` to `.env` and set `DEV=true` before running `install.sh`. SSH keys must be configured for the relevant host.
 
+### Local repo overrides (`config/repos.json.local`)
+
+To point a repo at your own fork or a feature branch without editing the tracked `config/repos.json`, create **`config/repos.json.local`**. When present it is used instead of `repos.json` by both `install.sh` and the launcher (`windows/Lucy.py`), and it is gitignored so overrides are never committed.
+
+Use the same structure as `repos.json` — list only the repos you want to override (or all of them). Each entry needs `name` (the folder under `src/`), `branch`, and both `url_https` and `url_ssh` (Developer Mode selects SSH, otherwise HTTPS):
+
+```json
+{
+  "repos": [
+    {
+      "name": "inmoov_urdf",
+      "branch": "my-feature-branch",
+      "url_https": "https://github.com/your-user/inmoov_urdf.git",
+      "url_ssh": "git@github.com:your-user/inmoov_urdf.git"
+    }
+  ]
+}
+```
+
+Delete the file to fall back to the tracked `repos.json`.
+
 ## `launch_lucy.sh`
 
 Builds the Docker image if needed, mounts the workspace at `/workspace`, sources the built ROS overlay, then:

@@ -1,4 +1,4 @@
-# Lucy runtime image — ROS 2 Humble (Ubuntu 22.04 Jammy) with Gazebo Fortress,
+# Lucy runtime image — ROS 2 Humble (Ubuntu 22.04 Jammy) with Gazebo Harmonic,
 # ros2_control, RViz, rosbridge, GStreamer and Node 22 + Yarn for the control panel.
 #
 # Built and tagged as `lucy_ros2:humble` by docker/ensure_image.sh, which
@@ -53,22 +53,24 @@ RUN printf '%s\n' \
       'Acquire::Retries "5";' \
       > /etc/apt/apt.conf.d/99-lucy-mirror-resilience
 
-# Gazebo Fortress (the `gz sim` binary used by ros_gz_sim launches).
+# Gazebo Harmonic (the `gz sim` binary used by ros_gz_sim launches).
+# Humble officially ships Fortress; Harmonic uses OSRF packages (ros-gzharmonic).
+# https://gazebosim.org/docs/harmonic/ros_installation/
 RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
       curl lsb-release gnupg \
  && curl -sSL https://packages.osrfoundation.org/gazebo.gpg -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
       > /etc/apt/sources.list.d/gazebo-stable.list \
- && apt-get update && apt-get install -y --no-install-recommends --fix-missing ignition-fortress \
-
+ && apt-get update && apt-get install -y --no-install-recommends --fix-missing gz-harmonic \
  && rm -rf /var/lib/apt/lists/*
 
 # ROS sim/control stack + apt prerequisites for the rosdep run in install.sh
 # (lucy_bringup / camera_ros / GStreamer / pytest).
+# ros-humble-ros-gzharmonic* debs are amd64-only on packages.osrfoundation.org;
+# arm64 builds ros_gz from source in the layer below (gazebosim/ros_gz#614).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ros-humble-ros-gz-sim \
-      ros-humble-ros-gz-bridge \
-      ros-humble-gz-ros2-control \
+      git wget \
+      ros-humble-simulation-interfaces \
       ros-humble-ros2-control \
       ros-humble-ros2-control-cmake \
       ros-humble-ros2-controllers \
@@ -83,8 +85,56 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       gstreamer1.0-plugins-good \
       libgstreamer-plugins-good1.0-0 \
       tmux \
+ && wget -q https://raw.githubusercontent.com/osrf/osrf-rosdep/master/gz/00-gazebo.list \
+      -O /etc/ros/rosdep/sources.list.d/00-gazebo.list \
  && rosdep update \
  && rm -rf /var/lib/apt/lists/*
+
+# amd64: OSRF hosts ros-humble-ros-gzharmonic debs (not built for arm64).
+RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-ros-gzharmonic \
+        ros-humble-ros-gzharmonic-bridge \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Humble+Harmonic: gz_ros2_control has no apt package on any arch; ros_gz has no
+# arm64 debs — build from source (humble branch, GZ_VERSION=harmonic).
+# https://control.ros.org/humble/doc/gz_ros2_control/doc/index.html
+RUN bash -c 'set -e \
+ && ARCH=$(dpkg --print-architecture) \
+ && mkdir -p /opt/gz_ros2_control_ws/src \
+ && if [ "$ARCH" = "arm64" ]; then \
+      git clone --depth 1 --branch humble https://github.com/gazebosim/ros_gz.git \
+        /opt/gz_ros2_control_ws/src/ros_gz; \
+    fi \
+ && git clone --depth 1 --branch humble https://github.com/ros-controls/gz_ros2_control.git \
+      /opt/gz_ros2_control_ws/src/gz_ros2_control \
+ && source /opt/ros/humble/setup.bash \
+ && export GZ_VERSION=harmonic \
+ && cd /opt/gz_ros2_control_ws \
+ && if [ "$ARCH" = "arm64" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        libgflags-dev \
+        ros-humble-actuator-msgs \
+        ros-humble-gps-msgs \
+        ros-humble-vision-msgs \
+      && rm -rf /var/lib/apt/lists/* \
+      && rosdep install -r --from-paths \
+           src/ros_gz/ros_gz_interfaces \
+           src/ros_gz/ros_gz_bridge \
+           src/ros_gz/ros_gz_sim \
+           src/gz_ros2_control \
+         --ignore-src --rosdistro humble -y \
+      && colcon build --parallel-workers=1 \
+         --packages-select ros_gz_interfaces ros_gz_bridge ros_gz_sim gz_ros2_control; \
+    else \
+      rosdep install -r --from-paths src --ignore-src --rosdistro humble -y \
+        --skip-keys="ros_gz_bridge ros_gz_sim gz_ros2_control_demos" \
+      && colcon build --packages-select gz_ros2_control; \
+    fi \
+ && rm -rf /opt/gz_ros2_control_ws/build /opt/gz_ros2_control_ws/log \
+      /opt/gz_ros2_control_ws/src'
 
 # Node 22 + Yarn — the lucy_control_panel Vite dev server runs inside this image.
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
@@ -116,4 +166,4 @@ RUN echo "alias exit=''" >> ~/.bashrc # Disable 'exit' to force launcher usage
 
 WORKDIR /workspace
 ENTRYPOINT ["/bin/bash"]
-CMD ["-c", "source /opt/ros/humble/setup.bash && exec /bin/bash"]
+CMD ["-c", "source /opt/ros/humble/setup.bash && source /opt/gz_ros2_control_ws/install/setup.bash && exec /bin/bash"]

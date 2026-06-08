@@ -5,6 +5,10 @@
 # - CI=true    -> install.sh skips the host `xhost` check (no GUI on runners).
 # - variant=arm runs on `ubuntu-24.04-arm` with `./install.sh --arm`; the built image
 #   is then verified to be linux/arm64 (linux/amd64 for the default variant).
+# - Runner OS (22.04 or 24.04) is only the CI host. ROS Humble always runs inside
+#   Jammy-based images (`osrf/ros:humble-desktop` / `ros:humble-ros-base-jammy`).
+# - `ubuntu-24.04-arm` is GitHub's hosted ARM64 runner label; there is no 22.04-arm
+#   standard runner. The container OS stays Jammy regardless.
 # - The launch smoke test uses `./launch_lucy.sh --headless <command>`, which runs a
 #   single command inside the container (no control panel, no auto Gazebo/RViz).
 
@@ -50,6 +54,27 @@ jobs:
       # Make sure no committed/local .env can flip DEV back to true at install time.
       - name: Drop workspace .env if present
         run: rm -f .env .env.local || true
+
+      # Docker Hub metadata/pull flakes (i/o timeout) fail `docker build` before
+      # any Dockerfile layer runs. Pre-pull with retries so the build reuses cache.
+      - name: Pre-pull base images (retry on Hub flakes)
+        run: |
+          pull_with_retry() {
+            image="$1"
+            for attempt in 1 2 3 4 5; do
+              if docker pull "$image"; then
+                return 0
+              fi
+              echo "docker pull ${image} failed (attempt ${attempt}/5), retrying..."
+              sleep $((attempt * 15))
+            done
+            return 1
+          }
+          if [ "${{ matrix.use_arm_install }}" = true ]; then
+            pull_with_retry ros:humble-ros-base-jammy
+          else
+            pull_with_retry osrf/ros:humble-desktop
+          fi
 
       - name: Install (clone + Docker image + rosdep + colcon + yarn)
         run: |

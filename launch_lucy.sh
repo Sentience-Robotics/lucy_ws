@@ -194,7 +194,7 @@ DOCKER_PORT_ARGS=(
 # Container scripts
 # ----------------------------------------------------------------------------
 
-SETUP="source /opt/ros/humble/setup.bash"
+SETUP="source /opt/ros/humble/setup.bash && [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash"
 SOURCE_WORKSPACE="cd $WORKSPACE && source install/setup.bash"
 LAUNCH_GAZEBO_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
 LAUNCH_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py rviz:=true"
@@ -203,6 +203,7 @@ LAUNCH_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py rviz:=true"
 read -r -d '' CONTAINER_PREAMBLE <<'EOS' || true
 set -e
 source /opt/ros/humble/setup.bash
+[ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash
 cd /workspace
 if [[ ! -f install/setup.bash ]]; then
   echo "Workspace not built. Run Install/Update via Lucy.py" >&2
