@@ -86,14 +86,12 @@ ensure_lucy_docker_image() {
       ;;
   esac
 
-  # VNC virtual-desktop tooling: installed on arm64, or forced on any arch with
-  # LUCY_FORCE_VNC=1 (lets an amd64 host try the VNC path). Folded into want_id and
-  # the image label below so toggling it forces a rebuild even though the
-  # Dockerfile text — the only other rebuild trigger — is unchanged.
-  install_vnc=0
-  [ "$target_platform" = "linux/arm64" ] && install_vnc=1
-  case "$(echo "${LUCY_FORCE_VNC:-}" | tr '[:upper:]' '[:lower:]')" in
-    1|true|yes) install_vnc=1 ;;
+  # VNC virtual-desktop tooling: installed by default; disable with LUCY_FORCE_VNC=0.
+  # Folded into want_id and the image label below so toggling it forces a rebuild even
+  # though the Dockerfile text — the only other rebuild trigger — is unchanged.
+  install_vnc=1
+  case "$(echo "${LUCY_FORCE_VNC:-1}" | tr '[:upper:]' '[:lower:]')" in
+    0|false|no) install_vnc=0 ;;
   esac
 
   hash=$(dockerfile_build_hash "$dockerfile")

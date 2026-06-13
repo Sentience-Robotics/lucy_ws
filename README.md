@@ -1,6 +1,6 @@
 # Lucy ROS 2 workspace (Humble)
 
-Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Humble, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host (plus **`xhost`** on Linux for GUI forwarding; on macOS the GUI is viewed over VNC with no extra software — see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo)).
+Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Humble, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host. GUI apps (RViz, Gazebo) render on a VNC desktop you view from your browser, with no extra software (see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo)).
 
 ## Requirements
 
@@ -109,22 +109,22 @@ This setting is stored in a `.env` file.
 
 RViz, Gazebo and rqt are native OpenGL apps. The container can show them two ways:
 
-- **Native X11** — Linux/amd64 hosts with a working GPU. Needs `xhost` on the host for display forwarding.
-- **VNC virtual desktop** — a self-contained desktop inside the container: `Xvfb` rendered by
-  Mesa `llvmpipe` (software OpenGL), a small window manager, and VNC + noVNC servers (see
-  [`docker/gui_desktop.sh`](docker/gui_desktop.sh)). It is the default on Apple Silicon (arm64),
-  where the container gets no native GL context, and can be enabled on any host on demand.
+- **VNC virtual desktop** *(default)* — a self-contained desktop inside the container: `Xvfb`
+  rendered by Mesa `llvmpipe` (software OpenGL), a small window manager, and VNC + noVNC servers
+  (see [`docker/gui_desktop.sh`](docker/gui_desktop.sh)). You view it from a browser or a VNC
+  client; no host-side setup.
+- **Native X11** — host display forwarding (needs `xhost`). Opt in by disabling VNC with
+  `LUCY_FORCE_VNC=0` (see below).
 
 ### Choosing VNC vs native X11 (`LUCY_FORCE_VNC`)
 
-By default the mode is picked from your architecture. Set `LUCY_FORCE_VNC` in a root `.env`
-(or the environment) to override — e.g. an amd64 Linux box can opt into the VNC desktop:
+The VNC desktop is enabled by default. Set `LUCY_FORCE_VNC` in a root `.env` (or the
+environment) to change it:
 
 | `LUCY_FORCE_VNC` | Behaviour |
 | :-- | :-- |
-| unset *(default)* | Auto: VNC on arm64, native X11 on amd64 |
-| `1` / `yes` / `true` | Force the VNC desktop on any architecture (e.g. an amd64 host without working GLX) |
-| `0` / `no` / `false` | Force VNC off even on arm64 (fall back to native X11 / headless) |
+| unset / `1` / `yes` / `true` *(default)* | VNC virtual desktop |
+| `0` / `no` / `false` | VNC off — native X11 / headless |
 
 ### Connecting to the VNC desktop
 
@@ -149,8 +149,8 @@ the address it shows. Defaults:
 
 ### macOS notes
 
-- On Apple Silicon, XQuartz can't give the container an OpenGL context, so the VNC desktop is
-  used by default — no setup required.
+- macOS can't give the container a native OpenGL context over XQuartz, so keep the default VNC
+  desktop (don't set `LUCY_FORCE_VNC=0`).
 - **Port 5000** is taken by the macOS AirPlay Receiver, and the control panel defaults to it.
   The launcher auto-shifts to the next free port, but for a stable URL you can disable
   **System Settings → General → AirDrop & Handoff → AirPlay Receiver**, or set

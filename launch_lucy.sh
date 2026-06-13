@@ -74,15 +74,11 @@ ensure_docker_image() {
 
 X11_ARGS=()
 GUI_PORT_ARGS=()
-ARCH="$(uname -m)"
-# LUCY_FORCE_VNC selects the in-container VNC desktop:
-#   unset  -> auto: VNC on arm64 (no working native GL), native X11 on amd64
-#   1/yes  -> force VNC on any arch (also set it for ./install.sh so the image
-#             is built with the VNC tooling)
-#   0/no   -> force VNC off even on arm64 (falls back to native X11 / headless)
-USE_VNC=0
-case "$ARCH" in arm64|aarch64) USE_VNC=1 ;; esac
-case "$(echo "${LUCY_FORCE_VNC:-}" | tr '[:upper:]' '[:lower:]')" in
+# LUCY_FORCE_VNC selects the in-container VNC desktop (on by default):
+#   unset/1/yes -> VNC desktop (software GL via llvmpipe)
+#   0/no        -> VNC off (native X11 / headless)
+USE_VNC=1
+case "$(echo "${LUCY_FORCE_VNC:-1}" | tr '[:upper:]' '[:lower:]')" in
   1|true|yes) USE_VNC=1 ;;
   0|false|no) USE_VNC=0 ;;
 esac
@@ -113,7 +109,7 @@ elif [ "$USE_VNC" = 1 ]; then
   echo "       Browser (noVNC):  http://localhost:${GUI_NOVNC_PORT}/vnc.html  (no password)"
   echo "       VNC Viewer:       localhost:${GUI_VNC_PORT}  (password: ${GUI_VNC_PASSWORD})"
 else
-  # AMD64: native X11 forwarding, no VNC.
+  # Native X11 forwarding (VNC disabled via LUCY_FORCE_VNC=0).
   GUI_DISPLAY="${DOCKER_GUI_DISPLAY:-$DISPLAY}"
   if [ -n "$GUI_DISPLAY" ]; then
     if command -v xhost &>/dev/null; then
