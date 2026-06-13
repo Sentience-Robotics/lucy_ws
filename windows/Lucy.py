@@ -161,6 +161,43 @@ def build_workspace():
     run_command(docker_cmd)
 
 
+ROSBRIDGE_PORT = 9090
+LCP_DEFAULT_PORT = 5000
+
+
+def _read_lcp_env_value(key):
+    """Read a VITE_* value from src/lucy_control_panel/.env (last wins), or None."""
+    env_path = os.path.join(PROJECT_ROOT, 'src', 'lucy_control_panel', '.env')
+    if not os.path.exists(env_path):
+        return None
+    value = None
+    try:
+        with open(env_path, 'r') as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped.startswith(f"{key}="):
+                    value = stripped.split('=', 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        return None
+    return value
+
+
+def _lcp_container_port():
+    """Container port Vite listens on (VITE_PORT in the LCP .env), default 5000."""
+    val = _read_lcp_env_value('VITE_PORT')
+    if val and val.isdigit():
+        return int(val)
+    return LCP_DEFAULT_PORT
+
+
+def _lcp_scheme():
+    """Scheme the LCP serves on: https when VITE_HTTPS=true, else http."""
+    val = _read_lcp_env_value('VITE_HTTPS')
+    if val and val.strip().lower() == 'true':
+        return 'https'
+    return 'http'
+
+
 def _docker_gui_args():
     """Return Docker args for optional GUI/X11 forwarding."""
     gui_display = os.environ.get('DOCKER_GUI_DISPLAY', os.environ.get('DISPLAY', '')).strip()
@@ -252,13 +289,23 @@ def launch_workspace():
     else:
         print("No DISPLAY configured; running without GUI.")
 
+    # Publish the same container port Vite listens on, otherwise the URL the
+    # launcher prints would silently point at the wrong port.
+    lcp_container_port = _lcp_container_port()
+    lcp_host_port = lcp_container_port
+    lcp_scheme = _lcp_scheme()
+
     # Remove the extra 'bash' token; pass '-c' so the ENTRYPOINT (/bin/bash) runs the script.
     docker_cmd = [
         'docker', 'run', '-it', '--rm',
         '--name', 'lucy_dev_win',
-        '-p', '9090:9090',
-        '-p', '5000:5000',
+        '-p', f'{ROSBRIDGE_PORT}:9090',
+        '-p', f'{lcp_host_port}:{lcp_container_port}',
         '-v', volume_mapping,
+        # Mirror launch_lucy.sh: the launcher builds the LCP access URL from these.
+        '-e', f'LUCY_LCP_PUBLISHED_HOST_PORT={lcp_host_port}',
+        '-e', f'LUCY_LCP_CONTAINER_PORT={lcp_container_port}',
+        '-e', f'LUCY_LCP_SCHEME={lcp_scheme}',
     ] + gui_args + [
         IMAGE_NAME,
         '-c', container_script
@@ -275,17 +322,22 @@ def main():
         dev_status = "ON" if is_dev_mode else "OFF"
         
         print("\n--- Lucy Workspace Manager (Native Windows) ---")
-        print("1. Install (Full)")
-        print("2. Rebuild (Workspace only)")
-        print("3. Launch")
+        print("1. Launch")
         print("---------------------------------------------")
-        print(f"4. Toggle Developer Mode (Currently: {dev_status})")
-        print("5. Exit")
-        
+        print("2. Install/Update")
+        print("3. Rebuild")
+        print("4. Exit")
+        print("---------------------------------------------")
+        print(f"5. Developer Mode [{'x' if is_dev_mode else ' '}]")
+
         try:
-            choice = input("\nEnter your choice (1-5): ").strip()
+            choice = input("\nEnter your choice (1-5) [1]: ").strip()
         except KeyboardInterrupt:
             break
+
+        # Pressing Enter with no input defaults to Launch (option 1).
+        if not choice:
+            choice = '1'
 
         if choice == '1':
             launch_workspace()
@@ -295,29 +347,29 @@ def main():
                 clone_or_update_repos()
                 build_docker_image()
                 build_workspace()
-                print("--- Full install complete! ---")
-                input("\nPress Enter to continue...")
+                print("\n--- Task 'Install' finished successfully. ---")
+                input("Press Enter to return to the menu.")
             except Exception as e:
                 print(f"Install failed: {e}")
-                input("\nPress Enter to exit...")
+                input("\nPress Enter to continue...")
 
         elif choice == '3':
             try:
                 build_workspace()
-                print("--- Workspace rebuild complete! ---")
-                input("\nPress Enter to continue...")
+                print("\n--- Task 'Rebuild' finished successfully. ---")
+                input("Press Enter to return to the menu.")
             except Exception as e:
                 print(f"Rebuild failed: {e}")
-                input("\nPress Enter to exit...")
-            
+                input("\nPress Enter to continue...")
+
         elif choice == '4':
+            break
+
+        elif choice == '5':
             set_dev_mode(not is_dev_mode)
             print(f"Developer mode set to: {'ON' if not is_dev_mode else 'OFF'}")
             input("\nPress Enter to continue...")
 
-        elif choice == '5':
-            break
-        
         else:
             print("Invalid choice, please try again.")
             input("\nPress Enter to continue...")

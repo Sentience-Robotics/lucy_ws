@@ -10,6 +10,30 @@ Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Humble, Gaze
 
 <sub>Linux GUI forwarding uses `xhost` (preinstalled). On Wayland run `xhost +local:docker` if windows don't open — see [GUI](#gui-rviz-and-gazebo).</sub>
 
+> **Windows users:** see the [Windows README](windows/README.md) for step-by-step install instructions (including the Docker Desktop "uncheck WSL 2" note) and the native `windows/Lucy.py` manager.
+
+## Get the repository
+
+Install the [requirements](#requirements) first, then grab the repo. You can clone it with Git (recommended — makes updates a `git pull`) or download a ZIP.
+
+**Option A — Clone with Git (recommended):**
+
+```bash
+git clone https://github.com/Sentience-Robotics/lucy_ws.git
+```
+
+**Option B — Download the ZIP:**
+
+- Open the repository page on GitHub, click the green **Code** button, then **Download ZIP**, and extract it.
+
+Then open a terminal and move into the project folder before running anything:
+
+```bash
+cd lucy_ws
+```
+
+> The manager (`Lucy.py`) must be run **from the repository root** — it reads `config/`, `Dockerfile.humble` and mounts the workspace relative to that directory.
+
 ## Quick start
 
 A Python-based Text User Interface (TUI) manages the whole workspace — installing, rebuilding, and launching the environment. From the repository root, run the manager for your platform:
@@ -29,6 +53,12 @@ python windows/Lucy.py
 ```
 
 > **Windows** additionally needs a third-party X Server — see the [Windows README](windows/README.md).
+
+> **First run:** in the TUI, choose **`Install / Update`** before anything else. It clones the sub-repositories, builds the Docker image and the workspace (this can take a while). Only once it finishes should you use **`Launch`**.
+
+### Opening the Control Panel
+
+After **`Launch`**, enable **Core + Control Panel** in the launcher. Once it is running, the **Lucy Control Panel is accessible in your browser at [http://localhost:5000](http://localhost:5000)** (or **http://localhost:5001** if port 5000 is already taken — common on macOS due to AirPlay). The launcher also shows the exact URL next to the Control Panel entry once it's up.
 
 
 ## Using the workspace
