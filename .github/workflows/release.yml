@@ -1,0 +1,16 @@
+name: Trigger Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number'
+        required: true
+        type: string
+
+jobs:
+  create-release:
+    uses: Sentience-Robotics/.github/.github/workflows/release.yaml@master
+    with:
+      version: ${{ inputs.version }}
+
