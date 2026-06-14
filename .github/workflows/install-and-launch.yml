@@ -98,6 +98,95 @@ jobs:
       - name: Launch smoke test (headless, no TTY)
         run: ./launch_lucy.sh --headless ros2 doctor --report
 
+  # Windows-specific CI. NOTE: GitHub-hosted Windows runners cannot run Linux
+  # containers (no Hyper-V/nested virtualization, no WSL2), so the heavy install
+  # step (docker build of the ROS image + colcon) CANNOT run here — that is
+  # covered for both amd64/arm64 by the Linux `install-and-launch` job above.
+  # This job verifies the Windows-only pieces on real x64 AND arm64 hardware:
+  #   - host CPU -> Docker platform detection (install_ops.host_container_platform)
+  #   - Lucy.exe builds (PyInstaller) and its bundled --cli imports work
+  #   - the NSIS installer compiles
+  windows-build-test:
+    name: Windows build & installer test (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            expected_platform: linux/amd64
+          - arch: arm64
+            runner: windows-11-arm
+            expected_platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Generate releases manifest
+        run: python windows/generate_releases.py
+
+      - name: Verify host architecture detection
+        shell: pwsh
+        run: |
+          $expected = "${{ matrix.expected_platform }}"
+          $got = (python -c "import sys; sys.path.insert(0,'windows'); import install_ops; print(install_ops.host_container_platform())").Trim()
+          Write-Host "host_container_platform() -> $got (expected $expected)"
+          if ($got -ne $expected) {
+            Write-Error "Arch detection mismatch: got '$got', expected '$expected'"
+            exit 1
+          }
+
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller
+
+      - name: Build Lucy.exe
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --onefile --name Lucy `
+            --icon windows/assets/lucy-icon.ico `
+            --hidden-import install_ops `
+            --hidden-import install_runner `
+            --paths windows `
+            windows/Lucy.py
+          if (-not (Test-Path "dist/Lucy.exe")) { Write-Error "Lucy.exe not produced"; exit 1 }
+
+      - name: Smoke-test Lucy.exe CLI (bundled imports + prereq report)
+        shell: pwsh
+        run: |
+          dist\Lucy.exe --cli check-prereqs
+          $code = $LASTEXITCODE
+          Write-Host "check-prereqs exit code: $code"
+          # 0 (all present) or 1 (a prereq missing, e.g. no Docker on CI) both mean
+          # the exe ran fine; >1 = crash. Reset the propagated exit code explicitly.
+          if ($code -gt 1) { Write-Error "Lucy.exe --cli check-prereqs crashed (exit $code)"; exit 1 }
+          exit 0
+
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+
+      - name: Build Lucy-Setup.exe (NSIS)
+        shell: pwsh
+        run: |
+          $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          & $makensis "/DMyAppVersion=0.0.0-ci" windows/installer/Lucy.nsi
+          if (-not (Test-Path "dist/Lucy-Setup-0.0.0-ci.exe")) { Write-Error "Installer not produced"; exit 1 }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lucy-windows-${{ matrix.arch }}
+          path: |
+            dist/Lucy.exe
+            dist/Lucy-Setup-0.0.0-ci.exe
+          if-no-files-found: error
+
   build-and-release-windows-exe:
     name: Build and Release Windows Executable
     # Only run this job when a new tag is pushed
@@ -115,15 +204,37 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Generate releases manifest
+        run: python windows/generate_releases.py
+
       - name: Install PyInstaller
-        run: pip install pyinstaller
+        run: python -m pip install pyinstaller
 
-      - name: Build the executable
-        run: pyinstaller --onefile --name Lucy windows/Lucy.py
+      - name: Build Lucy.exe
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --onefile --name Lucy `
+            --icon windows/assets/lucy-icon.ico `
+            --hidden-import install_ops `
+            --hidden-import install_runner `
+            --paths windows `
+            windows/Lucy.py
 
-      - name: Create Release and Upload Asset
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      - name: Build Lucy-Setup.exe
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          if (-not $version) { $version = "0.0.0" }
+          $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          & $makensis "/DMyAppVersion=$version" windows/installer/Lucy.nsi
+
+      - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Lucy.exe
-          # This creates a draft release. Remove `draft: true` to publish it automatically.
+          files: |
+            dist/Lucy.exe
+            dist/Lucy-Setup-*.exe
           draft: true

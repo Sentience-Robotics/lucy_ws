@@ -1,63 +1,55 @@
-# This script provides a native Windows TUI for managing the Lucy workspace.
-# It replicates the logic of the .sh scripts by calling git and docker directly.
-# This script is designed to be compiled into a standalone .exe file.
+# Windows launcher for the Lucy workspace.
 #
-# PREREQUISITES for running from source:
-# 1. Python 3
-# 2. Git for Windows (must be in your PATH)
-# 3. Docker Desktop for Windows (must be running)
+# Compiled to Lucy.exe via PyInstaller. Default behaviour: start the workspace
+# (Docker + tmux + launcher). Install/update/repair is handled by Lucy-Setup.exe
+# via the hidden --cli mode (see windows/install_runner.py).
 #
+# PREREQUISITES:
+# 1. Docker Desktop for Windows (must be running)
+# 2. Workspace must be installed (run Lucy-Setup.exe first)
 
 import os
 import subprocess
 import sys
-import json
 
-# --- Platform Check ---
 if sys.platform != "win32":
     print("Error: This script is designed for Windows only.", file=sys.stderr)
     sys.exit(1)
 
-# --- Configuration ---
-# When running as a PyInstaller executable, the script is extracted to a temp folder.
-# We need to determine the project root relative to the executable's location.
+_WINDOWS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _WINDOWS_DIR not in sys.path:
+    sys.path.insert(0, _WINDOWS_DIR)
+
+import install_ops  # noqa: E402
+
 if getattr(sys, 'frozen', False):
-    # Running as a compiled executable
     PROJECT_ROOT = os.path.dirname(sys.executable)
 else:
-    # Running as a .py script
-    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    PROJECT_ROOT = os.path.dirname(_WINDOWS_DIR)
 
-ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
-# config/repos.json.local (gitignored) overrides the tracked config/repos.json
-# so contributors can point repos at their own forks/branches. Falls back to
-# repos.json when no local override exists (mirrors install.sh).
-_REPOS_FILE_DEFAULT = os.path.join(PROJECT_ROOT, "config", "repos.json")
-_REPOS_FILE_LOCAL = os.path.join(PROJECT_ROOT, "config", "repos.json.local")
-REPOS_FILE = _REPOS_FILE_LOCAL if os.path.exists(_REPOS_FILE_LOCAL) else _REPOS_FILE_DEFAULT
-DOCKERFILE = os.path.join(PROJECT_ROOT, "Dockerfile.humble")
-IMAGE_NAME = "lucy_ros2:humble"
+IMAGE_NAME = install_ops.IMAGE_NAME
 WORKSPACE_DIR_HOST = PROJECT_ROOT
-WORKSPACE_DIR_CONTAINER = "/workspace"
+WORKSPACE_DIR_CONTAINER = install_ops.WORKSPACE_CONTAINER
 
-# --- Helper Functions ---
+ROSBRIDGE_PORT = 9090
+LCP_DEFAULT_PORT = 5000
+
+_CLI_MODES = frozenset(('install', 'update', 'repair', 'build-only', 'check-prereqs'))
+
 
 def run_command(command, check=True, interactive=False):
     """Runs a command, streaming its output if not interactive."""
     print(f"--- Running: {' '.join(command)} ---")
     try:
         if interactive:
-            # For interactive commands, run directly and attach to the terminal.
             return subprocess.run(command, check=check).returncode
-        else:
-            # For non-interactive commands, capture and stream output.
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            for line in iter(process.stdout.readline, ''):
-                print(line.strip())
-            process.wait()
-            if check and process.returncode != 0:
-                raise subprocess.CalledProcessError(process.returncode, command)
-            return process.returncode
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in iter(process.stdout.readline, ''):
+            print(line.rstrip())
+        process.wait()
+        if check and process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, command)
+        return process.returncode
     except FileNotFoundError:
         print(f"Error: Command '{command[0]}' not found. Is it in your PATH?")
         return -1
@@ -65,108 +57,8 @@ def run_command(command, check=True, interactive=False):
         print(f"Command failed with exit code {e.returncode}")
         return e.returncode
 
-def get_dev_mode():
-    if not os.path.exists(ENV_FILE):
-        return False
-    with open(ENV_FILE, "r") as f:
-        for line in f:
-            if line.strip().startswith("DEV="):
-                return line.strip().split("=")[1].lower() == "true"
-    return False
-
-def set_dev_mode(is_enabled):
-    lines = []
-    dev_found = False
-    if os.path.exists(ENV_FILE):
-        with open(ENV_FILE, "r") as f:
-            lines = f.readlines()
-    with open(ENV_FILE, "w") as f:
-        for line in lines:
-            if line.strip().startswith("DEV="):
-                f.write(f"DEV={str(is_enabled).lower()}\n")
-                dev_found = True
-            else:
-                f.write(line)
-        if not dev_found:
-            f.write(f"DEV={str(is_enabled).lower()}\n")
-
-def _format_volume_mapping(host_path, container_path):
-    """
-    Return a Docker -v mapping string without extra quotes.
-    Normalize host path to an absolute path and use forward slashes to avoid
-    passing literal quote characters into the docker CLI.
-    """
-    host_abs = os.path.abspath(host_path)
-    # Use forward slashes to reduce issues with escaping backslashes;
-    # Docker Desktop accepts Windows-style paths with forward slashes.
-    host_normalized = host_abs.replace('\\', '/')
-    return f"{host_normalized}:{container_path}"
-
-# --- Core Logic Functions ---
-
-def clone_or_update_repos():
-    """Clones or updates repositories based on repos.json."""
-    is_dev = get_dev_mode()
-    print(f"Developer mode is {'ON' if is_dev else 'OFF'}.")
-
-    with open(REPOS_FILE, 'r') as f:
-        repos = json.load(f)['repos']
-
-    src_dir = os.path.join(PROJECT_ROOT, 'src')
-    os.makedirs(src_dir, exist_ok=True)
-
-    for repo in repos:
-        repo_name = repo['name']
-        repo_path = os.path.join(src_dir, repo_name)
-        url_key = 'url_ssh' if is_dev else 'url_https'
-        repo_url = repo[url_key]
-        branch = repo['branch']
-
-        if os.path.exists(os.path.join(repo_path, '.git')):
-            print(f"Updating repo: {repo_name}")
-            run_command(['git', '-C', repo_path, 'fetch'])
-            run_command(['git', '-C', repo_path, 'checkout', branch])
-            run_command(['git', '-C', repo_path, 'pull'])
-        else:
-            print(f"Cloning repo: {repo_name}")
-            run_command(['git', 'clone', '-b', branch, repo_url, repo_path])
-
-def build_docker_image():
-    """Builds the main Docker image."""
-    print("Building Docker image...")
-    run_command(['docker', 'build', '-t', IMAGE_NAME, '-f', DOCKERFILE, '.'], check=True)
-
-def build_workspace():
-    """Runs the colcon build process inside the container."""
-    print("Building workspace inside the container...")
-    inner_cmd = (
-        'source /opt/ros/humble/setup.bash && '
-        '[ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash; '
-        'cd /workspace && '
-        'rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common" && '
-        'colcon build --symlink-install && '
-        'if [ -f src/lucy_control_panel/package.json ]; then '
-        '(cd src/lucy_control_panel && yarn install); '
-        'fi'
-    )
-    volume_mapping = _format_volume_mapping(WORKSPACE_DIR_HOST, WORKSPACE_DIR_CONTAINER)
-    # Do NOT include an extra 'bash' argument; the image sets ENTRYPOINT to /bin/bash.
-    # Provide '-c' so the entrypoint receives the command string correctly.
-    docker_cmd = [
-        'docker', 'run', '--rm',
-        '-v', volume_mapping,
-        IMAGE_NAME,
-        '-c', inner_cmd
-    ]
-    run_command(docker_cmd)
-
-
-ROSBRIDGE_PORT = 9090
-LCP_DEFAULT_PORT = 5000
-
 
 def _read_lcp_env_value(key):
-    """Read a VITE_* value from src/lucy_control_panel/.env (last wins), or None."""
     env_path = os.path.join(PROJECT_ROOT, 'src', 'lucy_control_panel', '.env')
     if not os.path.exists(env_path):
         return None
@@ -183,7 +75,6 @@ def _read_lcp_env_value(key):
 
 
 def _lcp_container_port():
-    """Container port Vite listens on (VITE_PORT in the LCP .env), default 5000."""
     val = _read_lcp_env_value('VITE_PORT')
     if val and val.isdigit():
         return int(val)
@@ -191,7 +82,6 @@ def _lcp_container_port():
 
 
 def _lcp_scheme():
-    """Scheme the LCP serves on: https when VITE_HTTPS=true, else http."""
     val = _read_lcp_env_value('VITE_HTTPS')
     if val and val.strip().lower() == 'true':
         return 'https'
@@ -199,10 +89,8 @@ def _lcp_scheme():
 
 
 def _docker_gui_args():
-    """Return Docker args for optional GUI/X11 forwarding."""
     gui_display = os.environ.get('DOCKER_GUI_DISPLAY', os.environ.get('DISPLAY', '')).strip()
     if sys.platform == 'win32' and not gui_display:
-        # Docker Desktop can reach the Windows X server at host.docker.internal.
         gui_display = 'host.docker.internal:0'
 
     if not gui_display:
@@ -258,12 +146,16 @@ def _docker_gui_diagnostics(gui_display, gui_args):
         "    sys.exit(1)\n"
     )
 
-    docker_cmd = ['docker', 'run', '--rm'] + gui_args + [IMAGE_NAME, '-c', f'python3 -c "{python_check}"']
+    docker_cmd = ['docker', 'run', '--rm'] + install_ops.docker_run_platform_args(PROJECT_ROOT) + gui_args + [IMAGE_NAME, '-c', f'python3 -c "{python_check}"']
     run_command(docker_cmd, check=False)
 
 
 def launch_workspace():
-    """Launches the main tmux session in the container."""
+    """Start Docker, attach to the Lucy Control Center launcher inside tmux."""
+    if not os.path.isfile(os.path.join(PROJECT_ROOT, 'install', 'setup.bash')):
+        print("Workspace not built. Run Lucy-Setup.exe to install or update first.", file=sys.stderr)
+        sys.exit(1)
+
     print("Launching workspace...")
 
     container_script = (
@@ -277,7 +169,7 @@ def launch_workspace():
         "tmux attach-session -t lucy_ws"
     )
 
-    volume_mapping = _format_volume_mapping(WORKSPACE_DIR_HOST, WORKSPACE_DIR_CONTAINER)
+    volume_mapping = install_ops.format_volume_mapping(WORKSPACE_DIR_HOST, WORKSPACE_DIR_CONTAINER)
     gui_args = _docker_gui_args()
     display_value = os.environ.get('DOCKER_GUI_DISPLAY', os.environ.get('DISPLAY', ''))
     if sys.platform == 'win32' and not display_value:
@@ -289,20 +181,17 @@ def launch_workspace():
     else:
         print("No DISPLAY configured; running without GUI.")
 
-    # Publish the same container port Vite listens on, otherwise the URL the
-    # launcher prints would silently point at the wrong port.
     lcp_container_port = _lcp_container_port()
     lcp_host_port = lcp_container_port
     lcp_scheme = _lcp_scheme()
 
-    # Remove the extra 'bash' token; pass '-c' so the ENTRYPOINT (/bin/bash) runs the script.
     docker_cmd = [
         'docker', 'run', '-it', '--rm',
+        *install_ops.docker_run_platform_args(PROJECT_ROOT),
         '--name', 'lucy_dev_win',
         '-p', f'{ROSBRIDGE_PORT}:9090',
         '-p', f'{lcp_host_port}:{lcp_container_port}',
         '-v', volume_mapping,
-        # Mirror launch_lucy.sh: the launcher builds the LCP access URL from these.
         '-e', f'LUCY_LCP_PUBLISHED_HOST_PORT={lcp_host_port}',
         '-e', f'LUCY_LCP_CONTAINER_PORT={lcp_container_port}',
         '-e', f'LUCY_LCP_SCHEME={lcp_scheme}',
@@ -310,75 +199,27 @@ def launch_workspace():
         IMAGE_NAME,
         '-c', container_script
     ]
-    
+
     run_command(docker_cmd, interactive=True)
 
 
-# --- Main TUI ---
+def _is_cli_invocation():
+    return len(sys.argv) > 1 and (sys.argv[1] == '--cli' or sys.argv[1] in _CLI_MODES)
 
-def main():
-    while True:
-        is_dev_mode = get_dev_mode()
-        dev_status = "ON" if is_dev_mode else "OFF"
-        
-        print("\n--- Lucy Workspace Manager (Native Windows) ---")
-        print("1. Launch")
-        print("---------------------------------------------")
-        print("2. Install/Update")
-        print("3. Rebuild")
-        print("4. Exit")
-        print("---------------------------------------------")
-        print(f"5. Developer Mode [{'x' if is_dev_mode else ' '}]")
 
-        try:
-            choice = input("\nEnter your choice (1-5) [1]: ").strip()
-        except KeyboardInterrupt:
-            break
+def _run_cli():
+    """Install/update/repair — used by Lucy-Setup.exe, not exposed in the default UX."""
+    from install_runner import main as install_main
+    argv = [a for a in sys.argv[1:] if a != '--cli']
+    return install_main(argv)
 
-        # Pressing Enter with no input defaults to Launch (option 1).
-        if not choice:
-            choice = '1'
-
-        if choice == '1':
-            launch_workspace()
-
-        elif choice == '2':
-            try:
-                clone_or_update_repos()
-                build_docker_image()
-                build_workspace()
-                print("\n--- Task 'Install' finished successfully. ---")
-                input("Press Enter to return to the menu.")
-            except Exception as e:
-                print(f"Install failed: {e}")
-                input("\nPress Enter to continue...")
-
-        elif choice == '3':
-            try:
-                build_workspace()
-                print("\n--- Task 'Rebuild' finished successfully. ---")
-                input("Press Enter to return to the menu.")
-            except Exception as e:
-                print(f"Rebuild failed: {e}")
-                input("\nPress Enter to continue...")
-
-        elif choice == '4':
-            break
-
-        elif choice == '5':
-            set_dev_mode(not is_dev_mode)
-            print(f"Developer mode set to: {'ON' if not is_dev_mode else 'OFF'}")
-            input("\nPress Enter to continue...")
-
-        else:
-            print("Invalid choice, please try again.")
-            input("\nPress Enter to continue...")
 
 if __name__ == "__main__":
-    # This needs to be at the top level for PyInstaller to see it.
     os.chdir(PROJECT_ROOT)
     try:
-        main()
+        if _is_cli_invocation():
+            sys.exit(_run_cli())
+        launch_workspace()
     except KeyboardInterrupt:
         print("\nExiting.")
     except Exception as e:

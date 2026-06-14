@@ -32,3 +32,10 @@ __pycache__/
 
 # Local repo override (forks/branches; takes precedence over config/repos.json)
 config/repos.json.local
+
+# End-user install profile (written by installer / Lucy.exe)
+config/install.profile.json
+
+# Windows executable files
+dist/
+*.spec
