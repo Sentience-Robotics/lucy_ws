@@ -65,6 +65,18 @@ Use the same structure as `repos.json` — list only the repos you want to overr
 
 Delete the file to fall back to the tracked `repos.json`.
 
+### Windows install profile (`config/install.profile.json`)
+
+On Windows, **`Lucy-Setup.exe`** (or `Lucy.exe --cli …`) writes **`config/install.profile.json`** (gitignored) to record install choices: `lucy_ws` version, `repos_branch` (default `master`), `fetch_method` (`git` or `zip`), and whether **developer install** was selected. The file is created automatically on first install.
+
+| Windows | Linux/macOS equivalent |
+|---------|------------------------|
+| `Lucy-Setup.exe` → Fresh install | `./install.sh` |
+| `Lucy-Setup.exe` → Update | `./install.sh` / `./install.sh --update` |
+| `Lucy-Setup.exe` → Repair | `./install.sh --repair` |
+| `Lucy.exe` (no args) | `./launch_lucy.sh` / **Launch** in `Lucy.py` |
+| `Lucy.exe --cli build-only` | `./install.sh --build-only` |
+
 ## `launch_lucy.sh`
 
 Builds the Docker image if needed, mounts the workspace at `/workspace`, sources the built ROS overlay, then:
