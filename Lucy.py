@@ -36,13 +36,13 @@ def set_dev_mode(is_enabled):
 
 def run_command(command, interactive=False):
     """Runs a command.
-    
+
     If interactive is True, runs natively in the terminal.
     """
     print(f"--- Running: {' '.join(command)} ---")
     try:
         if interactive:
-            # Inherit standard IO to maintain terminal size and TTY functionality 
+            # Inherit standard IO to maintain terminal size and TTY functionality
             return subprocess.run(command).returncode
         else:
             # Popen is fine for non-interactive scripts like install/build
@@ -91,7 +91,7 @@ def main_tui(stdscr):
                 continue
 
             prefix = "> " if current_idx == i else "  "
-            
+
             if option == "Developer Mode":
                 checkbox = "[x]" if is_dev_mode else "[ ]"
                 stdscr.addstr(2 + i, 4, f"{prefix}{checkbox} {option}")
@@ -167,7 +167,7 @@ if __name__ == "__main__":
         if task.get("interactive", False):
             print(f"--- Session finished with exit code {rc} ---")
             break
-        
+
         task_name = task.get("name")
         if task_name in ["Install", "Rebuild"] and rc == 0:
             print(f"\n--- Task '{task_name}' finished successfully. ---")

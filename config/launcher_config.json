@@ -130,6 +130,8 @@
             "dependencies": ["core"],
             "conflicts": [],
             "command": "ros2 run lucy_cli tui",
+            "readiness_check": "test -f /tmp/lucy_cli.ready",
+            "nav_hint": "Ctrl-B W",
             "default_on": false
         },
         {

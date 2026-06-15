@@ -106,13 +106,22 @@ def run_shell_command_async(cmd):
             pass
     threading.Thread(target=_target, daemon=True).start()
 
-def _pane_dead(pkg_id):
-    """True if the package's tmux window exists but its process has exited.
-    remain-on-exit keeps the dead pane (and its error output) for debugging."""
-    return run_shell_command(
-        f"tmux list-panes -t lucy_ws:{pkg_id} -F '#{{pane_dead}}' 2>/dev/null | grep -q '^1$'",
-        capture_output=True,
-    )
+def _pane_exit_status(pkg_id):
+    """Exit code of the package's dead tmux pane, or None if it isn't dead.
+    remain-on-exit keeps the dead pane (and its output) so we can read the code:
+    0 is a clean exit (STOPPED), anything else (incl. signal death) a crash (CRASHED)."""
+    out = subprocess.run(
+        f"tmux list-panes -t lucy_ws:{pkg_id} -F '#{{pane_dead}}:#{{pane_dead_status}}' 2>/dev/null",
+        shell=True, capture_output=True, text=True,
+    ).stdout
+    for line in out.splitlines():
+        dead, _, status = line.strip().partition(":")
+        if dead == "1":
+            try:
+                return int(status)
+            except ValueError:
+                return -1  # signal death reports no status; treat as a crash
+    return None
 
 class Package:
     def __init__(self, data, running_modifiers):
@@ -144,12 +153,15 @@ class Package:
         # Access URL shown after [RUNNING] (control panel / VNC endpoints). May
         # reference env vars as ${VAR} — expanded at render time.
         self.url = data.get('url')
+        # Navigation hint for non-web packages (e.g. "Ctrl-B W" for tmux windows).
+        self.nav_hint = data.get('nav_hint', '')
 
         # is_running = window/process exists; ready = readiness probe passed;
-        # pane_dead = service window kept open after its process crashed.
+        # pane_dead = window kept open (remain-on-exit) after its process exited.
         self.is_running = False
         self.ready = False
         self.pane_dead = False
+        self.pane_exit_status = None
         self.update_running_status(running_modifiers)
 
         # Robot-package radios are mutually exclusive
@@ -180,12 +192,10 @@ class Package:
         else:
             self.ready = True
 
-        # A service whose window is still up (remain-on-exit) but whose process
-        # has exited: reported as CRASHED while the error stays visible.
-        self.pane_dead = (
-            self.is_running and bool(self.readiness_check)
-            and not self.ready and _pane_dead(self.id)
-        )
+        # Window still up (remain-on-exit) but the process has exited.
+        # The exit code distinguishes a clean stop from a crash (see get_pkg_status).
+        self.pane_exit_status = _pane_exit_status(self.id) if self.is_running else None
+        self.pane_dead = self.pane_exit_status is not None
 
     def is_complex_command(self):
         return isinstance(self.command, dict)
@@ -270,7 +280,8 @@ class LauncherState:
 
     def toggle(self, pkg_id):
         pkg = self.get_by_id(pkg_id)
-        if not pkg: return None
+        if not pkg:
+            return None
         if pkg_id in _pkg_stop_times and not pkg.selected:
             return "Still stopping…"
         if not pkg.selected:
@@ -298,10 +309,13 @@ def get_pkg_status(pkg):
         if time.time() - _pkg_stop_times[pkg.id] < STOPPING_TIMEOUT:
             return "stopping"
         _pkg_stop_times.pop(pkg.id, None)  # gave up; fall through to real state
-    # Service window left open by a crash (remain-on-exit): CRASHED right away,
-    # no waiting for the loading timeout, so the error can be read in tmux.
+    # Window left open by an exited process (remain-on-exit).
+    # Reported right away so the output can be read in tmux: exit 0 is a clean stop, else a crash.
     if pkg.pane_dead:
         _pkg_start_times.pop(pkg.id, None)
+        if pkg.pane_exit_status == 0:
+            _intended_running.discard(pkg.id)
+            return "stopped"
         return "crashed"
     if pkg.ready:
         _pkg_start_times.pop(pkg.id, None)
@@ -336,6 +350,12 @@ def _vnc_hint(pkg, state):
     if any(p.display_switch and p.is_running for p in state.packages):
         return "(VNC)"
     return ""
+
+def _nav_hint(pkg):
+    """Navigation hint for packages without a web URL (e.g. tmux terminal windows)."""
+    if not pkg.nav_hint or not pkg.is_running:
+        return ""
+    return f"({pkg.nav_hint})"
 
 def _status_url(pkg):
     """Expanded access URL for a package, or '' if it has none / an env var in it
@@ -436,8 +456,9 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
             else:
                 indent = ""
             status = get_pkg_status(p)
+            hint = _vnc_hint(p, state) or _nav_hint(p)
             _draw_pkg_row(stdscr, row + i, 4, prefix, indent, checkbox, p.name, attr,
-                          status, _vnc_hint(p, state), _status_url(p))
+                          status, hint, _status_url(p))
         row += len(items) + 1
 
     row = 2
@@ -542,11 +563,11 @@ def apply_changes(state):
             else:
                 pkg.is_running = False
 
-    # Second Pass: Start processes that should be turned on (never re-launch one
-    # that is still shutting down). A crashed service (pane_dead) is relaunched
-    # too, after reaping the dead window left open for debugging.
+    # Second Pass: Start processes that should be turned on (never re-launch one that is still shutting down).
+    # A crashed service (non-zero exit) is relaunched too, after reaping the dead window; a clean exit (STOPPED) is left alone.
     for pkg in state.packages:
-         if pkg.selected and pkg.id not in _pkg_stop_times and (not pkg.is_running or pkg.pane_dead):
+         crashed = pkg.pane_dead and pkg.pane_exit_status != 0
+         if pkg.selected and pkg.id not in _pkg_stop_times and (not pkg.is_running or crashed):
             if pkg.pane_dead:
                 run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
                 pkg.pane_dead = False
@@ -574,10 +595,17 @@ def apply_changes(state):
                     _pkg_start_times[mod.id] = time.time()
                     _intended_running.add(mod.id)
             elif pkg.type in ['tool', 'interface']:
-                run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
-                # Don't auto-switch to GUI tools that render on the VNC desktop
-                # (e.g. rqt) — their window is in the viewer, not this terminal.
-                if not pkg.runs_on_vnc:
+                if pkg.type == 'interface':
+                    # remain-on-exit leaves the dead pane so the launcher can read the exit code (STOPPED vs CRASHED).
+                    # A wrapper shell on `read` would keep the pane alive and mask the exit.
+                    run_shell_command(
+                        f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}'; "
+                        f"tmux set-window-option -t lucy_ws:{pkg.id} remain-on-exit on"
+                    )
+                else:
+                    run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
+                # Only auto-switch to tool windows (e.g. console), not interfaces which manage their own terminal visibility (lucy_cli, control_panel).
+                if not pkg.runs_on_vnc and pkg.type == 'tool':
                     last_launched_window = pkg.id
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
