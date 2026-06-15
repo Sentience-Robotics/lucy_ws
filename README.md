@@ -10,7 +10,7 @@ Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Humble, Gaze
 
 <sub>Linux GUI forwarding uses `xhost` (preinstalled). On Wayland run `xhost +local:docker` if windows don't open — see [GUI](#gui-rviz-and-gazebo).</sub>
 
-> **Windows users:** see the [Windows README](windows/README.md) for step-by-step install instructions (including the Docker Desktop "uncheck WSL 2" note) and the native `windows/Lucy.py` manager.
+> **Windows users:** see the [Windows README](windows/README.md) — **`Lucy-Setup.exe`** to install/update, **`Lucy.exe`** to launch.
 
 ## Get the repository
 
@@ -48,13 +48,16 @@ python3 Lucy.py
 
 ### Windows
 
+**Installer (recommended):** download `Lucy-Setup.exe` from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases), then see the [Windows README](windows/README.md).
+
+**From source (developers):**
+
 ```bash
-python windows/Lucy.py
+python windows/Lucy.py --cli install   # first time
+python windows/Lucy.py                   # launch
 ```
 
-> **Windows** additionally needs a third-party X Server — see the [Windows README](windows/README.md).
-
-> **First run:** in the TUI, choose **`Install / Update`** before anything else. It clones the sub-repositories, builds the Docker image and the workspace (this can take a while). Only once it finishes should you use **`Launch`**.
+> **Windows** additionally needs a third-party X Server for RViz/Gazebo — see the [Windows README](windows/README.md). End users should use **`Lucy-Setup.exe`** instead of manual install.
 
 ### Opening the Control Panel
 
