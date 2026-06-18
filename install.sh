@@ -188,8 +188,9 @@ check_cmd git
 check_cmd python3
 if [ "${CI:-}" = "true" ] || [ "${CI:-}" = "1" ] || [ "${LUCY_INSTALL_SKIP_XHOST:-}" = "1" ]; then
   echo "install.sh: skipping xhost check (set CI=1 for headless CI or export LUCY_INSTALL_SKIP_XHOST=1 locally)."
-else
-  check_cmd xhost
+elif ! command -v xhost &>/dev/null; then
+  echo "Missing required command: xhost. Install it or skip this check by re-running with LUCY_INSTALL_SKIP_XHOST=1 (headless setups)." >&2
+  exit 1
 fi
 echo "Requirements OK (docker, git, python3)."
 
