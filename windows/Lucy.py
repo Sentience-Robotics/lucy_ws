@@ -31,7 +31,6 @@ IMAGE_NAME = install_ops.IMAGE_NAME
 WORKSPACE_DIR_HOST = PROJECT_ROOT
 WORKSPACE_DIR_CONTAINER = install_ops.WORKSPACE_CONTAINER
 
-ROSBRIDGE_PORT = 9090
 LCP_DEFAULT_PORT = 5000
 
 _CLI_MODES = frozenset(('install', 'update', 'repair', 'build-only', 'check-prereqs'))
@@ -58,8 +57,7 @@ def run_command(command, check=True, interactive=False):
         return e.returncode
 
 
-def _read_lcp_env_value(key):
-    env_path = os.path.join(PROJECT_ROOT, 'src', 'lucy_control_panel', '.env')
+def _read_env_value(env_path, key):
     if not os.path.exists(env_path):
         return None
     value = None
@@ -67,11 +65,21 @@ def _read_lcp_env_value(key):
         with open(env_path, 'r') as f:
             for line in f:
                 stripped = line.strip()
+                if stripped.startswith('#') or '=' not in stripped:
+                    continue
                 if stripped.startswith(f"{key}="):
                     value = stripped.split('=', 1)[1].strip().strip('"').strip("'")
     except OSError:
         return None
     return value
+
+
+def _read_lcp_env_value(key):
+    return _read_env_value(os.path.join(PROJECT_ROOT, 'src', 'lucy_control_panel', '.env'), key)
+
+
+def _read_root_env_value(key):
+    return _read_env_value(os.path.join(PROJECT_ROOT, '.env'), key)
 
 
 def _lcp_container_port():
@@ -185,11 +193,14 @@ def launch_workspace():
     lcp_host_port = lcp_container_port
     lcp_scheme = _lcp_scheme()
 
+    val = _read_root_env_value('PORT_ROSBRIDGE')
+    rosbridge_host_port = int(val) if val and val.isdigit() else 9090
+
     docker_cmd = [
         'docker', 'run', '-it', '--rm',
         *install_ops.docker_run_platform_args(PROJECT_ROOT),
         '--name', 'lucy_dev_win',
-        '-p', f'{ROSBRIDGE_PORT}:9090',
+        '-p', f'{rosbridge_host_port}:9090',
         '-p', f'{lcp_host_port}:{lcp_container_port}',
         '-v', volume_mapping,
         '-e', f'LUCY_LCP_PUBLISHED_HOST_PORT={lcp_host_port}',
