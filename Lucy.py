@@ -8,6 +8,10 @@ import sys
 MIN_TERM_HEIGHT = 15
 MIN_TERM_WIDTH = 65
 
+def is_installed():
+    """True when the workspace has been built (mirrors launch_lucy.sh's check)."""
+    return os.path.isfile("install/setup.bash")
+
 def get_dev_mode():
     if not os.path.exists(".env"):
         return False
@@ -62,6 +66,37 @@ def run_command(command, interactive=False):
         print(f"An error occurred: {e}")
         return -1
 
+def not_installed_screen(stdscr):
+    """First-run screen shown when the workspace isn't built yet.
+    Returns True to install, False to close. (Terminal size is guaranteed by the
+    pre-check in __main__.)"""
+    curses.curs_set(0)
+    stdscr.nodelay(0)
+    stdscr.timeout(-1)
+
+    while True:
+        stdscr.clear()
+        h, w = stdscr.getmaxyx()
+        title = "Lucy Workspace Manager"
+        stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
+
+        lines = [
+            ("Lucy is not installed on this machine.", curses.A_BOLD),
+            ("", curses.A_NORMAL),
+            ("Press ENTER to install it.", curses.A_NORMAL),
+            ("Press Q or ESC to close.", curses.A_DIM),
+        ]
+        start = max(2, h // 2 - len(lines) // 2)
+        for i, (text, attr) in enumerate(lines):
+            stdscr.addstr(start + i, max(0, (w - len(text)) // 2), text, attr)
+        stdscr.refresh()
+
+        key = stdscr.getch()
+        if key in (ord('\n'), ord('\r')):
+            return True
+        if key in (ord('q'), ord('Q'), 27):  # q / ESC
+            return False
+
 def main_tui(stdscr):
     """The main curses TUI function. Returns the command to run."""
     h, w = stdscr.getmaxyx()
@@ -77,7 +112,7 @@ def main_tui(stdscr):
 
     is_dev_mode = get_dev_mode()
     current_idx = 0
-    options = ["Launch", "---", "Install/Update", "Rebuild", "Exit", "---", "Developer Mode"]
+    options = ["Launch", "---", "Update", "Rebuild", "Exit", "---", "Developer Mode"]
 
     while True:
         stdscr.clear()
@@ -117,7 +152,7 @@ def main_tui(stdscr):
             if selected_option == "Developer Mode":
                 is_dev_mode = not is_dev_mode
                 set_dev_mode(is_dev_mode)
-            elif selected_option == "Install/Update":
+            elif selected_option == "Update":
                 return {"cmd": ["./install.sh"], "interactive": False, "name": "Install"}
             elif selected_option == "Rebuild":
                 return {"cmd": ["./install.sh", "--build-only"], "interactive": False, "name": "Rebuild"}
@@ -139,6 +174,29 @@ if __name__ == "__main__":
         print("Error: Terminal window is too small.", file=sys.stderr)
         print(f"Please increase the terminal size to at least {MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} characters.", file=sys.stderr)
         sys.exit(1)
+
+    # First run: nothing built yet — offer to install before showing the menu.
+    if not is_installed():
+        try:
+            wants_install = curses.wrapper(not_installed_screen)
+        except KeyboardInterrupt:
+            print("\nExiting.")
+            sys.exit(0)
+        except curses.error as e:
+            print(f"A terminal error occurred: {e}", file=sys.stderr)
+            print("This might be due to resizing the window. Please restart.", file=sys.stderr)
+            sys.exit(1)
+        if not wants_install:
+            sys.exit(0)
+        rc = run_command(["./install.sh"], interactive=False)
+        if rc != 0:
+            print(f"\n--- Install finished with exit code {rc} ---")
+            print("Press Enter to exit.")
+            input()
+            sys.exit(rc)
+        print("\n--- Install finished successfully. ---")
+        print("Press Enter to continue to the menu.")
+        input()
 
     while True:
         task = None
