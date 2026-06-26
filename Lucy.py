@@ -112,7 +112,7 @@ def main_tui(stdscr):
 
     is_dev_mode = get_dev_mode()
     current_idx = 0
-    options = ["Launch", "---", "Install/Update", "Rebuild", "Exit", "---", "Developer Mode"]
+    options = ["Launch", "---", "Update", "Rebuild", "Exit", "---", "Developer Mode"]
 
     while True:
         stdscr.clear()
@@ -152,7 +152,7 @@ def main_tui(stdscr):
             if selected_option == "Developer Mode":
                 is_dev_mode = not is_dev_mode
                 set_dev_mode(is_dev_mode)
-            elif selected_option == "Install/Update":
+            elif selected_option == "Update":
                 return {"cmd": ["./install.sh"], "interactive": False, "name": "Install"}
             elif selected_option == "Rebuild":
                 return {"cmd": ["./install.sh", "--build-only"], "interactive": False, "name": "Rebuild"}
