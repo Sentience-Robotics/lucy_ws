@@ -77,6 +77,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-humble-xacro \
       ros-humble-rosbridge-server \
       ros-humble-realsense2-camera \
+      ros-humble-compressed-image-transport \
       python3-colcon-common-extensions \
       python3-rosdep2 \
       python3-pytest-cov \
