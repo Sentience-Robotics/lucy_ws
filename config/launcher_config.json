@@ -32,7 +32,7 @@
             "conflicts": ["real"],
             "command": "gazebo:=true",
             "runs_on_vnc": true,
-            "readiness_check": "pgrep -f '[g]azebo' >/dev/null 2>&1",
+            "readiness_check": "pgrep -f '[g]z sim' >/dev/null 2>&1",
             "readiness_timeout": 120,
             "default_on": false
         },

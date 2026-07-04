@@ -44,6 +44,8 @@ fi
 
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/docker/ensure_image.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/docker/gpu_detect.sh"
 
 ensure_docker_image() {
   ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME" "$DOCKERFILE_PATH"
@@ -103,7 +105,8 @@ remove_workspace_src_repo() {
   local name="$1"
   rm -rf "src/${name}" 2>/dev/null || true
   docker_run_platform_flags "$SCRIPT_DIR"
-  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" --rm \
+  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${GPU_DOCKER_ARGS[@]}" --rm \
+    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "$IMAGE_NAME" -c "rm -rf ${WORKSPACE}/src/${name}"
 }
@@ -150,6 +153,7 @@ docker_workspace_install() {
   ensure_docker_image
   docker_run_platform_flags "$SCRIPT_DIR"
   docker_run_it_flags
+  lucy_gpu_launch_message
   echo "Docker install: rosdep, colcon build, yarn install (lucy_control_panel) ..."
   local inner_cmd
   read -r -d '' inner_cmd <<'EOS' || true
@@ -163,7 +167,8 @@ source /opt/ros/jazzy/setup.bash \
        ( cd src/lucy_control_panel && yarn install ); \
      fi
 EOS
-  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
+  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" "${GPU_DOCKER_ARGS[@]}" --rm \
+    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "$IMAGE_NAME" bash -c "$inner_cmd"
 }
