@@ -50,8 +50,8 @@ docker_run_platform_flags() {
 
 ensure_lucy_docker_image() {
   local ws_root="$1"
-  local image_name="${2:-lucy_ros2:humble}"
-  local dockerfile="${3:-$ws_root/Dockerfile.humble}"
+  local image_name="${2:-lucy_ros2:jazzy}"
+  local dockerfile="${3:-$ws_root/docker/Dockerfile.jazzy.base}"
   local target_platform base_image bootstrap_desktop install_vnc
   local hash want want_id
   local build_platform_args
@@ -72,19 +72,7 @@ ensure_lucy_docker_image() {
   target_platform=$(lucy_workspace_target_platform "$ws_root")
   build_platform_args=(--platform "$target_platform")
 
-  # osrf/ros:humble-desktop is amd64-only on Docker Hub; on arm64 we use the
-  # multi-arch ros:humble-ros-base-jammy + apt-install ros-humble-desktop in the
-  # Dockerfile (LUCY_BOOTSTRAP_DESKTOP=1).
-  case "$target_platform" in
-    linux/arm64)
-      base_image="ros:humble-ros-base-jammy"
-      bootstrap_desktop=1
-      ;;
-    *)
-      base_image="osrf/ros:humble-desktop"
-      bootstrap_desktop=0
-      ;;
-  esac
+  base_image="ubuntu:24.04"
 
   # VNC virtual-desktop tooling: installed on arm64, or forced on any arch with
   # LUCY_FORCE_VNC=1 (lets an amd64 host try the VNC path). Folded into want_id and
@@ -111,12 +99,11 @@ ensure_lucy_docker_image() {
   fi
 
   docker build "${build_platform_args[@]}" -f "$dockerfile" \
-    --build-arg "LUCY_FROM_PLATFORM=$target_platform" \
-    --build-arg "LUCY_BASE_IMAGE=$base_image" \
-    --build-arg "LUCY_BOOTSTRAP_DESKTOP=$bootstrap_desktop" \
-    --build-arg "LUCY_INSTALL_VNC=$install_vnc" \
-    --build-arg "DOCKERFILE_SHA256=$hash" \
-    --build-arg "LUCY_DOCKER_BUILD_PLATFORM=$target_platform" \
+    --build-arg "lucy_from_platform=$target_platform" \
+    --build-arg "lucy_base_image=$base_image" \
+    --build-arg "lucy_install_vnc=$install_vnc" \
+    --build-arg "dockerfile_sha256=$hash" \
+    --build-arg "lucy_docker_build_platform=$target_platform" \
     -t "$image_name" "$ws_root"
 }
 

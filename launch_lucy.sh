@@ -54,8 +54,8 @@ resolve_host_port() {  # $1 = label, $2 = desired port -> echoes a free port
   echo "$2"  # nothing free in range; let docker surface the real error
 }
 
-IMAGE_NAME="lucy_ros2:humble"
-DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
+IMAGE_NAME="lucy_ros2:jazzy"
+DOCKERFILE_PATH="$SCRIPT_DIR/docker/Dockerfile.jazzy.base"
 WORKSPACE="/workspace"
 
 # shellcheck disable=SC1091
@@ -190,19 +190,25 @@ DOCKER_PORT_ARGS=(
   -p "${PORT_CONTROL_PANEL}:${PORT_CONTROL_PANEL_CONTAINER}"
 )
 
+DOCKER_ENV_ARGS=(
+  -e LUCY_LCP_PUBLISHED_HOST_PORT="$PORT_CONTROL_PANEL"
+  -e LUCY_LCP_CONTAINER_PORT="$PORT_CONTROL_PANEL_CONTAINER"
+  -e LUCY_LCP_SCHEME="$LCP_SCHEME"
+)
+
 # ----------------------------------------------------------------------------
 # Container scripts
 # ----------------------------------------------------------------------------
 
-SETUP="source /opt/ros/humble/setup.bash && [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash"
+SETUP="source /opt/ros/jazzy/setup.bash && [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash"
 SOURCE_WORKSPACE="cd $WORKSPACE && source install/setup.bash"
 LAUNCH_GAZEBO_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
 LAUNCH_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py rviz:=true"
 
 # Preamble run inside the container: source ROS + overlay.
 read -r -d '' CONTAINER_PREAMBLE <<'EOS' || true
-set -e
-source /opt/ros/humble/setup.bash
+set -e;
+source /opt/ros/jazzy/setup.bash
 [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash
 cd /workspace
 if [[ ! -f install/setup.bash ]]; then
@@ -253,10 +259,8 @@ if [ $# -eq 0 ]; then
     "${GUI_PORT_ARGS[@]}" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \
-    -e LUCY_LCP_PUBLISHED_HOST_PORT="$PORT_CONTROL_PANEL" \
-    -e LUCY_LCP_CONTAINER_PORT="$PORT_CONTROL_PANEL_CONTAINER" \
-    -e LUCY_LCP_SCHEME="$LCP_SCHEME" \
-    "$IMAGE_NAME" -c "$CONTAINER_SCRIPT"
+    "${DOCKER_ENV_ARGS[@]}" \
+    "$IMAGE_NAME" bash -c "$CONTAINER_SCRIPT"
 else
   docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
     --name lucy_dev \
