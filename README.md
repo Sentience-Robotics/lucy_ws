@@ -61,7 +61,7 @@ python windows/Lucy.py                   # launch
 
 ### Opening the Control Panel
 
-After **`Launch`**, enable **Core + Control Panel** in the launcher. Once it is running, the **Lucy Control Panel is accessible in your browser at [http://localhost:5000](http://localhost:5000)** (or **http://localhost:5001** if port 5000 is already taken — common on macOS due to AirPlay). The launcher also shows the exact URL next to the Control Panel entry once it's up.
+After **`Launch`**, enable **Core + Control Panel** in the launcher. Once it is running, the **Lucy Control Panel is accessible in your browser at [http://localhost:3000](http://localhost:3000)** (or the next free port if 3000 is already taken). The launcher also shows the exact URL next to the Control Panel entry once it's up.
 
 
 ## Using the workspace
@@ -154,10 +154,6 @@ the address it shows. Defaults:
 
 - On Apple Silicon, XQuartz can't give the container an OpenGL context, so the VNC desktop is
   used by default — no setup required.
-- **Port 5000** is taken by the macOS AirPlay Receiver, and the control panel defaults to it.
-  The launcher auto-shifts to the next free port, but for a stable URL you can disable
-  **System Settings → General → AirDrop & Handoff → AirPlay Receiver**, or set
-  `PORT_CONTROL_PANEL=5001` in a root `.env`.
 
 ## More
 

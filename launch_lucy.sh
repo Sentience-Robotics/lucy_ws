@@ -12,7 +12,7 @@
 # panel running in background; you launch the ROS stack yourself (handy commands are printed).
 #
 # Ports published on the host: rosbridge 9090, control panel PORT_CONTROL_PANEL (defaults to
-# VITE_PORT from src/lucy_control_panel/.env, else 5000). Vite proxies /rosbridge to the bridge.
+# VITE_PORT from src/lucy_control_panel/.env, else 3000). Vite proxies /rosbridge to the bridge.
 #
 # Docker platform follows the last ./install.sh run (.lucy-docker-platform; override with LUCY_DOCKER_PLATFORM).
 
@@ -179,7 +179,7 @@ if [[ -z "${PORT_CONTROL_PANEL_CONTAINER:-}" ]]; then
   if v="$(vite_listen_port_from_envfile)"; then
     PORT_CONTROL_PANEL_CONTAINER="$v"
   else
-    PORT_CONTROL_PANEL_CONTAINER=5000
+    PORT_CONTROL_PANEL_CONTAINER=3000
   fi
 fi
 PORT_CONTROL_PANEL="$(resolve_host_port 'control panel' "${PORT_CONTROL_PANEL:-$PORT_CONTROL_PANEL_CONTAINER}")"
