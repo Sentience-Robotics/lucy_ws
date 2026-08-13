@@ -49,7 +49,7 @@ To **update** or **repair**, run **`Lucy-Setup.exe`** again and pick the matchin
 
 ### Control Panel
 
-In the **Lucy Control Center**, enable **Core + Control Panel**. Once it is running, the **Lucy Control Panel is accessible in your browser at [http://localhost:3000](http://localhost:3000)** (or the next free port if 3000 is already in use). The launcher also prints the exact URL next to the Control Panel entry once it is up.
+In the **Lucy Control Center**, enable **Core + Control Panel**. Once it is running, the **Lucy Control Panel is accessible in your browser at [http://localhost:4000](http://localhost:4000)** (or the next free port if 4000 is already in use). The launcher also prints the exact URL next to the Control Panel entry once it is up.
 
 ## Manual install (developers)
 
