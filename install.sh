@@ -2,7 +2,7 @@
 # One-time setup for the Lucy workspace.
 #
 # Clones the sub-repositories listed in config/repos.json into ./src/, builds the
-# Docker image (lucy_ros2:humble), and runs `rosdep install`, `colcon build`
+# Docker image (lucy_ros2:jazzy), and runs `rosdep install`, `colcon build`
 # and `yarn install` for the control panel — all inside that container.
 #
 # Run from the workspace root (directory containing this script).
@@ -29,9 +29,9 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-# Container image + workspace mount path (must match Dockerfile.humble WORKDIR).
-IMAGE_NAME="lucy_ros2:humble"
-DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
+# Container image + workspace mount path (must match Dockerfile.jazzy.base WORKDIR).
+IMAGE_NAME="lucy_ros2:jazzy"
+DOCKERFILE_PATH="$SCRIPT_DIR/docker/Dockerfile.jazzy"
 WORKSPACE="/workspace"
 # config/repos.json.local (gitignored) overrides the tracked config/repos.json,
 # so contributors can point repos at their own forks/branches without touching
@@ -153,9 +153,9 @@ docker_workspace_install() {
   echo "Docker install: rosdep, colcon build, yarn install (lucy_control_panel) ..."
   local inner_cmd
   read -r -d '' inner_cmd <<'EOS' || true
-source /opt/ros/humble/setup.bash \
-  && [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash \
+source /opt/ros/jazzy/setup.bash \
   && cd /workspace \
+  && rosdep init && rosdep update \
   && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common" \
   && rm -rf build/camera_ros install/camera_ros \
   && colcon build --symlink-install \
@@ -165,7 +165,7 @@ source /opt/ros/humble/setup.bash \
 EOS
   docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
     -v "$SCRIPT_DIR:$WORKSPACE" \
-    "$IMAGE_NAME" -c "$inner_cmd"
+    "$IMAGE_NAME" bash -c "$inner_cmd"
 }
 
 # ----------------------------------------------------------------------------

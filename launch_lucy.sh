@@ -55,7 +55,7 @@ resolve_host_port() {  # $1 = label, $2 = desired port -> echoes a free port
 }
 
 IMAGE_NAME="lucy_ros2:jazzy"
-DOCKERFILE_PATH="$SCRIPT_DIR/docker/Dockerfile.jazzy.base"
+DOCKERFILE_PATH="$SCRIPT_DIR/docker/Dockerfile.jazzy"
 WORKSPACE="/workspace"
 
 # shellcheck disable=SC1091
@@ -200,7 +200,7 @@ DOCKER_ENV_ARGS=(
 # Container scripts
 # ----------------------------------------------------------------------------
 
-SETUP="source /opt/ros/jazzy/setup.bash && [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash"
+SETUP="source /opt/ros/jazzy/setup.bash"
 SOURCE_WORKSPACE="cd $WORKSPACE && source install/setup.bash"
 LAUNCH_GAZEBO_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
 LAUNCH_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py rviz:=true"
