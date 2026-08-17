@@ -70,11 +70,7 @@ jobs:
             done
             return 1
           }
-          if [ "${{ matrix.use_arm_install }}" = true ]; then
-            pull_with_retry ros:humble-ros-base-jammy
-          else
-            pull_with_retry osrf/ros:humble-desktop
-          fi
+          pull_with_retry ubuntu:24.04
 
       - name: Install (clone + Docker image + rosdep + colcon + yarn)
         run: |
@@ -87,8 +83,8 @@ jobs:
 
       - name: Verify Lucy image architecture
         run: |
-          osarch=$(docker image inspect lucy_ros2:humble --format '{{.Os}}/{{.Architecture}}')
-          echo "lucy_ros2:humble -> ${osarch}"
+          osarch=$(docker image inspect lucy_ros2:jazzy --format '{{.Os}}/{{.Architecture}}')
+          echo "lucy_ros2:jazzy -> ${osarch}"
           if [ "${osarch}" != "${{ matrix.expected_arch }}" ]; then
             echo "::error::Expected ${{ matrix.expected_arch }} after ./install.sh on ${{ matrix.runner }}, got ${osarch}"
             exit 1

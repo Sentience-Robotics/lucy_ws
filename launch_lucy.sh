@@ -267,5 +267,5 @@ else
     "${DOCKER_PORT_ARGS[@]}" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \
-    "$IMAGE_NAME" -c "${SETUP} && ${SOURCE_WORKSPACE} && $*"
+    "$IMAGE_NAME" bash -c "${SETUP} && ${SOURCE_WORKSPACE} && $*"
 fi
