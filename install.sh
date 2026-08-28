@@ -108,13 +108,19 @@ remove_workspace_src_repo() {
   docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${GPU_DOCKER_ARGS[@]}" --rm \
     -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
-    "$IMAGE_NAME" -c "rm -rf ${WORKSPACE}/src/${name}"
+    "$IMAGE_NAME" /bin/bash -c "rm -rf ${WORKSPACE}/src/${name}"
 }
 
 update_git_repo() {
-  local name="$1" branch="$2"
+  local name="$1" branch="$2" url="$3"
   local dir="src/${name}"
   echo "Updating ${name} (branch ${branch}) ..."
+  local current_url
+  current_url="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
+  if [ "$current_url" != "$url" ]; then
+    echo "install.sh: updating origin remote for ${name} -> ${url}"
+    git -C "$dir" remote set-url origin "$url"
+  fi
   git -C "$dir" fetch origin
   if ! git -C "$dir" checkout "$branch"; then
     git -C "$dir" checkout -b "$branch" "origin/${branch}"
@@ -239,7 +245,7 @@ while IFS=$'\t' read -r name branch url; do
     echo "Cloning ${name} into src/${name} (branch: ${branch}) ..."
     git clone -b "$branch" "$url" "src/${name}"
   else
-    update_git_repo "$name" "$branch"
+    update_git_repo "$name" "$branch" "$url"
   fi
 done < <(parse_repos)
 

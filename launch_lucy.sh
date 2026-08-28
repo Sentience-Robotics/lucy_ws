@@ -291,7 +291,7 @@ if [ $# -eq 0 ]; then
     -e LUCY_LCP_PUBLISHED_HOST_PORT="$PORT_CONTROL_PANEL" \
     -e LUCY_LCP_CONTAINER_PORT="$PORT_CONTROL_PANEL_CONTAINER" \
     -e LUCY_LCP_SCHEME="$LCP_SCHEME" \
-    "$IMAGE_NAME" -c "$CONTAINER_SCRIPT"
+    "$IMAGE_NAME" /bin/bash -c "$CONTAINER_SCRIPT"
 else
   docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
     --name lucy_dev \
@@ -300,5 +300,5 @@ else
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \
     -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
-    "$IMAGE_NAME" -c "${SETUP} && ${SOURCE_WORKSPACE} && $*"
+    "$IMAGE_NAME" /bin/bash -c "${SETUP} && ${SOURCE_WORKSPACE} && $*"
 fi

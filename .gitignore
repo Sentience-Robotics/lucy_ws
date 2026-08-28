@@ -39,3 +39,5 @@ config/install.profile.json
 # Windows executable files
 dist/
 *.spec
+
+*.local
