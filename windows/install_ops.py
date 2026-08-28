@@ -29,7 +29,7 @@ REQUIREMENT_DOCS = {
 
 LUCY_WS_GITHUB = "Sentience-Robotics/lucy_ws"
 DEFAULT_REPOS_BRANCH = "master"
-IMAGE_NAME = "lucy_ros2:humble"
+IMAGE_NAME = "lucy_ros2:jazzy"
 WORKSPACE_CONTAINER = "/workspace"
 DOCKER_PLATFORM_FILE = ".lucy-docker-platform"
 DOCKER_IMAGE_LABEL = "lucy.dockerfile.sha256"
@@ -448,19 +448,17 @@ def workspace_target_platform(project_root: str) -> str:
     return host_container_platform()
 
 
-def _platform_build_settings(target_platform: str) -> tuple[str, int, int]:
-    """Return (base_image, bootstrap_desktop, install_vnc) for a target platform.
+def _platform_build_settings(target_platform: str) -> tuple[str, int]:
+    """Return (base_image, install_vnc) for a target platform.
 
-    osrf/ros:humble-desktop is amd64-only on Docker Hub; on arm64 use the
-    multi-arch ros:humble-ros-base-jammy and apt-install ros-humble-desktop.
+    The Jazzy image is built on ubuntu:24.04 (Noble); arm64 also enables the
+    optional VNC desktop tooling in Dockerfile.jazzy.
     """
-    if target_platform == "linux/arm64":
-        base_image, bootstrap_desktop, install_vnc = "ros:humble-ros-base-jammy", 1, 1
-    else:
-        base_image, bootstrap_desktop, install_vnc = "osrf/ros:humble-desktop", 0, 0
+    base_image = "ubuntu:24.04"
+    install_vnc = 1 if target_platform == "linux/arm64" else 0
     if os.environ.get("LUCY_FORCE_VNC", "").strip().lower() in ("1", "true", "yes"):
         install_vnc = 1
-    return base_image, bootstrap_desktop, install_vnc
+    return base_image, install_vnc
 
 
 def _dockerfile_build_hash(dockerfile: str) -> str:
@@ -502,9 +500,9 @@ def build_docker_image(
     log: Callable[[str], None] = print,
     force_rebuild: bool = False,
 ) -> None:
-    dockerfile = os.path.join(project_root, "Dockerfile.humble")
+    dockerfile = os.path.join(project_root, "docker", "Dockerfile.jazzy")
     target_platform = workspace_target_platform(project_root)
-    base_image, bootstrap_desktop, install_vnc = _platform_build_settings(target_platform)
+    base_image, install_vnc = _platform_build_settings(target_platform)
     build_hash = _dockerfile_build_hash(dockerfile)
     want_label = f"{build_hash}|{target_platform}|vnc={install_vnc}"
 
@@ -519,7 +517,6 @@ def build_docker_image(
         "-f", dockerfile,
         "--build-arg", f"LUCY_FROM_PLATFORM={target_platform}",
         "--build-arg", f"LUCY_BASE_IMAGE={base_image}",
-        "--build-arg", f"LUCY_BOOTSTRAP_DESKTOP={bootstrap_desktop}",
         "--build-arg", f"LUCY_INSTALL_VNC={install_vnc}",
         "--build-arg", f"DOCKERFILE_SHA256={build_hash}",
         "--build-arg", f"LUCY_DOCKER_BUILD_PLATFORM={target_platform}",
@@ -531,9 +528,7 @@ def build_docker_image(
 def build_workspace(project_root: str, run_command: Callable, log: Callable[[str], None] = print) -> None:
     log("Building workspace inside the container...")
     inner_cmd = (
-        "source /opt/ros/humble/setup.bash && "
-        "[ -f /opt/gz_ros2_control_ws/install/setup.bash ] && "
-        "source /opt/gz_ros2_control_ws/install/setup.bash; "
+        "source /opt/ros/jazzy/setup.bash && "
         "cd /workspace && "
         'rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common thais_urdf" && '
         "rm -rf build/camera_ros install/camera_ros && "

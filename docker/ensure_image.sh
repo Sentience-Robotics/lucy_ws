@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # Helpers shared by install.sh and launch_lucy.sh:
 #
-#   ensure_lucy_docker_image   build (or rebuild) the lucy_ros2:humble image
-#                              when Dockerfile.humble or the target platform changes.
+#   ensure_lucy_docker_image   build (or rebuild) the lucy_ros2:jazzy image
+#                              when Dockerfile.jazzy or the target platform changes.
 #   docker_run_platform_flags  populate DOCKER_RUN_PLATFORM_ARGS for `docker run`.
 #   docker_run_it_flags        populate DOCKER_RUN_IT (-it locally, -i in CI / no TTY).
 #
@@ -52,7 +52,7 @@ ensure_lucy_docker_image() {
   local ws_root="$1"
   local image_name="${2:-lucy_ros2:jazzy}"
   local dockerfile="${3:-$ws_root/docker/Dockerfile.jazzy}"
-  local target_platform base_image bootstrap_desktop install_vnc
+  local target_platform base_image install_vnc
   local hash want want_id
   local build_platform_args
 

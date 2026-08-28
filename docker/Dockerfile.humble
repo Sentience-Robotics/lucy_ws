@@ -1,3 +1,7 @@
+# DEPRECATED — legacy ROS 2 Humble (Ubuntu 22.04 Jammy) image.
+# Lucy now targets ROS 2 Jazzy on Ubuntu 24.04 Noble (docker/Dockerfile.jazzy, lucy_ros2:jazzy).
+# This file is kept for reference only; install.sh, launch_lucy.sh, and Windows tooling no longer build it.
+#
 # Lucy runtime image — ROS 2 Humble (Ubuntu 22.04 Jammy) with Gazebo Harmonic,
 # ros2_control, RViz, rosbridge, GStreamer and Node 22 + Yarn for the control panel.
 #
