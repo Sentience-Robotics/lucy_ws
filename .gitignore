@@ -33,6 +33,9 @@ __pycache__/
 # Local repo override (forks/branches; takes precedence over config/repos.json)
 config/repos.json.local
 
+# Local launcher override (package list/toggles; takes precedence over config/launcher_config.json)
+config/launcher_config.json.local
+
 # End-user install profile (written by installer / Lucy.exe)
 config/install.profile.json
 

@@ -2,6 +2,14 @@
 
 The launcher's configuration is entirely driven by the `launcher_config.json` file. To add a new package, tool, or modifier, you just need to add a new JSON object to the `packages` list in this file.
 
+### Local launcher overrides (`config/launcher_config.json.local`)
+
+To customize the launcher package list (add experimental tools, tweak commands, or hide entries) without editing the tracked `config/launcher_config.json`, create **`config/launcher_config.json.local`**. When present it is used instead of `launcher_config.json` by `launcher.py`, and it is gitignored so overrides are never committed.
+
+Use the same structure as `launcher_config.json` — copy the file and edit as needed, or include only the `packages` entries you want to change if you prefer a full replacement (the local file replaces the tracked file entirely, it is not merged).
+
+Delete the file to fall back to the tracked `config/launcher_config.json`.
+
 For example, if you wanted to add an `rqt_graph` tool, you would append this to the `packages` array:
 
 ```json
