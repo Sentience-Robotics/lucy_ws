@@ -9,9 +9,9 @@ Maintainer documentation for each Lucy sub-repository is **owned per repository*
 | Repository | Developer documentation |
 |------------|-------------------------|
 | **lucy_ros_packages** | [`lucy_ros_packages/docs/DEVELOPER.md`](../src/lucy_ros_packages/docs/DEVELOPER.md) — bringup, `lucy_ros2_control`, `camera_ros`, CI; [**ros2_control on Lucy**](../src/lucy_ros_packages/doc/ROS2_CONTROL.md) |
-| **inmoov_urdf** | [`thais_urdf/docs/DEVELOPER.md`](../src/thais_urdf/docs/DEVELOPER.md) — URDF/xacro, meshes, launches, RViz |
+| **inmoov_urdf** | [`inmoov_urdf/docs/DEVELOPER.md`](../src/inmoov_urdf/docs/DEVELOPER.md) — URDF/xacro, meshes, launches, RViz |
 
-Repository-level READMEs: [`lucy_ros_packages`](../src/lucy_ros_packages/README.md), [`inmoov_urdf`](../src/thais_urdf/README.md).
+Repository-level READMEs: [`lucy_ros_packages`](../src/lucy_ros_packages/README.md), [`inmoov_urdf`](../src/inmoov_urdf/README.md).
 
 ## Packages dropped under `src/` by `install.sh`
 
@@ -25,7 +25,7 @@ The exact set of repositories, branches and clone URLs is in [`config/repos.json
 
 The first run clones missing sub-repositories, builds the Docker image (`lucy_ros2:jazzy`), and runs `rosdep` + `colcon build --symlink-install` + `yarn install` inside the container.
 
-`--symlink-install` keeps `install/share/<robot_package>/config/controllers.yaml` pointing at the **source tree** paths that `lucy_config_pipeline` writes (`src/thais_urdf/config/controllers.yaml`), so launch files and the pipeline stay aligned during iterative hardware edits.
+`--symlink-install` keeps `install/share/<robot_package>/config/controllers.yaml` pointing at the **source tree** paths that `lucy_config_pipeline` writes (`src/inmoov_urdf/config/controllers.yaml`), so launch files and the pipeline stay aligned during iterative hardware edits.
 
 Subsequent runs fast-forward each clone to the branch declared in `config/repos.json` and rebuild the workspace.
 
