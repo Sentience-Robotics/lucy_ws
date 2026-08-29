@@ -18,12 +18,14 @@ Repository-level READMEs: [`lucy_ros_packages`](../src/lucy_ros_packages/README.
 - **inmoov_urdf** — InMoov URDF, RViz config, `control.launch.py`, `gazebo.launch.py`, `rviz_standalone.launch.py` (robot + viz; the web stack lives in `lucy_bringup`).
 - **lucy_ros_packages** — `lucy_bringup`, `lucy_ros2_control`, `camera_ros`, etc.
 - **lucy_control_panel** — Vite web app exposing the robot state and controls.
+- **micro_ros_agent** — micro-ROS agent (cloned from `micro-ROS/micro-ROS-Agent`, branch `jazzy`).
+- **audio_common** — audio drivers (cloned from `ros-drivers/audio_common`, branch `ros2`).
 
 The exact set of repositories, branches and clone URLs is in [`config/repos.json`](../config/repos.json).
 
 ## `install.sh`
 
-The first run clones missing sub-repositories, builds the Docker image (`lucy_ros2:jazzy`), and runs `rosdep` + `colcon build --symlink-install` + `yarn install` inside the container.
+Pixi installs RoboStack Jazzy dependencies; `colcon build --symlink-install` builds the workspace; `yarn install` sets up the control panel.
 
 `--symlink-install` keeps `install/share/<robot_package>/config/controllers.yaml` pointing at the **source tree** paths that `lucy_config_pipeline` writes (`src/inmoov_urdf/config/controllers.yaml`), so launch files and the pipeline stay aligned during iterative hardware edits.
 
@@ -31,14 +33,30 @@ Subsequent runs fast-forward each clone to the branch declared in `config/repos.
 
 | Command | What it does |
 |---------|--------------|
-| `./install.sh` | Clone missing repos, pull existing ones, rebuild the workspace |
+| `./install.sh` | Clone missing repos, pull existing ones, `pixi install`, colcon build |
 | `./install.sh --repair` | Wipe each repo under `src/` then re-clone and rebuild |
-| `./install.sh --build-only` | Skip git; just rebuild the workspace inside the container |
-| `./install.sh --arm[...]` | Build / run the image as `linux/arm64` (Apple Silicon under Docker Desktop). Persists in `.lucy-docker-platform`; combine with any other flag |
+| `./install.sh --build-only` | Skip git; `pixi install` + colcon + panel yarn |
+| `./install.sh --skip-build` | Clone/pull only (CI) |
 
-### Apple Silicon notes
+### Pixi multi-platform install
 
-Docker Desktop on Apple Silicon defaults to `linux/amd64` when no platform is pinned, which runs the container under emulation and can make `apt` / `rosdep` unreliable. Use `./install.sh --arm` to build and run a native `linux/arm64` image on `ubuntu:24.04` with `ros-jazzy-*` packages from apt (recorded in `.lucy-docker-platform`).
+`pixi.toml` declares all workspace platforms (`linux-64`, `linux-aarch64`, `osx-arm64`, `osx-64`, `win-64`). Pixi solves each platform into a single committed **`pixi.lock`** ([Pixi multi-platform docs](https://pixi.prefix.dev/latest/workspace/multi_platform_configuration/), [RoboStack Getting Started](https://robostack.github.io/GettingStarted.html)).
+
+- **`ros2-distro-mutex = "0.15.*"`** — keeps RoboStack packages on the same rebuild cycle ([RoboStack #125](https://github.com/RoboStack/ros-jazzy/issues/125)).
+- **Platform-specific deps** use `[target.linux]`, `[target.unix]`, `[feature.ros.target.osx-*]` (not install-time exceptions).
+- **`install.sh`** runs `pixi lock` once if `pixi.lock` is missing, then `pixi install`.
+- **Pixi ≥ 0.78** recommended (`curl -fsSL https://pixi.sh/install.sh | bash`).
+
+### RealSense (local build, not Pixi)
+
+`ros-jazzy-realsense2-camera` is **not** in `pixi.toml`. Build locally when needed:
+
+```bash
+./scripts/build_local_realsense.sh
+# or: LUCY_BUILD_REALSENSE=1 ./install.sh
+```
+
+Build artifacts default to `.local/realsense` (`LUCY_REALSENSE_PREFIX` to override).
 
 ### SSH vs HTTPS clones (`DEV=true`)
 
@@ -79,17 +97,29 @@ On Windows, **`Lucy-Setup.exe`** (or `Lucy.exe --cli …`) writes **`config/inst
 
 ## `launch_lucy.sh`
 
-Builds the Docker image if needed, mounts the workspace at `/workspace`, sources the built ROS overlay, then:
-
-- **Normal mode (default)** — starts the control panel (Vite) in the background and runs `ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true` in the foreground. GUI / X11 forwarded automatically when available.
-- **Dev mode (`DEV=true` in env or `.env`)** — same control panel in the background, but drops you into an interactive Jazzy shell so you can run any `ros2 launch` yourself (the script prints typical commands).
+Pixi activates the colcon overlay and starts the **Lucy Control Center** launcher. Default: a **tmux** session (`lucy_ws`) running `launcher.py`. GUI apps (Gazebo, RViz, rqt) use the **native host display** — no VNC desktop.
 
 | Command | What it does |
 |---------|--------------|
-| `./launch_lucy.sh` | Default launch (Control Panel + RViz + Gazebo, or dev shell when `DEV=true`) |
-| `./launch_lucy.sh --headless` | Same flow without GUI / X11 (Gazebo runs headless, RViz is disabled) |
-| `./launch_lucy.sh <command>` | Run a single command in the container — no control panel, no auto-launch |
-| `DEV=true ./launch_lucy.sh` | Force dev mode for one run |
+| `./launch_lucy.sh` | tmux + Control Center (or `pixi shell` when `DEV=true`) |
+| `./launch_lucy.sh --headless <cmd>` | Run one command headless (default: `ros2 doctor --report`) |
+| `DEV=true ./launch_lucy.sh` | Interactive `pixi shell` with typical `ros2 launch` hints |
+
+On Windows, **`Lucy.exe`** runs `bash launch_lucy.sh` (Git Bash). Without tmux (Git Bash on Windows), it falls back to `pixi run -- python launcher.py`.
+
+### TUI + Pixi CLI equivalence
+
+| Action | Command |
+|--------|---------|
+| Install / update | `./install.sh` |
+| Rebuild | `pixi run build` then `pixi run panel-install` |
+| Launch | `./launch_lucy.sh` |
+| Headless check | `./launch_lucy.sh --headless ros2 doctor --report` |
+| Dev shell | `DEV=true ./launch_lucy.sh` or `pixi shell` |
+| Direct sim (optional) | `pixi run launch-sim` |
+| Clean build dirs | `pixi run clean` |
+
+**Do not use `rosdep`** in this workspace — it bypasses Pixi/RoboStack. See [`docs/pixi_setup.md`](pixi_setup.md).
 
 ### `ros2 launch` cheat sheet (dev mode)
 
@@ -117,15 +147,15 @@ Hardware mode runs the same **RELOAD** step after BUILD/FLASH once ros2_control 
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `DEV` | unset | `true` → use `url_ssh` in `repos.json` (install) and the interactive dev shell (launch) |
-| `PORT_CONTROL_PANEL` | matches container port | Host port the control panel is published on |
-| `PORT_CONTROL_PANEL_CONTAINER` | `VITE_PORT` from `src/lucy_control_panel/.env`, else `5000` | Port the Vite dev server listens on inside the container |
-| `DOCKER_GUI_DISPLAY` | host `$DISPLAY` | X display string passed to the container (use when the host `DISPLAY` doesn't reach Docker, e.g. Docker Desktop) |
-| `DOCKER_GUI_USE_HOST_NETWORK` | unset | Run with `--network=host` and `DISPLAY=:0` (alternative GUI path) |
-| `LUCY_DOCKER_PLATFORM` | content of `.lucy-docker-platform`, else host CPU | Docker `--platform` to build/run with (e.g. `linux/arm64`) |
-| `LUCY_INSTALL_SKIP_XHOST` | unset | Skip the `xhost` requirement in `install.sh` (set automatically when `CI=true`) |
+| `PORT_CONTROL_PANEL` | next free port from container port | Host port published for the control panel URL |
+| `PORT_CONTROL_PANEL_CONTAINER` | `VITE_PORT` from `src/lucy_control_panel/.env`, else `5000` | Port the Vite dev server listens on |
+| `LUCY_LCP_PUBLISHED_HOST_PORT` | set by `launch_lucy.sh` | Host port embedded in launcher control-panel URLs |
+| `LUCY_LCP_CONTAINER_PORT` | same as container Vite port | Internal Vite port for launcher URL templates |
+| `LUCY_LCP_SCHEME` | `http` or `https` from `VITE_HTTPS` | Scheme for control panel URLs in the launcher |
+| `PORT_ROSBRIDGE` | `9090` | rosbridge WebSocket port (optional `.env` override) |
 
-Inside the container, Vite proxies `/rosbridge` to `ws://127.0.0.1:9090`, and rosbridge is published on host port `9090`.
+Vite proxies `/rosbridge` to `ws://127.0.0.1:9090` inside the dev server. rosbridge listens on port `9090` by default.
 
-## Docker image rebuilds
+## Pixi lock and dependencies
 
-`docker/ensure_image.sh` stamps each built image with `LABEL lucy.dockerfile.sha256="<sha256>|<platform>"`. Both `install.sh` and `launch_lucy.sh` rebuild the image when the label no longer matches the current `Dockerfile.jazzy` + target platform.
+RoboStack packages are declared in [`pixi.toml`](../pixi.toml) and locked in **`pixi.lock`**. After changing dependencies, run `pixi install` to refresh the lock for all platforms in `pixi.toml`. Full workflow: [`docs/pixi_setup.md`](pixi_setup.md).
