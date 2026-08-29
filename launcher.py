@@ -14,7 +14,7 @@ WORKSPACE_ROOT = Path(__file__).resolve().parent
 CONFIG_DIR = WORKSPACE_ROOT / "config"
 DEFAULT_CONFIG_FILE = CONFIG_DIR / "launcher_config.json"
 LOCAL_CONFIG_FILE = CONFIG_DIR / "launcher_config.json.local"
-STATE_FILE = "/tmp/launcher_state.json"
+STATE_FILE = WORKSPACE_ROOT / ".lucy_launcher_modifiers.json"
 SELECTION_FILE = WORKSPACE_ROOT / ".lucy_launcher_state.json"
 MIN_TERM_HEIGHT = 22
 MIN_TERM_WIDTH = 65
@@ -109,7 +109,7 @@ def load_config():
         return json.load(f)
 
 def load_state():
-    if not os.path.exists(STATE_FILE):
+    if not STATE_FILE.is_file():
         return {"modifiers": []}
     with open(STATE_FILE, 'r') as f:
         try:
@@ -812,8 +812,8 @@ if __name__ == "__main__":
                     run_shell_command(pkg.command['stop'])
                 elif 'stop' in pkg.lifecycle_hooks:
                      run_shell_command(pkg.lifecycle_hooks['stop'])
-        if os.path.exists(STATE_FILE):
-            os.remove(STATE_FILE)
+        if STATE_FILE.is_file():
+            STATE_FILE.unlink()
         if needs_tmux_session():
             print("Terminating tmux session...")
             time.sleep(0.5)
