@@ -4,7 +4,7 @@
 # Usage:
 #   ./install.sh                     clone/pull repos + pixi install + build
 #   ./install.sh --update | update   same as above
-#   ./install.sh --repair              wipe src repos and re-clone
+#   ./install.sh --repair              wipe build/install/log + re-clone src repos
 #   ./install.sh --build-only        skip git; pixi run build + panel-install
 #   ./install.sh --skip-build        clone/pull only (CI)
 #
@@ -54,7 +54,6 @@ check_cmd() {
   if ! command -v "$1" &>/dev/null; then
     echo "Missing required command: $1." >&2
     echo "Install Pixi: https://pixi.prefix.dev/latest/installation/ (≥ 0.78 recommended)" >&2
-    echo "On NixOS: nix develop  (see README — Linux / NixOS)" >&2
     exit 1
   fi
 }
@@ -175,6 +174,8 @@ if [ "$(parse_repos | wc -l)" -eq 0 ]; then
 fi
 
 if [ "$MODE" = "repair" ]; then
+  echo "Repair: removing colcon artifacts (build/, install/, log/) ..."
+  rm -rf build install log
   echo "Repair: removing listed repos under src/ ..."
   while IFS=$'\t' read -r name _ _; do
     remove_workspace_src_repo "$name"

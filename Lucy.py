@@ -42,7 +42,6 @@ def set_dev_mode(is_enabled):
 def check_prereqs():
     if shutil.which("pixi") is None:
         print("Missing pixi. Install: https://pixi.prefix.dev/latest/installation/")
-        print("On NixOS: nix develop  (see README — Linux / NixOS)")
         return False
     return True
 
@@ -101,7 +100,7 @@ def not_installed_screen(stdscr):
         checkbox = "[x]" if is_dev_mode else "[ ]"
         dev_line = f"{checkbox} Developer Mode"
         stdscr.addstr(start + len(lines), max(0, (w - len(dev_line)) // 2), dev_line)
-        hint_line = "(SSH clones, interactive dev shell)"
+        hint_line = "(SSH clones during install; does not change Launch)"
         stdscr.addstr(start + len(lines) + 1, max(0, (w - len(hint_line)) // 2), hint_line, curses.A_DIM)
 
         footer = [
