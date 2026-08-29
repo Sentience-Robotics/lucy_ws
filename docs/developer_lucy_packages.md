@@ -18,8 +18,15 @@ Repository-level READMEs: [`lucy_ros_packages`](../src/lucy_ros_packages/README.
 - **inmoov_urdf** — InMoov URDF, RViz config, `control.launch.py`, `gazebo.launch.py`, `rviz_standalone.launch.py` (robot + viz; the web stack lives in `lucy_bringup`).
 - **lucy_ros_packages** — `lucy_bringup`, `lucy_ros2_control`, `camera_ros`, etc.
 - **lucy_control_panel** — Vite web app exposing the robot state and controls.
-- **micro_ros_agent** — micro-ROS agent (cloned from `micro-ROS/micro-ROS-Agent`, branch `jazzy`).
-- **audio_common** — audio drivers (cloned from `ros-drivers/audio_common`, branch `ros2`).
+
+**Required** clones (core sim + panel stack): `inmoov_urdf`, `lucy_ros_packages`, `lucy_control_panel`.
+
+**Optional** clones (not required for default bringup or CI smoke tests; needed for micro-ROS firmware bridges or audio hardware):
+
+- **micro_ros_agent** — micro-ROS agent (`micro-ROS/micro-ROS-Agent`, branch `jazzy`). Marked `optional: true` in `repos.json`.
+- **audio_common** — audio drivers (`ros-drivers/audio_common`, branch `ros2`). Marked `optional: true` in `repos.json`.
+
+To skip optional repos, remove their entries from `config/repos.json.local` (or omit them when authoring a local override). `install.sh` still clones everything listed in the active repos config.
 
 The exact set of repositories, branches and clone URLs is in [`config/repos.json`](../config/repos.json).
 
