@@ -46,7 +46,7 @@ pixi install          # updates pixi.lock for every platform in pixi.toml
 Use Pixi target tables in `pixi.toml`:
 
 - `[target.linux]` — `gstreamer`, `libgl-devel`
-- `[target.unix]` — `tmux`
+- **tmux** — host package (apt, Homebrew); not in Pixi
 - `[feature.ros.target.osx-*]` — `pygraphviz`, Cyclone DDS RMW
 
 ## Build and activation
@@ -77,4 +77,4 @@ Commit both files together so CI and other platforms stay in sync.
 
 ## Release builds (follow-up)
 
-End-user **pre-built** packages via `pixi-build-ros` and conda channels are planned as a separate release workflow. Day-to-day development stays on **colcon** + Pixi activation (no `preview = ["pixi-build"]` in the dev workspace).
+End-user **pre-built** packages via `pixi-build-ros` and conda channels are planned as a separate release workflow. See [`docs/pixi_release.md`](pixi_release.md).

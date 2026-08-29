@@ -101,9 +101,9 @@ Pixi activates the colcon overlay and starts the **Lucy Control Center** launche
 
 | Command | What it does |
 |---------|--------------|
-| `./launch_lucy.sh` | tmux + Control Center (or `pixi shell` when `DEV=true`) |
+| `./launch_lucy.sh` | tmux + Control Center launcher |
 | `./launch_lucy.sh --headless <cmd>` | Run one command headless (default: `ros2 doctor --report`) |
-| `DEV=true ./launch_lucy.sh` | Interactive `pixi shell` with typical `ros2 launch` hints |
+| `./launch_lucy.sh --shell` | Interactive `pixi shell` with typical `ros2 launch` hints |
 
 On Windows, **`Lucy.exe`** runs `bash launch_lucy.sh` (Git Bash). Without tmux (Git Bash on Windows), it falls back to `pixi run -- python launcher.py`.
 
@@ -115,7 +115,7 @@ On Windows, **`Lucy.exe`** runs `bash launch_lucy.sh` (Git Bash). Without tmux (
 | Rebuild | `pixi run build` then `pixi run panel-install` |
 | Launch | `./launch_lucy.sh` |
 | Headless check | `./launch_lucy.sh --headless ros2 doctor --report` |
-| Dev shell | `DEV=true ./launch_lucy.sh` or `pixi shell` |
+| Dev shell | `./launch_lucy.sh --shell` or `pixi shell` |
 | Direct sim (optional) | `pixi run launch-sim` |
 | Clean build dirs | `pixi run clean` |
 
@@ -146,7 +146,7 @@ Hardware mode runs the same **RELOAD** step after BUILD/FLASH once ros2_control 
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `DEV` | unset | `true` → use `url_ssh` in `repos.json` (install) and the interactive dev shell (launch) |
+| `DEV` | unset | `true` → use `url_ssh` in `repos.json` during `install.sh` (SSH clones) |
 | `PORT_CONTROL_PANEL` | next free port from container port | Host port published for the control panel URL |
 | `PORT_CONTROL_PANEL_CONTAINER` | `VITE_PORT` from `src/lucy_control_panel/.env`, else `5000` | Port the Vite dev server listens on |
 | `LUCY_LCP_PUBLISHED_HOST_PORT` | set by `launch_lucy.sh` | Host port embedded in launcher control-panel URLs |

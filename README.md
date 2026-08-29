@@ -6,7 +6,8 @@ Workspace bringup for the Lucy / InMoov humanoid. ROS 2 Jazzy, Gazebo, RViz, and
 
 - [Git](https://git-scm.com/downloads)
 - [Python 3](https://www.python.org/downloads/) (for `Lucy.py`)
-- [Pixi](https://pixi.prefix.dev/latest/installation/) **≥ 0.78** — or use the Nix flake below on NixOS
+- [Pixi](https://pixi.prefix.dev/latest/installation/) **≥ 0.78**
+- **tmux** (Linux/macOS launcher) — system package; not installed by Pixi
 
 <sub>Linux GUI apps (RViz, Gazebo, rqt) use your native display. On Wayland you may need `xhost +local:` or run under X11 — see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo).</sub>
 
@@ -16,51 +17,19 @@ Workspace bringup for the Lucy / InMoov humanoid. ROS 2 Jazzy, Gazebo, RViz, and
 
 Host tools only — ROS packages are installed by Pixi into `.pixi/`.
 
-### Ubuntu / Debian and other distros
+### Linux
 
 Install Pixi, then from the repository root:
 
 ```bash
 curl -fsSL https://pixi.sh/install.sh | bash   # or see pixi.prefix.dev
+export PATH="$HOME/.pixi/bin:$PATH"            # if pixi is not already on PATH
 ./install.sh
 ```
 
 Optional: `chmod +x install.sh launch_lucy.sh` if you run scripts directly.
 
-### NixOS
-
-On NixOS, install **host tools from nixpkgs** (pixi, git, python3, tmux) inside an FHS dev shell. RoboStack binaries still come from Pixi.
-
-**Prerequisites:** Flakes enabled (`nix-command` + `flakes` in `nix.settings.experimental-features`, or:
-
-```bash
-export NIX_CONFIG="experimental-features = nix-command flakes"
-```
-
-**Recommended workflow** — enter the dev shell, then install:
-
-```bash
-cd lucy_ws
-nix develop
-./install.sh
-```
-
-The repo includes [`flake.nix`](flake.nix) with `buildFHSEnv` so Pixi and conda/RoboStack have a conventional Linux filesystem layout (glibc, etc.).
-
-**One-shot** (FHS wrapper, no interactive shell):
-
-```bash
-nix run .#install
-```
-
-**Without the flake** — install Pixi globally and run `./install.sh` from any shell:
-
-```bash
-nix profile install nixpkgs#pixi
-# or: nix-shell -p pixi git python3 tmux --run ./install.sh
-```
-
-After the first `pixi install`, you can also use `pixi shell` for a ROS-enabled environment without `nix develop`.
+On macOS, install **tmux** (`brew install tmux`) if it is not already present.
 
 ## Get the repository
 
@@ -80,6 +49,8 @@ cd lucy_ws
 A Python TUI manages install, rebuild, and launch. From the repository root:
 
 ### Linux / macOS
+
+Install **tmux** on the host if it is not already present.
 
 ```bash
 python3 Lucy.py
@@ -144,14 +115,6 @@ With **Developer Mode** ON in the TUI (stored in `.env`):
 | Launch | `./launch_lucy.sh` |
 | Headless | `./launch_lucy.sh --headless` |
 
-## GUI: RViz and Gazebo
-
-RViz, Gazebo, and rqt are native OpenGL applications. They use your **host display** (`DISPLAY` / Wayland compositor). No in-container VNC desktop.
-
-- **Linux (amd64)** — GPU acceleration when drivers and GLX/EGL are available
-- **Apple Silicon** — native display; performance depends on host GL stack
-- **Headless simulation** — `./launch_lucy.sh --headless` or enable Headless in the launcher; visualize via the control panel
-
 ### macOS notes
 
 - **Port 5000** may be used by AirPlay Receiver. Disable it in **System Settings → General → AirDrop & Handoff**, or set `PORT_CONTROL_PANEL=5001` in `.env`.
@@ -161,3 +124,4 @@ RViz, Gazebo, and rqt are native OpenGL applications. They use your **host displ
 - [`docs/developer_lucy_packages.md`](docs/developer_lucy_packages.md) — install/launch flags, dev mode, ports, packages overview
 - [`docs/launcher_packages.md`](docs/launcher_packages.md) — launcher configuration
 - [`docs/pixi_setup.md`](docs/pixi_setup.md) — Pixi/RoboStack dependency and lock workflow
+- [`docs/pixi_release.md`](docs/pixi_release.md) — release packaging follow-up (pixi-build-ros)
