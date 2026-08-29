@@ -1,6 +1,6 @@
 ; Lucy Windows installer (NSIS) — bundles the workspace + Lucy.exe, then runs the
 ; install via "Lucy.exe --cli ...". NSIS is used (instead of Inno Setup) because
-; nsExec::ExecToLog streams the long docker/colcon build output live into the
+; nsExec::ExecToLog streams the long pixi/colcon build output live into the
 ; installer's details log.
 ;
 ; Build: windows/build_installer.ps1 (requires PyInstaller + NSIS / makensis)
@@ -16,8 +16,7 @@ Unicode true
 !define MyAppURL "https://github.com/Sentience-Robotics/lucy_ws"
 !define MyAppExeName "Lucy.exe"
 
-!define DOC_DOCKER "https://docs.docker.com/desktop/setup/install/windows-install/"
-!define DOC_VCXSRV "https://github.com/marchaesen/vcxsrv/releases"
+!define DOC_PIXI   "https://pixi.prefix.dev/latest/installation/"
 !define DOC_GIT    "https://git-scm.com/install/windows"
 !define DOC_PYTHON "https://www.python.org/downloads/"
 
@@ -56,7 +55,7 @@ Var ModeCombo
 Var VersionCombo
 Var DevCheck
 Var RefreshCheck
-Var DockerCheck
+Var PixiCheck
 Var PrereqText
 
 ; ----------------------------------------------------------------------------
@@ -214,23 +213,23 @@ Function PrereqPageCreate
     Abort
   ${EndIf}
 
-  StrCpy $PrereqText "Required:$\r$\n  Docker Desktop$\r$\n    ${DOC_DOCKER}$\r$\n  Uncheck $\"Use WSL 2$\" unless you need it for advanced development.$\r$\n  Configure Docker resources to use at least 5 GB RAM.$\r$\n$\r$\nOptional (GUI apps):$\r$\n  VcXsrv$\r$\n    ${DOC_VCXSRV}$\r$\n$\r$\nOptional (developers):$\r$\n  Git for Windows$\r$\n    ${DOC_GIT}$\r$\n  Without Git, repositories are downloaded as ZIP archives.$\r$\n  Python 3$\r$\n    ${DOC_PYTHON}"
+  StrCpy $PrereqText "Required:$\r$\n  Pixi$\r$\n    ${DOC_PIXI}$\r$\n  Git for Windows (launch via bash launch_lucy.sh)$\r$\n    ${DOC_GIT}$\r$\n$\r$\nOptional (developers):$\r$\n  Python 3$\r$\n    ${DOC_PYTHON}$\r$\n  Without Git, repositories are downloaded as ZIP archives."
 
   ; Read-only multiline edit; reliably displays/wraps and scrolls if needed.
   ${NSD_CreateMLText} 0 0 100% -22u $PrereqText
   Pop $1
   ${NSD_Edit_SetReadOnly} $1 1
 
-  ${NSD_CreateCheckbox} 0 -18u 100% 12u "Docker Desktop is installed"
-  Pop $DockerCheck
+  ${NSD_CreateCheckbox} 0 -18u 100% 12u "Pixi is installed"
+  Pop $PixiCheck
 
   nsDialogs::Show
 FunctionEnd
 
 Function PrereqPageLeave
-  ${NSD_GetState} $DockerCheck $0
+  ${NSD_GetState} $PixiCheck $0
   ${If} $0 != ${BST_CHECKED}
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Please confirm that Docker Desktop is installed before continuing."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Please confirm that Pixi is installed before continuing."
     Abort
   ${EndIf}
 FunctionEnd
@@ -239,13 +238,13 @@ FunctionEnd
 ; Prerequisite failure dialog (mirrors the old Inno ShowPrerequisitesFailed)
 ; ----------------------------------------------------------------------------
 Function ShowPrerequisitesFailed
-  StrCpy $0 "Required software is missing or not running, so the workspace install was not started.$\r$\n$\r$\nRequired:$\r$\n  Docker Desktop must be installed and running.$\r$\n"
+  StrCpy $0 "Required software is missing or not available, so the workspace install was not started.$\r$\n$\r$\nRequired:$\r$\n  Pixi must be installed and on PATH.$\r$\n"
   ${If} $DeveloperInstall == "1"
     StrCpy $0 "$0$\r$\nDeveloper install also requires Git for Windows.$\r$\n"
   ${EndIf}
-  StrCpy $0 "$0$\r$\nLucy was copied to your PC. After fixing the items above, run Lucy-Setup.exe again and choose Update.$\r$\n$\r$\nOpen the Docker Desktop install page now?"
+  StrCpy $0 "$0$\r$\nLucy was copied to your PC. After fixing the items above, run Lucy-Setup.exe again and choose Update.$\r$\n$\r$\nOpen the Pixi install page now?"
   MessageBox MB_YESNO|MB_ICONEXCLAMATION "$0" IDNO +2
-  ExecShell "open" "${DOC_DOCKER}"
+  ExecShell "open" "${DOC_PIXI}"
 FunctionEnd
 
 ; ----------------------------------------------------------------------------
@@ -254,7 +253,8 @@ FunctionEnd
 Section "Install"
   SetOutPath "$INSTDIR"
   File "..\..\dist\${MyAppExeName}"
-  File "..\..\docker\Dockerfile.jazzy"
+  File "..\..\pixi.toml"
+  File "..\..\pixi.lock"
   File "..\..\install.sh"
   File "..\..\launch_lucy.sh"
   File "..\..\Lucy.py"
@@ -264,9 +264,6 @@ Section "Install"
 
   SetOutPath "$INSTDIR\config"
   File /r "..\..\config\*"
-
-  SetOutPath "$INSTDIR\docker"
-  File /r "..\..\docker\*"
 
   SetOutPath "$INSTDIR\windows"
   File /r /x "installer" /x "build_installer.ps1" "..\..\windows\*"
@@ -313,7 +310,7 @@ Section "Install"
     StrCpy $2 "$2 --refresh-workspace"
   ${EndIf}
 
-  DetailPrint "Running $InstallMode (cloning repos + building Docker image + workspace; this can take a while)..."
+  DetailPrint "Running $InstallMode (cloning repos + pixi install + colcon build; this can take a while)..."
   nsExec::ExecToLog $2
   Pop $3
   ${If} $3 == 0
