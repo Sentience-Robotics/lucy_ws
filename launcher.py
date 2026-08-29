@@ -8,7 +8,9 @@ import threading
 import time
 import json
 
-CONFIG_FILE = "/workspace/config/launcher_config.json"
+CONFIG_DIR = "/workspace/config"
+DEFAULT_CONFIG_FILE = os.path.join(CONFIG_DIR, "launcher_config.json")
+LOCAL_CONFIG_FILE = os.path.join(CONFIG_DIR, "launcher_config.json.local")
 STATE_FILE = "/tmp/launcher_state.json"
 # Persisted across container restarts (lives on the bind-mounted workspace, not
 # /tmp): the set of packages the user last applied, so ticks are remembered.
@@ -52,10 +54,15 @@ def is_in_docker():
 def is_in_tmux():
     return 'TMUX' in os.environ
 
+def _launcher_config_path():
+    """config/launcher_config.json.local (gitignored) overrides the tracked file."""
+    return LOCAL_CONFIG_FILE if os.path.exists(LOCAL_CONFIG_FILE) else DEFAULT_CONFIG_FILE
+
 def load_config():
-    if not os.path.exists(CONFIG_FILE):
-        raise FileNotFoundError(f"Configuration file not found at {CONFIG_FILE}")
-    with open(CONFIG_FILE, 'r') as f:
+    config_path = _launcher_config_path()
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file not found at {config_path}")
+    with open(config_path, 'r') as f:
         return json.load(f)
 
 def load_state():
