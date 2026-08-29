@@ -59,9 +59,13 @@ jobs:
           chmod +x install.sh launch_lucy.sh
           ./install.sh --skip-build
 
-      - name: Build workspace (colcon + panel yarn)
+      - name: Build workspace (colcon)
         shell: bash
         run: pixi run build
+
+      - name: Install control panel (yarn)
+        shell: bash
+        run: pixi run panel-install
 
       - name: Run colcon tests
         shell: bash
@@ -74,6 +78,13 @@ jobs:
       - name: Launch smoke test (headless)
         shell: bash
         run: ./launch_lucy.sh --headless ros2 doctor --report
+
+      - name: Launcher tmux smoke (Linux)
+        if: matrix.pixi_platform == 'linux-64'
+        shell: bash
+        run: |
+          chmod +x scripts/ci_tmux_launcher_smoke.sh
+          LUCY_WS_ROOT="$PWD" ./scripts/ci_tmux_launcher_smoke.sh
 
       - name: Verify Pixi platform
         shell: bash
