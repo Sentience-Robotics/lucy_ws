@@ -86,7 +86,7 @@ def not_installed_screen(stdscr):
             ("Lucy is not installed on this machine.", curses.A_BOLD),
             ("", curses.A_NORMAL),
         ]
-        start = max(2, h // 2 - 5)
+        start = max(2, h // 2 - len(lines) // 2)
         for i, (text, attr) in enumerate(lines):
             stdscr.addstr(start + i, max(0, (w - len(text)) // 2), text, attr)
 
