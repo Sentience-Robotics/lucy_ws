@@ -6,9 +6,9 @@
 # Usage:
 #   ./launch_lucy.sh                tmux + Control Center launcher (default)
 #   ./launch_lucy.sh --headless <cmd>  run a single command, e.g. ros2 doctor --report
+#   ./launch_lucy.sh --shell          interactive pixi shell (ros2 launch hints)
 #
-# Dev mode (DEV=true): interactive pixi shell with ros2 launch hints.
-#
+# DEV=true in .env affects install.sh (SSH clones only), not launch behavior.
 # Sets LUCY_LCP_* env vars for control panel URLs in the launcher.
 
 set -e
@@ -118,31 +118,32 @@ case "${1:-}" in
     fi
     exec pixi run -- "$@"
     ;;
+  --shell)
+    echo "Interactive pixi shell (workspace overlay active)."
+    echo "  ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
+    echo "  ros2 launch lucy_bringup lucy.launch.py real:=true"
+    exec pixi shell
+    ;;
 esac
 
-if [ "$(echo "${DEV:-}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
-  echo "Dev mode — pixi shell (workspace overlay active)."
-  echo "  ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
-  echo "  ros2 launch lucy_bringup lucy.launch.py real:=true"
-  exec pixi shell
-fi
-
-# Git Bash / MSYS on Windows: no tmux — run the Control Center launcher directly.
+# tmux is a host tool (not in Pixi). Session runs on the host; launcher runs in pixi run.
 case "$(uname -s)" in
   Linux|Darwin)
     if command -v tmux >/dev/null 2>&1; then
-      exec pixi run -- bash -c '
+      LAUNCH_CMD="cd \"${SCRIPT_DIR}\" && pixi run -- python launcher.py"
+      exec bash -c "
         set -e
         tmux start-server
         if ! tmux has-session -t lucy_ws 2>/dev/null; then
-          tmux new-session -d -s lucy_ws -n Lucy "python3 launcher.py"
+          tmux new-session -d -s lucy_ws -n Lucy \"${LAUNCH_CMD}\"
         else
           tmux send-keys -t lucy_ws:Lucy C-c 2>/dev/null || true
-          tmux send-keys -t lucy_ws:Lucy "python3 launcher.py" C-m
+          tmux send-keys -t lucy_ws:Lucy \"${LAUNCH_CMD}\" C-m
         fi
         tmux attach-session -t lucy_ws
-      '
+      "
     fi
+    echo "tmux not found — install tmux for the multi-window launcher (see README)." >&2
     ;;
 esac
 

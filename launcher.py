@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 import json
+import shlex
 from pathlib import Path
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
@@ -47,6 +48,46 @@ def get_dev_mode():
             if line.strip().startswith("DEV="):
                 return line.strip().split("=")[1].lower() == "true"
     return False
+
+def load_workspace_env():
+    """Load optional .env into os.environ (ports, GUI overrides, DEV=)."""
+    env_path = WORKSPACE_ROOT / ".env"
+    if not env_path.exists():
+        return
+    with open(env_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            val = val.strip().strip('"').strip("'")
+            os.environ[key] = val
+
+# Forward into tmux panes — GUI processes do not inherit the launcher session env.
+_GUI_ENV_KEYS = (
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
+    "QT_QPA_PLATFORM",
+    "QT_XCB_GL_INTEGRATION",
+    "LIBGL_ALWAYS_SOFTWARE",
+    "MESA_LOADER_DRIVER_OVERRIDE",
+    "LIBGL_DRIVERS_PATH",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+)
+
+def _gui_env_exports() -> str:
+    parts = []
+    for key in _GUI_ENV_KEYS:
+        val = os.environ.get(key)
+        if val:
+            parts.append(f"export {key}={shlex.quote(val)}")
+    return "; ".join(parts)
 
 def is_in_tmux():
     return 'TMUX' in os.environ
@@ -97,6 +138,35 @@ def save_selection(selected_ids):
             json.dump({"selected": sorted(selected_ids)}, f)
     except OSError:
         pass
+
+def _pixi_workspace_script(user_cmd: str) -> str:
+    """Shell script body: workspace root + Pixi env (RoboStack + colcon overlay)."""
+    user_cmd = user_cmd.strip()
+    if user_cmd.startswith("pixi "):
+        pixi_part = user_cmd
+    elif any(op in user_cmd for op in (";", "&&", "||", "|", "&")):
+        pixi_part = f"pixi run -- bash -lc {shlex.quote(user_cmd)}"
+    else:
+        pixi_part = f"pixi run -- {user_cmd}"
+    body = f"cd {WORKSPACE_ROOT} && {pixi_part}"
+    exports = _gui_env_exports()
+    if exports:
+        body = f"{exports}; {body}"
+    return body
+
+def _tmux_new_pixi_window(window: str, user_cmd: str, remain_on_exit: bool = False) -> str:
+    """Open a tmux window that runs user_cmd inside pixi run (tmux panes don't inherit pixi)."""
+    inner = f"bash -lc {shlex.quote(_pixi_workspace_script(user_cmd))}"
+    cmd = f"tmux new-window -d -t lucy_ws -n {window} {inner}"
+    if remain_on_exit:
+        cmd += f"; tmux set-window-option -t lucy_ws:{window} remain-on-exit on"
+    return cmd
+
+def _complex_package_start(pkg) -> str:
+    """Legacy complex {start,stop,is_running} entries — route through Pixi when possible."""
+    if pkg.id == "control_panel":
+        return _tmux_new_pixi_window("control_panel", "pixi run panel-dev", remain_on_exit=True)
+    return pkg.command["start"]
 
 def run_shell_command(cmd, capture_output=False):
     if capture_output:
@@ -540,7 +610,7 @@ def apply_changes(state):
                 pkg.pane_dead = False
                 pkg.is_running = False
             if pkg.is_complex_command():
-                run_shell_command(pkg.command['start'])
+                run_shell_command(_complex_package_start(pkg))
                 # Keep a crashed service's window open with its error (see core).
                 if pkg.readiness_check:
                     run_shell_command(f"tmux set-window-option -t lucy_ws:{pkg.id} remain-on-exit on 2>/dev/null")
@@ -552,9 +622,7 @@ def apply_changes(state):
                 modifier_args = [p.command for p in selected_modifiers]
                 modifier_ids = [p.id for p in selected_modifiers]
                 full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
-                # remain-on-exit keeps the window (and the crash output) open if
-                # ros2 launch dies, so the failure is visible and detectable.
-                run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}'; tmux set-window-option -t lucy_ws:core remain-on-exit on")
+                run_shell_command(_tmux_new_pixi_window("core", full_cmd, remain_on_exit=True))
                 save_state({"modifiers": modifier_ids})
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
@@ -563,14 +631,14 @@ def apply_changes(state):
                     _intended_running.add(mod.id)
             elif pkg.type in ['tool', 'interface']:
                 if pkg.type == 'interface':
-                    # remain-on-exit leaves the dead pane so the launcher can read the exit code (STOPPED vs CRASHED).
-                    # A wrapper shell on `read` would keep the pane alive and mask the exit.
-                    run_shell_command(
-                        f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}'; "
-                        f"tmux set-window-option -t lucy_ws:{pkg.id} remain-on-exit on"
-                    )
+                    run_shell_command(_tmux_new_pixi_window(pkg.id, pkg.command, remain_on_exit=True))
                 else:
-                    run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
+                    run_shell_command(
+                        _tmux_new_pixi_window(
+                            pkg.id,
+                            f'{pkg.command}; echo "--- Process finished, press any key to close ---"; read',
+                        )
+                    )
                 # Only auto-switch to tool windows (e.g. console), not interfaces which manage their own terminal visibility (lucy_cli, control_panel).
                 if pkg.type == 'tool':
                     last_launched_window = pkg.id
@@ -724,6 +792,7 @@ def main(stdscr):
             continue
 
 if __name__ == "__main__":
+    load_workspace_env()
     if needs_tmux_session() and not is_in_tmux():
         print("Error: launcher.py must run inside the lucy_ws tmux session (./launch_lucy.sh).", file=sys.stderr)
         sys.exit(1)
