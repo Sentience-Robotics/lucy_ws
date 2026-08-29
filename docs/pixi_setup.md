@@ -63,7 +63,7 @@ Use Pixi target tables in `pixi.toml`:
 
 Colcon uses `--symlink-install` on Linux/macOS and `--merge-install` on Windows (`pixi.toml` `[feature.build]` tasks).
 
-Activation scripts (`install/setup.bash` or `install/setup.bat`) are wired via `[target.unix.activation]` / `[target.win.activation]` in `pixi.toml`, so `pixi run` and `pixi shell` automatically overlay the workspace.
+Activation scripts (`install/setup.bash` or `install/setup.bat`) are wired via `[target.unix.activation]` / `[target.win.activation]` in `pixi.toml`, so `pixi run` and `pixi shell` automatically overlay the workspace. `GZ_SIM_SYSTEM_PLUGIN_PATH` points at conda Gazebo plugins (`lib` on Unix, `Library/bin` on Windows).
 
 ## Lock refresh checklist
 
