@@ -144,7 +144,9 @@ case "$(uname -s)" in
       "
     fi
     echo "tmux not found — install tmux for the multi-window launcher (see README)." >&2
+    exit 1
     ;;
 esac
 
+# Git Bash / MSYS on Windows: no tmux — run the Control Center launcher directly.
 exec pixi run -- python launcher.py
