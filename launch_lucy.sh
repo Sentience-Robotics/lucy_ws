@@ -1,24 +1,19 @@
 #!/usr/bin/env bash
-# Start the Lucy stack (ROS 2 Jazzy + control panel) inside Docker.
+# Start the Lucy stack (ROS 2 Jazzy + Control Center launcher) via Pixi.
 #
-# Prerequisite: ./install.sh — clones src/, builds the Docker image, builds the workspace.
+# Prerequisite: ./install.sh
 #
 # Usage:
-#   ./launch_lucy.sh                start control panel + `ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true`
-#   ./launch_lucy.sh --headless     same but without GUI / X11 (Gazebo runs headless, RViz disabled)
-#   ./launch_lucy.sh <command>      run a single command in the container (no control panel, no auto-launch)
+#   ./launch_lucy.sh                tmux + Control Center launcher (default)
+#   ./launch_lucy.sh --headless <cmd>  run a single command, e.g. ros2 doctor --report
 #
-# Dev mode (DEV=true in env or .env): drop into an interactive Jazzy shell with the control
-# panel running in background; you launch the ROS stack yourself (handy commands are printed).
+# Dev mode (DEV=true): interactive pixi shell with ros2 launch hints.
 #
-# Ports published on the host: rosbridge 9090, control panel PORT_CONTROL_PANEL (defaults to
-# VITE_PORT from src/lucy_control_panel/.env, else 5000). Vite proxies /rosbridge to the bridge.
-#
-# Docker platform follows the last ./install.sh run (.lucy-docker-platform; override with LUCY_DOCKER_PLATFORM).
-# GPU mode is auto-detected via docker/gpu_detect.sh (jetson / nvidia / dri / software).
+# Sets LUCY_LCP_* env vars for control panel URLs in the launcher.
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a
@@ -27,14 +22,13 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-case "$(echo "${DEV:-}" | tr '[:upper:]' '[:lower:]')" in
-  1|true|yes) DEV_MODE=1 ;;
-  *) DEV_MODE=0 ;;
-esac
+check_cmd() {
+  if ! command -v "$1" &>/dev/null; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
 
-# A free-host-port search so a port already taken (e.g. macOS AirPlay on 5000)
-# doesn't abort the launch — we publish on the next available one and the printed
-# URLs reflect it. Only the host side moves; the container keeps its fixed port.
 host_port_in_use() {
   if command -v lsof >/dev/null 2>&1; then
     lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
@@ -43,131 +37,23 @@ host_port_in_use() {
   fi
 }
 
-resolve_host_port() {  # $1 = label, $2 = desired port -> echoes a free port
-  local p="$2" limit=$(( $2 + 50 ))
+resolve_host_port() {
+  local label="$1"
+  local p="$2"
+  local limit=$((p + 50))
   while [ "$p" -le "$limit" ]; do
     if ! host_port_in_use "$p"; then
-      [ "$p" != "$2" ] && echo "Port $2 ($1) in use; using $p instead." >&2
-      echo "$p"; return 0
+      if [ "$p" != "$2" ]; then
+        echo "Port $2 ($label) in use; using $p instead." >&2
+      fi
+      echo "$p"
+      return 0
     fi
     p=$((p + 1))
   done
-  echo "$2"  # nothing free in range; let docker surface the real error
+  echo "$2"
 }
 
-IMAGE_NAME="lucy_ros2:jazzy"
-DOCKERFILE_PATH="$SCRIPT_DIR/docker/Dockerfile.jazzy"
-WORKSPACE="/workspace"
-
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/docker/ensure_image.sh"
-
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/docker/gpu_detect.sh"
-lucy_resolve_host_display
-
-ensure_docker_image() {
-  ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME" "$DOCKERFILE_PATH"
-}
-
-# ----------------------------------------------------------------------------
-# GUI / X11 forwarding
-# ----------------------------------------------------------------------------
-# GUI on by default. `--headless` disables it. Override the display with
-# DOCKER_GUI_DISPLAY (e.g. Docker Desktop) or use DOCKER_GUI_USE_HOST_NETWORK=1
-# to share the host network namespace (DISPLAY=:0 inside the container).
-
-X11_ARGS=()
-GUI_PORT_ARGS=()
-ARCH="$(uname -m)"
-# LUCY_FORCE_VNC selects the in-container VNC desktop:
-#   unset  -> auto: VNC on arm64 (no working native GL), native X11 on amd64
-#   1/yes  -> force VNC on any arch (also set it for ./install.sh so the image
-#             is built with the VNC tooling)
-#   0/no   -> force VNC off even on arm64 (falls back to native X11 / headless)
-USE_VNC=0
-case "$ARCH" in arm64|aarch64) USE_VNC=1 ;; esac
-case "$(echo "${LUCY_FORCE_VNC:-}" | tr '[:upper:]' '[:lower:]')" in
-  1|true|yes) USE_VNC=1 ;;
-  0|false|no) USE_VNC=0 ;;
-esac
-
-# Prefer native X11 + GPU when hardware acceleration is available (Jetson / NVIDIA / DRI).
-if [ "$USE_VNC" = 1 ] && [ "${LUCY_GPU_MODE:-software}" != "software" ] && [ -n "${DISPLAY:-}" ]; then
-  case "$(echo "${LUCY_FORCE_VNC:-}" | tr '[:upper:]' '[:lower:]')" in
-    1|true|yes) ;;
-    *) USE_VNC=0 ;;
-  esac
-fi
-
-if [ "${1:-}" = "--headless" ]; then
-  shift
-  echo "Headless: no X11 (Gazebo runs headless; RViz is disabled by the launch)."
-elif [ "$USE_VNC" = 1 ]; then
-  # VNC desktop: software GL fallback when no hardware GPU path is available.
-  # With jetson/nvidia/dri, prefer native X11 above; if you still land here (no DISPLAY),
-  # RViz/Gazebo render via Xvfb + llvmpipe on CPU — see message below.
-  GUI_VNC_PORT="$(resolve_host_port VNC "${LUCY_GUI_VNC_PORT:-5901}")"
-  GUI_NOVNC_PORT="$(resolve_host_port noVNC "${LUCY_GUI_NOVNC_PORT:-6080}")"
-  GUI_VNC_PASSWORD="${LUCY_GUI_VNC_PASSWORD:-lucy}"
-  X11_ARGS=(
-    -e LUCY_GUI_VNC_AVAILABLE=1
-    -e LUCY_GUI_VNC_PASSWORD="$GUI_VNC_PASSWORD"
-    -e LUCY_ORIGINAL_DISPLAY="${DISPLAY:-}"
-    -e LUCY_GUI_NOVNC_PUBLISHED_PORT="$GUI_NOVNC_PORT"
-    -e LUCY_GUI_VNC_PUBLISHED_PORT="$GUI_VNC_PORT"
-    -e XDG_RUNTIME_DIR=/tmp/runtime-root
-  )
-  if [ "${LUCY_GPU_MODE:-software}" = "software" ]; then
-    X11_ARGS+=(
-      -e LIBGL_ALWAYS_SOFTWARE=1
-      -e GALLIUM_DRIVER=llvmpipe
-    )
-  else
-    echo "GUI: noVNC virtual desktop (Jetson/NVIDIA GL when __GLX_VENDOR_LIBRARY_NAME=nvidia is set)" >&2
-  fi
-  GUI_PORT_ARGS=(
-    -p "${GUI_VNC_PORT}:5901"
-    -p "${GUI_NOVNC_PORT}:6080"
-  )
-  echo "GUI: in-container virtual desktop available (enable noVNC or VNC in the launcher)."
-  echo "       Browser (noVNC):  http://localhost:${GUI_NOVNC_PORT}/vnc.html  (no password)"
-  echo "       VNC Viewer:       localhost:${GUI_VNC_PORT}  (password: ${GUI_VNC_PASSWORD})"
-else
-  # Native X11 forwarding (GPU path on Jetson / NVIDIA / DRI when DISPLAY is set).
-  GUI_DISPLAY="${DOCKER_GUI_DISPLAY:-$DISPLAY}"
-  if [ -n "$GUI_DISPLAY" ]; then
-    if command -v xhost &>/dev/null; then
-      xhost +local:docker 2>/dev/null || true
-    fi
-    if [ -n "${DOCKER_GUI_USE_HOST_NETWORK:-}" ]; then
-      X11_ARGS=(-e "DISPLAY=:0" --network=host)
-      echo "GUI: DISPLAY=:0 (host network)."
-    else
-      X11_ARGS=(-e DISPLAY="$GUI_DISPLAY" -v /tmp/.X11-unix:/tmp/.X11-unix:rw)
-      if [ "${LUCY_GPU_MODE:-software}" != "software" ]; then
-        echo "GUI: DISPLAY=$GUI_DISPLAY (hardware GPU — nvidia runtime / DRI)"
-      else
-        echo "GUI: DISPLAY=$GUI_DISPLAY"
-      fi
-    fi
-  else
-    echo "GUI: DISPLAY not set; Gazebo will run headless (RViz disabled)."
-  fi
-fi
-
-ensure_docker_image
-docker_run_platform_flags "$SCRIPT_DIR"
-docker_run_it_flags
-
-lucy_gpu_launch_message
-
-# ----------------------------------------------------------------------------
-# Port mapping (control panel + rosbridge)
-# ----------------------------------------------------------------------------
-
-# Vite reads VITE_PORT from src/lucy_control_panel/.env. We must publish that
-# exact container port, otherwise the printed host URL silently lies.
 vite_listen_port_from_envfile() {
   local f="$SCRIPT_DIR/src/lucy_control_panel/.env"
   local raw val
@@ -183,7 +69,6 @@ vite_listen_port_from_envfile() {
   echo "$val"
 }
 
-# Scheme the LCP serves on: https when VITE_HTTPS=true, else http.
 vite_scheme_from_envfile() {
   local f="$SCRIPT_DIR/src/lucy_control_panel/.env"
   local raw val
@@ -201,8 +86,15 @@ vite_scheme_from_envfile() {
   fi
 }
 
-PORT_ROSBRIDGE="$(resolve_host_port rosbridge "${PORT_ROSBRIDGE:-9090}")"
-if [[ -z "${PORT_CONTROL_PANEL_CONTAINER:-}" ]]; then
+check_cmd pixi
+
+if [[ ! -f "$SCRIPT_DIR/install/setup.bash" ]]; then
+  echo "Workspace not built. Run ./install.sh or Install in Lucy.py" >&2
+  exit 1
+fi
+
+PORT_CONTROL_PANEL_CONTAINER="${PORT_CONTROL_PANEL_CONTAINER:-}"
+if [[ -z "$PORT_CONTROL_PANEL_CONTAINER" ]]; then
   if v="$(vite_listen_port_from_envfile)"; then
     PORT_CONTROL_PANEL_CONTAINER="$v"
   else
@@ -212,93 +104,46 @@ fi
 PORT_CONTROL_PANEL="$(resolve_host_port 'control panel' "${PORT_CONTROL_PANEL:-$PORT_CONTROL_PANEL_CONTAINER}")"
 LCP_SCHEME="${LUCY_LCP_SCHEME:-$(vite_scheme_from_envfile)}"
 
-DOCKER_PORT_ARGS=(
-  -p "${PORT_ROSBRIDGE}:9090"
-  -p "${PORT_CONTROL_PANEL}:${PORT_CONTROL_PANEL_CONTAINER}"
-)
+export LUCY_LCP_PUBLISHED_HOST_PORT="$PORT_CONTROL_PANEL"
+export LUCY_LCP_CONTAINER_PORT="$PORT_CONTROL_PANEL_CONTAINER"
+export LUCY_LCP_SCHEME="$LCP_SCHEME"
 
-DOCKER_ENV_ARGS=(
-  -e LUCY_LCP_PUBLISHED_HOST_PORT="$PORT_CONTROL_PANEL"
-  -e LUCY_LCP_CONTAINER_PORT="$PORT_CONTROL_PANEL_CONTAINER"
-  -e LUCY_LCP_SCHEME="$LCP_SCHEME"
-)
+echo "Control panel: ${LCP_SCHEME}://localhost:${PORT_CONTROL_PANEL}"
 
-# ----------------------------------------------------------------------------
-# Container scripts
-# ----------------------------------------------------------------------------
+case "${1:-}" in
+  --headless)
+    shift
+    if [ $# -eq 0 ]; then
+      set -- ros2 doctor --report
+    fi
+    exec pixi run -- "$@"
+    ;;
+esac
 
-SETUP="source /opt/ros/jazzy/setup.bash"
-SOURCE_WORKSPACE="cd $WORKSPACE && source install/setup.bash"
-LAUNCH_GAZEBO_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
-LAUNCH_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py rviz:=true"
-
-# Preamble run inside the container: source ROS + overlay.
-read -r -d '' CONTAINER_PREAMBLE <<'EOS' || true
-set -e;
-source /opt/ros/jazzy/setup.bash
-[ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash
-cd /workspace
-if [[ ! -f install/setup.bash ]]; then
-  echo "Workspace not built. Run Install/Update via Lucy.py" >&2
-  exit 1
+if [ "$(echo "${DEV:-}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+  echo "Dev mode — pixi shell (workspace overlay active)."
+  echo "  ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
+  echo "  ros2 launch lucy_bringup lucy.launch.py real:=true"
+  exec pixi shell
 fi
-source install/setup.bash
-EOS
 
-# In DEV mode, attach to a tmux session. Exiting the last tmux window will exit the container.
-read -r -d '' TMUX_SCRIPT <<'EOS' || true
-if [ -z "$TMUX" ]; then
-  # Start tmux server and create session if it doesn't exist
-  tmux start-server
-  if ! tmux has-session -t lucy_ws 2>/dev/null; then
-    tmux new-session -d -s lucy_ws -n 'Lucy Workspace'
-  fi
+# Git Bash / MSYS on Windows: no tmux — run the Control Center launcher directly.
+case "$(uname -s)" in
+  Linux|Darwin)
+    if command -v tmux >/dev/null 2>&1; then
+      exec pixi run -- bash -c '
+        set -e
+        tmux start-server
+        if ! tmux has-session -t lucy_ws 2>/dev/null; then
+          tmux new-session -d -s lucy_ws -n Lucy "python3 launcher.py"
+        else
+          tmux send-keys -t lucy_ws:Lucy C-c 2>/dev/null || true
+          tmux send-keys -t lucy_ws:Lucy "python3 launcher.py" C-m
+        fi
+        tmux attach-session -t lucy_ws
+      '
+    fi
+    ;;
+esac
 
-  # Send the command
-  tmux send-keys -t lucy_ws "launcher" C-m
-
-  # Attach to session.
-  # When the last window is closed, the server exits, the script ends, and the container stops.
-  tmux attach-session -t lucy_ws
-else
-  # Already inside tmux, do nothing special.
-  bash -i
-fi
-EOS
-
-INTERACTIVE_CONTAINER_SCRIPT="${CONTAINER_PREAMBLE}
-${TMUX_SCRIPT}
-"
-
-NORMAL_CONTAINER_SCRIPT="${CONTAINER_PREAMBLE}
-${LAUNCH_GAZEBO_RVIZ_BRIDGE_CP}
-"
-
-# ----------------------------------------------------------------------------
-# Dispatch
-# ----------------------------------------------------------------------------
-
-if [ $# -eq 0 ]; then
-  CONTAINER_SCRIPT="$INTERACTIVE_CONTAINER_SCRIPT"
-  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
-    --name lucy_dev \
-    "${DOCKER_PORT_ARGS[@]}" \
-    "${GUI_PORT_ARGS[@]}" \
-    "${GPU_DOCKER_ARGS[@]}" \
-    -v "$SCRIPT_DIR:$WORKSPACE" \
-    "${X11_ARGS[@]}" \
-    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
-    -e LUCY_LCP_PUBLISHED_HOST_PORT="$PORT_CONTROL_PANEL" \
-    -e LUCY_LCP_CONTAINER_PORT="$PORT_CONTROL_PANEL_CONTAINER" \
-    -e LUCY_LCP_SCHEME="$LCP_SCHEME" \
-    "$IMAGE_NAME" /bin/bash -c "$CONTAINER_SCRIPT"
-else
-  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
-    --name lucy_dev \
-    "${DOCKER_PORT_ARGS[@]}" \
-    "${GPU_DOCKER_ARGS[@]}" \
-    -v "$SCRIPT_DIR:$WORKSPACE" \
-    "${X11_ARGS[@]}" \
-    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
-    "$IMAGE_NAME" /bin/bash -c "${SETUP} && ${SOURCE_WORKSPACE} && $*"
-fi
+exec pixi run -- python launcher.py
