@@ -49,7 +49,7 @@
     {
       "id": "rviz",
       "name": "... with Visualizer",
-      "description": "(RViz)",
+      "description": "(RViz — use Control Panel 3D if OpenGL fails)",
       "type": "modifier",
       "dependencies": ["core"],
       "conflicts": [],
@@ -76,11 +76,7 @@
       "type": "interface",
       "dependencies": [],
       "conflicts": [],
-      "command": {
-        "start": "tmux new-window -d -n control_panel 'cd src/lucy_control_panel && yarn dev'",
-        "stop": "tmux kill-window -t lucy_ws:control_panel 2>/dev/null || true",
-        "is_running": "tmux list-windows -F '#{window_name}' | grep -q '^control_panel$'"
-      },
+      "command": "pixi run panel-dev",
       "readiness_check": "pgrep -f '[v]ite' >/dev/null 2>&1",
       "readiness_timeout": 120,
       "default_on": false

@@ -650,8 +650,7 @@ def apply_changes(state):
         run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
 
 def restore_selection(state):
-    """Pre-tick the packages the user last applied (persisted), so they don't have
-    to re-select them after a restart. Running packages stay ticked regardless."""
+    """Pre-tick packages from the last applied selection (.lucy_launcher_state.json)."""
     saved = load_selection()
     if saved is None:
         return
@@ -659,14 +658,12 @@ def restore_selection(state):
     for pkg in state.packages:
         if pkg.requires_pkg:
             continue
-        pkg.selected = (pkg.id in saved) or pkg.is_running
-    # Robot radios: at most one ticked (saved choice wins over stale is_running).
+        pkg.selected = pkg.id in saved
+    # Robot radios: exactly one ticked when saved names a robot.
     chosen = next((p for p in robots if p.id in saved), None)
-    if chosen is None:
-        running = [p for p in robots if p.is_running]
-        chosen = running[0] if len(running) == 1 else None
-    for pkg in robots:
-        pkg.selected = pkg is chosen
+    if chosen is not None:
+        for pkg in robots:
+            pkg.selected = pkg is chosen
 
 def default_robot_selection(state):
     """Auto-tick a robot-package modifier when none is selected yet (mirrors
@@ -717,9 +714,10 @@ def main(stdscr):
             lcp_pkg.selected = True
         default_robot_selection(state)
         apply_changes(state)
+        save_selection({p.id for p in state.packages if p.selected})
         status_msg = "Starting default services for production mode..."
-        state = LauncherState(load_config())
-        restore_selection(state)
+        status_msg_until = time.time() + 3.0
+        state.refresh_status()
 
     while True:
         try:
@@ -773,8 +771,7 @@ def main(stdscr):
                 save_selection({p.id for p in state.packages if p.selected})
                 status_msg = "Configuration Applied!"
                 status_msg_until = time.time() + 2.0
-                state = LauncherState(load_config())
-                restore_selection(state)
+                state.refresh_status()
             elif key in [ord('x'), ord('X')]:
                 h, w = stdscr.getmaxyx()
                 stdscr.addstr(h - 2, 2, "Stop all processes and exit? (y/n)", curses.A_BOLD | curses.color_pair(2))
