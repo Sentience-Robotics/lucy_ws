@@ -149,6 +149,7 @@ On Windows, **`Lucy.exe`** runs `bash launch_lucy.sh` (Git Bash). Without tmux (
 | Dev shell | `./launch_lucy.sh --shell` or `pixi shell` |
 | Direct sim (optional) | `pixi run launch-sim` |
 | Clean build dirs | `pixi run clean` |
+| Workspace unit tests | `pixi run workspace-test` (launcher Pixi wrap, `repos.json` parsing) |
 
 **Do not use `rosdep`** in this workspace — it bypasses Pixi/RoboStack. See [`docs/pixi_setup.md`](pixi_setup.md).
 

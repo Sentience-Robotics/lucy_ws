@@ -80,6 +80,7 @@ panel-build = { cmd = "yarn build", cwd = "src/lucy_control_panel" }
 [feature.dev.tasks]
 doctor = "ros2 doctor --report"
 launch-sim = "ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
+workspace-test = { cmd = "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests -q -p pytester -p python -p terminal" }
 
 # --- platform-specific host packages ---
 [target.linux.dependencies]
