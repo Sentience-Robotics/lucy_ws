@@ -90,6 +90,14 @@ Use the same structure as `repos.json` — list only the repos you want to overr
 
 Delete the file to fall back to the tracked `repos.json`.
 
+### Local launcher overrides (`config/launcher_config.json.local`)
+
+When present, **`config/launcher_config.json.local`** (gitignored) replaces [`config/launcher_config.json`](../config/launcher_config.json) for the Control Center package list.
+
+Use **native workspace paths** and **simple Pixi commands** (e.g. `pixi run panel-dev` for the control panel). Do not use Docker-era `/workspace/...` paths or nested tmux `start`/`stop` objects unless you need a one-off — the launcher wraps panes in `pixi run` automatically.
+
+For a multi-robot dev setup (InMoov + Thais), copy [`config/launcher_config.json.local.example`](../config/launcher_config.json.local.example) to `launcher_config.json.local` and edit branches/repos in `repos.json.local` as needed.
+
 ### Windows install profile (`config/install.profile.json`)
 
 On Windows, **`Lucy-Setup.exe`** (or `Lucy.exe --cli …`) writes **`config/install.profile.json`** (gitignored) to record install choices: `lucy_ws` version, `repos_branch` (default `master`), `fetch_method` (`git` or `zip`), and whether **developer install** was selected. The file is created automatically on first install.
