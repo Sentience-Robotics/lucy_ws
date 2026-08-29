@@ -11,6 +11,7 @@ platforms = ["linux-64", "linux-aarch64", "osx-arm64", "osx-64", "win-64"]
 [dependencies]
 python = "*"
 compilers = "*"
+binutils = "*"
 cmake = "<4"
 ninja = "*"
 pkg-config = "*"
@@ -60,14 +61,14 @@ env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 
 # --- colcon build tasks (RoboStack Getting Started pattern) ---
 [feature.build.target.unix.tasks]
-build = { cmd = "rm -rf build/camera_ros install/camera_ros && colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY", inputs = ["src"] }
-build-release = "colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY"
+build = { cmd = "rm -rf build/camera_ros install/camera_ros 2>/dev/null || true; colcon build --symlink-install --cmake-args -GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY", inputs = ["src"] }
+build-release = "colcon build --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY"
 clean = "rm -rf build install log"
 test = { cmd = "colcon test", depends-on = ["build"] }
 
 [feature.build.target.win-64.tasks]
-build = { cmd = "rm -rf build/camera_ros install/camera_ros && colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY", inputs = ["src"] }
-build-release = "colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY"
+build = { cmd = "rm -rf build/camera_ros install/camera_ros 2>/dev/null || true; colcon build --merge-install --cmake-args -GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY", inputs = ["src"] }
+build-release = "colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY"
 clean = "rm -rf build install log"
 test = { cmd = "colcon test", depends-on = ["build"] }
 
