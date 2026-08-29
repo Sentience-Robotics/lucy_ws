@@ -56,14 +56,30 @@ Subsequent runs fast-forward each clone to the branch declared in `config/repos.
 
 ### RealSense (local build, not Pixi)
 
-`ros-jazzy-realsense2-camera` is **not** in `pixi.toml`. Build locally when needed:
+`ros-jazzy-realsense2-camera` is **not** in `pixi.toml`. Build locally when you need Intel RealSense hardware (`camera_ros` / MJPEG does not require this).
+
+**When to run**
+
+1. Complete a normal workspace build first (`./install.sh` or `pixi run build` + `panel-install`).
+2. Then run RealSense locally — it is **not** part of the default colcon pass over `src/`.
 
 ```bash
 ./scripts/build_local_realsense.sh
-# or: LUCY_BUILD_REALSENSE=1 ./install.sh
 ```
 
-Build artifacts default to `.local/realsense` (`LUCY_REALSENSE_PREFIX` to override).
+`LUCY_BUILD_REALSENSE=1 ./install.sh` runs the same script **after** `pixi run build` and `panel-install`. It does not re-run a full workspace colcon build; it builds `librealsense` into `.local/realsense` and then colcon-builds `realsense2_camera` packages into the existing `install/` overlay.
+
+**Paths and env**
+
+- Default install prefix: `.local/realsense` (override with `LUCY_REALSENSE_PREFIX`).
+- Clones and build trees: `.local/src`, `.local/build/realsense` (gitignored via `*.local` / `.local/`).
+- Requires ROS env — run from `pixi shell` or after `install/setup.bash` exists (the script sources it when present).
+
+**Platform notes**
+
+- **Linux** — primary target; uses `nproc` for parallel librealsense compile.
+- **macOS** — `nproc` is often missing; run from Linux or edit the script / pass a fixed `-j` if you build on macOS.
+- **linux-aarch64** — common motivation for this path (RoboStack RealSense packages are unreliable there).
 
 ### SSH vs HTTPS clones (`DEV=true`)
 

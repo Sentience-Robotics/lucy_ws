@@ -9,8 +9,11 @@
 #   ./scripts/build_local_realsense.sh              # default prefix: .local/realsense
 #   LUCY_REALSENSE_PREFIX=/opt/realsense ./scripts/build_local_realsense.sh
 #
-# After building, source your ROS overlay and ensure CMAKE_PREFIX_PATH / LD_LIBRARY_PATH
-# include the install prefix before colcon build if you add realsense-ros to src/.
+# Run after a normal workspace build (install/setup.bash must exist). Does not
+# replace pixi run build — it adds librealsense + realsense-ros to install/.
+# install.sh runs this when LUCY_BUILD_REALSENSE=1 (after colcon + panel-install).
+#
+# Linux: uses nproc for -j. macOS often lacks nproc — adjust -j manually if needed.
 
 set -euo pipefail
 
