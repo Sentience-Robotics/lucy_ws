@@ -4,6 +4,7 @@ import curses
 import os
 import subprocess
 import sys
+import shutil
 
 MIN_TERM_HEIGHT = 15
 MIN_TERM_WIDTH = 65
@@ -37,6 +38,13 @@ def set_dev_mode(is_enabled):
                 f.write(line)
         if not dev_found:
             f.write(f"DEV={str(is_enabled).lower()}\n")
+
+def check_prereqs():
+    if shutil.which("pixi") is None:
+        print("Missing pixi. Install: https://pixi.prefix.dev/latest/installation/")
+        print("On NixOS: nix develop  (see README — Linux / NixOS)")
+        return False
+    return True
 
 def run_command(command, interactive=False):
     """Runs a command.
@@ -153,7 +161,7 @@ def main_tui(stdscr):
             else:
                 stdscr.addstr(2 + i, 4, f"{prefix}{option}")
 
-        stdscr.addstr(h - 2, 2, "Enter/Space: Select/Toggle | Up/Down: Navigate", curses.A_DIM)
+        stdscr.addstr(h - 2, 2, "Or: pixi run build, ./launch_lucy.sh", curses.A_DIM)
         stdscr.refresh()
 
         key = stdscr.getch()
@@ -175,7 +183,12 @@ def main_tui(stdscr):
             elif selected_option == "Update":
                 return {"cmd": ["./install.sh"], "interactive": False, "name": "Install"}
             elif selected_option == "Rebuild":
-                return {"cmd": ["./install.sh", "--build-only"], "interactive": False, "name": "Rebuild"}
+                return {
+                    "cmd": ["pixi", "run", "build"],
+                    "interactive": False,
+                    "name": "Rebuild",
+                    "followup": [["pixi", "run", "panel-install"]],
+                }
             elif selected_option == "Launch":
                 return {"cmd": ["./launch_lucy.sh"], "interactive": True, "name": "Launch"}
             elif selected_option == "Exit":
@@ -193,6 +206,9 @@ if __name__ == "__main__":
     if not check_initial_size():
         print("Error: Terminal window is too small.", file=sys.stderr)
         print(f"Please increase the terminal size to at least {MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} characters.", file=sys.stderr)
+        sys.exit(1)
+
+    if not check_prereqs():
         sys.exit(1)
 
     # First run: nothing built yet — offer to install before showing the menu.
@@ -241,6 +257,10 @@ if __name__ == "__main__":
             break
 
         rc = run_command(task["cmd"], interactive=task.get("interactive", False))
+        for follow in task.get("followup", []):
+            if rc != 0:
+                break
+            rc = run_command(follow, interactive=False)
 
         if task.get("interactive", False):
             print(f"--- Session finished with exit code {rc} ---")
