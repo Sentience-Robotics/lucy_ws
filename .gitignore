@@ -1,3 +1,6 @@
+# Pixi
+.pixi/
+
 # Workspace (filled by install.sh)
 src/
 
@@ -24,9 +27,6 @@ __pycache__/
 .env
 .env.local
 
-# Docker platform choice (./install.sh --arm)
-.lucy-docker-platform
-
 # Launcher remembered tick selection (persisted across container restarts)
 .lucy_launcher_state.json
 
@@ -44,3 +44,4 @@ dist/
 *.spec
 
 *.local
+.local/
