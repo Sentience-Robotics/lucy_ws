@@ -167,8 +167,7 @@ def launch_workspace():
     print("Launching workspace...")
 
     container_script = (
-        "source /opt/ros/humble/setup.bash && "
-        "[ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash; "
+        "source /opt/ros/jazzy/setup.bash && "
         "cd /workspace && source install/setup.bash && "
         "tmux start-server && "
         "if ! tmux has-session -t lucy_ws 2>/dev/null; then "

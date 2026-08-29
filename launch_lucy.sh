@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the Lucy stack (ROS 2 Humble + control panel) inside Docker.
+# Start the Lucy stack (ROS 2 Jazzy + control panel) inside Docker.
 #
 # Prerequisite: ./install.sh — clones src/, builds the Docker image, builds the workspace.
 #
@@ -8,7 +8,7 @@
 #   ./launch_lucy.sh --headless     same but without GUI / X11 (Gazebo runs headless, RViz disabled)
 #   ./launch_lucy.sh <command>      run a single command in the container (no control panel, no auto-launch)
 #
-# Dev mode (DEV=true in env or .env): drop into an interactive Humble shell with the control
+# Dev mode (DEV=true in env or .env): drop into an interactive Jazzy shell with the control
 # panel running in background; you launch the ROS stack yourself (handy commands are printed).
 #
 # Ports published on the host: rosbridge 9090, control panel PORT_CONTROL_PANEL (defaults to

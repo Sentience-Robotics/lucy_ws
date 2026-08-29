@@ -5,10 +5,10 @@
 # - CI=true    -> install.sh skips the host `xhost` check (no GUI on runners).
 # - variant=arm runs on `ubuntu-24.04-arm` with `./install.sh --arm`; the built image
 #   is then verified to be linux/arm64 (linux/amd64 for the default variant).
-# - Runner OS (22.04 or 24.04) is only the CI host. ROS Humble always runs inside
-#   Jammy-based images (`osrf/ros:humble-desktop` / `ros:humble-ros-base-jammy`).
+# - Runner OS (22.04 or 24.04) is only the CI host. ROS 2 Jazzy always runs inside
+#   Noble-based images (`ubuntu:24.04` + `ros-jazzy-*` packages; tagged `lucy_ros2:jazzy`).
 # - `ubuntu-24.04-arm` is GitHub's hosted ARM64 runner label; there is no 22.04-arm
-#   standard runner. The container OS stays Jammy regardless.
+#   standard runner. The container OS stays Noble (24.04) regardless.
 # - The launch smoke test uses `./launch_lucy.sh --headless <command>`, which runs a
 #   single command inside the container (no control panel, no auto Gazebo/RViz).
 
