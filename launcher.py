@@ -79,6 +79,8 @@ _GUI_ENV_KEYS = (
     "LIBGL_DRIVERS_PATH",
     "LD_LIBRARY_PATH",
     "LD_PRELOAD",
+    "__EGL_VENDOR_LIBRARY_FILENAMES",
+    "GZ_IP",
 )
 
 def _gui_env_exports() -> str:
@@ -139,13 +141,26 @@ def save_selection(selected_ids):
     except OSError:
         pass
 
+NIX_GL_ENV_SCRIPT = WORKSPACE_ROOT / "scripts" / "nix_gl_env.sh"
+
+def _nix_gl_source() -> str:
+    """Source hook for NixOS: prepend host Mesa before Pixi conda GL (no-op elsewhere)."""
+    if os.environ.get("LUCY_NIX_GL", "auto").lower() in ("0", "false", "no", "off"):
+        return ""
+    if not NIX_GL_ENV_SCRIPT.is_file():
+        return ""
+    return f"source {shlex.quote(str(NIX_GL_ENV_SCRIPT))}; "
+
 def _pixi_workspace_script(user_cmd: str) -> str:
     """Shell script body: workspace root + Pixi env (RoboStack + colcon overlay)."""
     user_cmd = user_cmd.strip()
+    nix_gl = _nix_gl_source()
     if user_cmd.startswith("pixi "):
         pixi_part = user_cmd
-    elif any(op in user_cmd for op in (";", "&&", "||", "|", "&")):
-        pixi_part = f"pixi run -- bash -lc {shlex.quote(user_cmd)}"
+    elif nix_gl or any(op in user_cmd for op in (";", "&&", "||", "|", "&")):
+        pixi_part = f"pixi run -- bash -lc {shlex.quote(nix_gl + user_cmd)}"
+    elif user_cmd.startswith("ros2 "):
+        pixi_part = f"pixi run -- bash -lc {shlex.quote(nix_gl + user_cmd)}"
     else:
         pixi_part = f"pixi run -- {user_cmd}"
     body = f"cd {WORKSPACE_ROOT} && {pixi_part}"
