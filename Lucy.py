@@ -6,6 +6,8 @@ import subprocess
 import sys
 import shutil
 
+MIN_TERM_HEIGHT = 15
+MIN_TERM_WIDTH = 65
 INSTALL_ENV = {"LUCY_PIXI_AUTO_UPGRADE": "1"}
 
 def is_installed():
