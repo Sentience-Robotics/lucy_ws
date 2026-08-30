@@ -4,124 +4,103 @@ Workspace bringup for the Lucy / InMoov humanoid. ROS 2 Jazzy, Gazebo, RViz, and
 
 ## Requirements
 
-- [Git](https://git-scm.com/downloads)
-- [Python 3](https://www.python.org/downloads/) (for `Lucy.py`)
-- [Pixi](https://pixi.prefix.dev/latest/installation/) **≥ 0.78**
-- **tmux** (Linux/macOS launcher) — system package; not installed by Pixi
+| Requirement | Linux | macOS | Windows |
+|-------------|-------|-------|---------|
+| [Git](https://git-scm.com/downloads) | ✓ | ✓ | ✓ ([Git for Windows](https://git-scm.com/install/windows)) |
+| [Python 3](https://www.python.org/downloads/) (for `Lucy.py`) | ✓ | ✓ | ✓ |
+| [Pixi](https://pixi.prefix.dev/latest/installation/) **≥ 0.78** | ✓ | ✓ | ✓ |
+| **tmux** (multi-window launcher) | ✓ | ✓ (`brew install tmux`) | — (launcher runs directly) |
 
-<sub>Linux GUI apps (RViz, Gazebo, rqt) use your native display. On Wayland you may need `xhost +local:` or run under X11 — see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo).</sub>
+ROS packages are installed by Pixi into `.pixi/`; you do not need a system ROS install.
 
-> **Windows users:** see the [Windows README](windows/README.md) — **`Lucy-Setup.exe`** to install/update, **`Lucy.exe`** to launch.
-
-## Developer install (Linux)
-
-Host tools only — ROS packages are installed by Pixi into `.pixi/`.
-
-### Linux
-
-Install Pixi, then from the repository root:
-
-```bash
-curl -fsSL https://pixi.sh/install.sh | bash   # or see pixi.prefix.dev
-export PATH="$HOME/.pixi/bin:$PATH"            # if pixi is not already on PATH
-./install.sh
-```
-
-Optional: `chmod +x install.sh launch_lucy.sh` if you run scripts directly.
-
-On macOS, install **tmux** (`brew install tmux`) if it is not already present.
+GUI apps (RViz, Gazebo, rqt) use your **native display**. Platform-specific notes (Wayland, AirPlay port conflicts) are in the [developer guide](docs/developer_lucy_packages.md#platform-setup).
 
 ## Get the repository
 
-**Option A — Clone with Git (recommended):**
+**Clone (recommended):**
 
 ```bash
 git clone https://github.com/Sentience-Robotics/lucy_ws.git
 cd lucy_ws
 ```
 
-**Option B — Download the ZIP** from GitHub (**Code → Download ZIP**), then extract and `cd lucy_ws`.
+**Or** download the ZIP from GitHub (**Code → Download ZIP**), extract, and `cd lucy_ws`.
 
-> The manager (`Lucy.py`) must be run **from the repository root** — it reads `config/` and paths relative to that directory.
+Run `Lucy.py` and the install scripts **from the repository root** — they read `config/` and paths relative to that directory.
 
-## Quick start
-
-A Python TUI manages install, rebuild, and launch. From the repository root:
+## Install
 
 ### Linux / macOS
 
-Install **tmux** on the host if it is not already present.
+```bash
+curl -fsSL https://pixi.sh/install.sh | bash   # if Pixi is not installed
+export PATH="$HOME/.pixi/bin:$PATH"            # if needed
+./install.sh
+```
+
+### Windows
+
+**End users:** download **`Lucy-Setup.exe`** from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases). It installs Lucy, clones sub-repos, runs `pixi install`, and builds the workspace. See the [Windows README](windows/README.md).
+
+**Developers (from source):**
+
+```powershell
+python windows\Lucy.py --cli install --repos-branch master
+```
+
+Or from Git Bash: `./install.sh`
+
+## Quick start
+
+After install, launch the **Lucy manager** TUI from the repository root.
+
+### Linux / macOS
 
 ```bash
 python3 Lucy.py
 ```
 
-> `./install.sh` and `./launch_lucy.sh` are CLI equivalents when you prefer not to use the TUI.
-
 ### Windows
 
-**Installer (recommended):** download `Lucy-Setup.exe` from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases), then see the [Windows README](windows/README.md).
+**End users:** open **Lucy** from the Start Menu (runs `Lucy.exe` → Control Center).
 
-**From source (developers):**
+**Developers:**
 
-```bash
-python windows/Lucy.py --cli install   # first time
-python windows/Lucy.py                   # launch
+```powershell
+python windows\Lucy.py
 ```
 
-### Opening the Control Panel
+Or Git Bash: `./launch_lucy.sh`
 
-After **Launch**, enable **Core + Control Panel** in the launcher. The **Lucy Control Panel** is at [http://localhost:5000](http://localhost:5000) (or **5001** if 5000 is taken — common on macOS with AirPlay). The launcher shows the exact URL once the panel is up.
+## Using the Lucy launcher
 
-## Using the workspace
+**Launch** starts a **tmux** session (Linux/macOS) and the **Lucy Control Center** TUI:
 
-**Launch** starts a **tmux** session and the **Lucy Control Center** TUI:
+| Key | Action |
+|-----|--------|
+| **Up/Down** | Navigate |
+| **Space** | Toggle a package or tool |
+| **Enter** | Apply changes / Start / Restart |
+| **X** | Stop all processes and exit |
 
-- **Up/Down** — navigate
-- **Space** — toggle a package or tool
-- **Enter** — apply changes
-- **X** — stop all processes and exit
-
-### Launch options
+**Components you can enable:**
 
 - **Core** — base robot stack (`lucy_bringup`)
-- **Modifiers:** Simulator (Gazebo), Visualizer (RViz), Real Hardware
-- **Interfaces:** Control Panel (web UI), Lucy CLI
-- **Tools:** Console, rqt
-
-Gazebo, RViz, and rqt are native GUI apps on your host display. Each URL-based interface shows its address in the launcher when running.
+- **Modifiers** — Simulator (Gazebo), **… headless** (server-only sim, under Simulator), Visualizer (RViz), Real Hardware
+- **Interfaces** — Control Panel (web UI), Lucy CLI
+- **Tools** — Console, rqt
 
 > **Recommended starting point:** **Core + Control Panel** — the web 3D viewer is enough for most work without heavy GUI apps.
 
-### Managing tmux windows
+**Control panel:** after Launch, enable **Core + Control Panel**. Open [http://localhost:5000](http://localhost:5000) (or the URL shown in the launcher if another port was chosen).
+
+**tmux windows** (Linux/macOS):
 
 - **`Ctrl+B` then `W`** — window list
 - **`Ctrl+B` then `N`** / **`P`** — next / previous window
 
-### Developer mode
+On Windows, the Control Center runs without tmux (one process tree). Gazebo, RViz, and rqt still open as native GUI apps when enabled.
 
-With **Developer Mode** ON in the TUI (stored in `.env`):
+## Developer setup
 
-- repos are pulled over SSH instead of HTTPS
-- Core and the control panel are not auto-launched
-- **Headless mode** appears for Gazebo
-
-### CLI equivalents
-
-| TUI action | Command |
-|------------|---------|
-| Install | `./install.sh` |
-| Rebuild | `pixi run build` then `pixi run panel-install` |
-| Launch | `./launch_lucy.sh` |
-| Headless | `./launch_lucy.sh --headless` |
-
-### macOS notes
-
-- **Port 5000** may be used by AirPlay Receiver. Disable it in **System Settings → General → AirDrop & Handoff**, or set `PORT_CONTROL_PANEL=5001` in `.env`.
-
-## More
-
-- [`docs/developer_lucy_packages.md`](docs/developer_lucy_packages.md) — install/launch flags, dev mode, ports, packages overview
-- [`docs/launcher_packages.md`](docs/launcher_packages.md) — launcher configuration
-- [`docs/pixi_setup.md`](docs/pixi_setup.md) — Pixi/RoboStack dependency and lock workflow
-- [`docs/pixi_release.md`](docs/pixi_release.md) — release packaging follow-up (pixi-build-ros)
+For developer mode, Pixi component tasks (`pixi run core`, `sim-headless`, …), debug shell, SSH clones, local repo overrides, ports, and advanced launch options, see the **[developer guide](docs/developer_lucy_packages.md)**.

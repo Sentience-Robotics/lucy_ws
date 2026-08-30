@@ -1,95 +1,29 @@
-# Lucy `lucy_ws` developer guide
+# Lucy developer guide
 
-ROS 2 **Jazzy** on Ubuntu 24.04 Noble. This document covers everything beyond the basic install/launch flow in the top-level [`README.md`](../README.md): per-repository docs, all install/launch flags, dev mode, ports, environment overrides, and an overview of the packages dropped under `src/`.
+ROS 2 **Jazzy** workspace for Lucy / InMoov. This guide covers developer mode, platform-specific setup, launch workflows, and pointers to deeper documentation. Basic install and launcher usage are in the top-level [`README.md`](../README.md).
 
-## Cross-repository docs
+## Developer mode
 
-Maintainer documentation for each Lucy sub-repository is **owned per repository**:
+Developer mode is toggled in **`Lucy.py`** (Install menu) or by setting **`DEV=true`** in `.env` (copy from [`.env.example`](../.env.example)).
 
-| Repository | Developer documentation |
-|------------|-------------------------|
-| **lucy_ros_packages** | [`lucy_ros_packages/docs/DEVELOPER.md`](../src/lucy_ros_packages/docs/DEVELOPER.md) — bringup, `lucy_ros2_control`, `camera_ros`, CI; [**ros2_control on Lucy**](../src/lucy_ros_packages/doc/ROS2_CONTROL.md) |
-| **inmoov_urdf** | [`inmoov_urdf/docs/DEVELOPER.md`](../src/inmoov_urdf/docs/DEVELOPER.md) — URDF/xacro, meshes, launches, RViz |
+When enabled:
 
-Repository-level READMEs: [`lucy_ros_packages`](../src/lucy_ros_packages/README.md), [`inmoov_urdf`](../src/inmoov_urdf/README.md).
+| Behavior | Effect |
+|----------|--------|
+| **SSH clones** | `install.sh` uses `url_ssh` from [`config/repos.json`](../config/repos.json) instead of HTTPS |
+| **No auto-launch** | Core and Control Panel are not started automatically on Launch |
 
-## Packages dropped under `src/` by `install.sh`
+SSH keys must be configured for GitHub on your host before running `./install.sh` with `DEV=true`.
 
-- **inmoov_urdf** — InMoov URDF, RViz config, `control.launch.py`, `gazebo.launch.py`, `rviz_standalone.launch.py` (robot + viz; the web stack lives in `lucy_bringup`).
-- **lucy_ros_packages** — `lucy_bringup`, `lucy_ros2_control`, `camera_ros`, etc.
-- **lucy_control_panel** — Vite web app exposing the robot state and controls.
+### Local overrides (gitignored)
 
-**Required** clones (core sim + panel stack): `inmoov_urdf`, `lucy_ros_packages`, `lucy_control_panel`.
+| File | Purpose |
+|------|---------|
+| [`config/repos.json.local`](../config/repos.json.local) | Forks, feature branches, skip optional repos |
+| [`config/launcher_config.json.local`](../config/launcher_config.json.local) | Custom Control Center package list (e.g. multi-robot) |
+| [`config/install.profile.json`](../config/install.profile.json) | Windows installer choices (written by `Lucy-Setup.exe`) |
 
-**Optional** clones (not required for default bringup or CI smoke tests; needed for micro-ROS firmware bridges or audio hardware):
-
-- **micro_ros_agent** — micro-ROS agent (`micro-ROS/micro-ROS-Agent`, branch `jazzy`). Marked `optional: true` in `repos.json`.
-- **audio_common** — audio drivers (`ros-drivers/audio_common`, branch `ros2`). Marked `optional: true` in `repos.json`.
-
-To skip optional repos, remove their entries from `config/repos.json.local` (or omit them when authoring a local override). `install.sh` still clones everything listed in the active repos config.
-
-The exact set of repositories, branches and clone URLs is in [`config/repos.json`](../config/repos.json).
-
-## `install.sh`
-
-Pixi installs RoboStack Jazzy dependencies; `colcon build --symlink-install` builds the workspace; `yarn install` sets up the control panel.
-
-`--symlink-install` keeps `install/share/<robot_package>/config/controllers.yaml` pointing at the **source tree** paths that `lucy_config_pipeline` writes (`src/inmoov_urdf/config/controllers.yaml`), so launch files and the pipeline stay aligned during iterative hardware edits.
-
-Subsequent runs fast-forward each clone to the branch declared in `config/repos.json` and rebuild the workspace.
-
-| Command | What it does |
-|---------|--------------|
-| `./install.sh` | Clone missing repos, pull existing ones, `pixi install`, colcon build |
-| `./install.sh --repair` | Wipe each repo under `src/` then re-clone and rebuild |
-| `./install.sh --build-only` | Skip git; `pixi install` + colcon + panel yarn |
-| `./install.sh --skip-build` | Clone/pull only (CI) |
-
-### Pixi multi-platform install
-
-`pixi.toml` declares all workspace platforms (`linux-64`, `linux-aarch64`, `osx-arm64`, `osx-64`, `win-64`). Pixi solves each platform into a single committed **`pixi.lock`** ([Pixi multi-platform docs](https://pixi.prefix.dev/latest/workspace/multi_platform_configuration/), [RoboStack Getting Started](https://robostack.github.io/GettingStarted.html)).
-
-- **`ros2-distro-mutex = "0.15.*"`** — keeps RoboStack packages on the same rebuild cycle ([RoboStack #125](https://github.com/RoboStack/ros-jazzy/issues/125)).
-- **Platform-specific deps** use `[target.linux]`, `[target.unix]`, `[feature.ros.target.osx-*]` (not install-time exceptions).
-- **`install.sh`** runs `pixi lock` once if `pixi.lock` is missing, then `pixi install`.
-- **Pixi ≥ 0.78** recommended (`curl -fsSL https://pixi.sh/install.sh | bash`).
-
-### RealSense (local build, not Pixi)
-
-`ros-jazzy-realsense2-camera` is **not** in `pixi.toml`. Build locally when you need Intel RealSense hardware (`camera_ros` / MJPEG does not require this).
-
-**When to run**
-
-1. Complete a normal workspace build first (`./install.sh` or `pixi run build` + `panel-install`).
-2. Then run RealSense locally — it is **not** part of the default colcon pass over `src/`.
-
-```bash
-./scripts/build_local_realsense.sh
-```
-
-`LUCY_BUILD_REALSENSE=1 ./install.sh` runs the same script **after** `pixi run build` and `panel-install`. It does not re-run a full workspace colcon build; it builds `librealsense` into `.local/realsense` and then colcon-builds `realsense2_camera` packages into the existing `install/` overlay.
-
-**Paths and env**
-
-- Default install prefix: `.local/realsense` (override with `LUCY_REALSENSE_PREFIX`).
-- Clones and build trees: `.local/src`, `.local/build/realsense` (gitignored via `*.local` / `.local/`).
-- Requires ROS env — run from `pixi shell` or after `install/setup.bash` exists (the script sources it when present).
-
-**Platform notes**
-
-- **Linux** — primary target; uses `nproc` for parallel librealsense compile.
-- **macOS** — `nproc` is often missing; run from Linux or edit the script / pass a fixed `-j` if you build on macOS.
-- **linux-aarch64** — common motivation for this path (RoboStack RealSense packages are unreliable there).
-
-### SSH vs HTTPS clones (`DEV=true`)
-
-`config/repos.json` carries both `url_https` (default) and `url_ssh` for each repo. To clone over SSH, copy `.env.example` to `.env` and set `DEV=true` before running `install.sh`. SSH keys must be configured for the relevant host.
-
-### Local repo overrides (`config/repos.json.local`)
-
-To point a repo at your own fork or a feature branch without editing the tracked `config/repos.json`, create **`config/repos.json.local`**. When present it is used instead of `repos.json` by both `install.sh` and the launcher (`windows/Lucy.py`), and it is gitignored so overrides are never committed.
-
-Use the same structure as `repos.json` — list only the repos you want to override (or all of them). Each entry needs `name` (the folder under `src/`), `branch`, and both `url_https` and `url_ssh` (Developer Mode selects SSH, otherwise HTTPS):
+Example for a fork — same structure as `repos.json`:
 
 ```json
 {
@@ -104,90 +38,189 @@ Use the same structure as `repos.json` — list only the repos you want to overr
 }
 ```
 
-Delete the file to fall back to the tracked `repos.json`.
+For a multi-robot dev setup, copy [`config/launcher_config.json.local.example`](../config/launcher_config.json.local.example) to `launcher_config.json.local`.
 
-### Local launcher overrides (`config/launcher_config.json.local`)
+## Platform setup
 
-When present, **`config/launcher_config.json.local`** (gitignored) replaces [`config/launcher_config.json`](../config/launcher_config.json) for the Control Center package list.
+### Linux
 
-Use **native workspace paths** and **simple Pixi commands** (e.g. `pixi run panel-dev` for the control panel). Do not use Docker-era `/workspace/...` paths or nested tmux `start`/`stop` objects unless you need a one-off — the launcher wraps panes in `pixi run` automatically.
+Standard path: `./install.sh` then `python3 Lucy.py`.
 
-For a multi-robot dev setup (InMoov + Thais), copy [`config/launcher_config.json.local.example`](../config/launcher_config.json.local.example) to `launcher_config.json.local` and edit branches/repos in `repos.json.local` as needed.
+**Wayland:** RViz/Gazebo may need `xhost +local:` or an X11 session.
 
-### Windows install profile (`config/install.profile.json`)
+**NixOS:** Pixi/RoboStack needs host GL libraries prepended **and** Mesa EGL — both are applied by [`scripts/nix_gl_env.sh`](../scripts/nix_gl_env.sh) (launcher and `pixi run sim*`). Install **`nixGLIntel`** (or another nixGL wrapper) on PATH, or rely on the `/run/opengl-driver/lib` fallback. **Do not set `LUCY_NIX_GL=0`** — EGL/`GZ_IP` alone is not enough; sim will hang on "requesting world names". Optional overrides: `LUCY_NIX_GL_WRAPPER`, `__EGL_VENDOR_LIBRARY_FILENAMES`, `GZ_IP` — see `.env.example`.
 
-On Windows, **`Lucy-Setup.exe`** (or `Lucy.exe --cli …`) writes **`config/install.profile.json`** (gitignored) to record install choices: `lucy_ws` version, `repos_branch` (default `master`), `fetch_method` (`git` or `zip`), and whether **developer install** was selected. The file is created automatically on first install.
+### macOS
 
-| Windows | Linux/macOS equivalent |
-|---------|------------------------|
+- Install **tmux** (`brew install tmux`) for the multi-window launcher.
+- **Port 5000** is often used by AirPlay Receiver. Disable it in **System Settings → General → AirDrop & Handoff**, or set `PORT_CONTROL_PANEL=5001` in `.env`.
+- Pixi uses Cyclone DDS on macOS (`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` in `pixi.toml`).
+
+### Windows
+
+End-user install: **`Lucy-Setup.exe`** → **`Lucy.exe`**. Full details: [`windows/README.md`](../windows/README.md).
+
+Developer CLI equivalents:
+
+| Windows | Linux/macOS |
+|---------|-------------|
 | `Lucy-Setup.exe` → Fresh install | `./install.sh` |
-| `Lucy-Setup.exe` → Update | `./install.sh` / `./install.sh --update` |
+| `Lucy-Setup.exe` → Update | `./install.sh` |
 | `Lucy-Setup.exe` → Repair | `./install.sh --repair` |
-| `Lucy.exe` (no args) | `./launch_lucy.sh` / **Launch** in `Lucy.py` |
+| `Lucy.exe` | `./launch_lucy.sh` |
 | `Lucy.exe --cli build-only` | `./install.sh --build-only` |
 
-## `launch_lucy.sh`
+Launch runs via Git Bash (`bash launch_lucy.sh`). Without tmux, the Control Center runs directly (`pixi run -- python launcher.py`).
 
-Pixi activates the colcon overlay and starts the **Lucy Control Center** launcher. Default: a **tmux** session (`lucy_ws`) running `launcher.py`. GUI apps (Gazebo, RViz, rqt) use the **native host display** — no VNC desktop.
+### Workspace install (`install.sh`)
+
+Pixi installs RoboStack Jazzy; `colcon build --symlink-install` builds `src/`; `yarn install` sets up the control panel.
 
 | Command | What it does |
 |---------|--------------|
-| `./launch_lucy.sh` | tmux + Control Center launcher |
-| `./launch_lucy.sh --headless <cmd>` | Run one command headless (default: `ros2 doctor --report`) |
-| `./launch_lucy.sh --shell` | Interactive `pixi shell` with typical `ros2 launch` hints |
+| `./install.sh` | Clone missing repos, pull existing ones, `pixi install`, colcon build |
+| `./install.sh --repair` | Wipe each repo under `src/` then re-clone and rebuild |
+| `./install.sh --build-only` | Skip git; `pixi install` + colcon + panel yarn |
+| `./install.sh --skip-build` | Clone/pull only (CI) |
 
-On Windows, **`Lucy.exe`** runs `bash launch_lucy.sh` (Git Bash). Without tmux (Git Bash on Windows), it falls back to `pixi run -- python launcher.py`.
+**Do not use `rosdep`** — it bypasses Pixi/RoboStack. Add deps via `pixi.toml` or clone into `src/`. See [`docs/pixi_setup.md`](pixi_setup.md).
 
-### TUI + Pixi CLI equivalence
+**RealSense** (optional, not in Pixi): after a normal build, run `./scripts/build_local_realsense.sh` or `LUCY_BUILD_REALSENSE=1 ./install.sh`. Primary target is Linux; see script for aarch64 notes.
+
+**Packages under `src/`** (from [`config/repos.json`](../config/repos.json)):
+
+| Repo | Role |
+|------|------|
+| **inmoov_urdf** | URDF, Gazebo/RViz launches |
+| **lucy_ros_packages** | `lucy_bringup`, ros2_control, cameras |
+| **lucy_control_panel** | Web UI |
+| **micro_ros_agent**, **audio_common** | Optional (`optional: true` in repos.json) |
+
+## Launch
+
+Two supported workflows.
+
+### 1. Control Center (recommended)
+
+Day-to-day use: one tmux session (Linux/macOS), toggle components in the TUI.
+
+| Entry | Command |
+|-------|---------|
+| TUI manager | `python3 Lucy.py` → **Launch** |
+| Direct | `./launch_lucy.sh` |
+| Windows | `Lucy.exe` |
+
+| `launch_lucy.sh` flag | Purpose |
+|-----------------------|---------|
+| *(none)* | tmux + Control Center |
+| `--headless <cmd>` | One-shot command (default: `ros2 doctor --report`) |
+| `--shell` | Interactive dev shell (`pixi run shell`) |
+
+The launcher wraps panes in `pixi run`, forwards display/GL env from `.env`, and sources `nix_gl_env.sh` for `ros2 launch`. Package list: [`docs/launcher_packages.md`](launcher_packages.md).
+
+### 2. Pixi component tasks
+
+Run stacks or tools in **separate terminals** (debug / scripting). ROS tasks use [`scripts/pixi_lucy_launch.sh`](../scripts/pixi_lucy_launch.sh).
+
+| Task | Command | What it starts |
+|------|---------|----------------|
+| Core | `pixi run core` | `lucy_bringup` (rosbridge, config pipeline, mock stack) |
+| Gazebo (GUI) | `pixi run sim` | Core + Gazebo window |
+| Gazebo headless | `pixi run sim-headless` | Core + Gazebo server only |
+| Sim + RViz | `pixi run sim-rviz` | Headless Gazebo + RViz |
+| RViz only | `pixi run rviz` | Core + RViz |
+| Control panel | `pixi run control-panel` | Vite dev server |
+| rqt | `pixi run rqt` | rqt (needs core running) |
+| Lucy CLI | `pixi run lucy-cli` | `ros2 run lucy_cli tui` (needs core) |
+
+**Robot package** (default `inmoov_urdf`):
+
+```bash
+LUCY_ROBOT_PACKAGE=thais_urdf pixi run sim-headless
+```
+
+Example multi-terminal sim:
+
+```bash
+pixi run sim-headless    # terminal 1
+pixi run control-panel   # terminal 2
+```
+
+### Debug shell
+
+Interactive RoboStack + colcon overlay for ROS CLI:
+
+```bash
+pixi run shell
+# or: ./launch_lucy.sh --shell
+```
+
+```bash
+ros2 topic list
+ros2 service list
+ros2 launch lucy_bringup lucy.launch.py rviz:=true
+```
+
+For manual Gazebo launches outside `pixi run sim*`, source GL env when needed (e.g. NixOS with `nixGLIntel`):
+
+```bash
+source scripts/nix_gl_env.sh
+ros2 launch lucy_bringup lucy.launch.py gazebo:=true
+```
+
+### TUI ↔ Pixi CLI
 
 | Action | Command |
 |--------|---------|
 | Install / update | `./install.sh` |
 | Rebuild | `pixi run build` then `pixi run panel-install` |
 | Launch | `./launch_lucy.sh` |
-| Headless check | `./launch_lucy.sh --headless ros2 doctor --report` |
-| Dev shell | `./launch_lucy.sh --shell` or `pixi shell` |
-| Direct sim (optional) | `pixi run launch-sim` |
+| Dev shell | `pixi run shell` |
+| Headless one-shot | `./launch_lucy.sh --headless ros2 doctor --report` |
 | Clean build dirs | `pixi run clean` |
-| Workspace unit tests | `pixi run workspace-test` (launcher Pixi wrap, `repos.json` parsing) |
+| Workspace tests | `pixi run workspace-test` |
 
-**Do not use `rosdep`** in this workspace — it bypasses Pixi/RoboStack. See [`docs/pixi_setup.md`](pixi_setup.md).
+### `ros2 launch` modifiers
 
-### `ros2 launch` cheat sheet (dev mode)
+`lucy_bringup` brings up rosbridge and `/config/*` via `web_ros_api`:
 
-Run these inside the dev-mode shell — `lucy_bringup` already brings up `rosbridge` and the `/config/*` services via `web_ros_api`:
+| Goal | Command |
+|------|---------|
+| Default dev stack (mock hardware) | `ros2 launch lucy_bringup lucy.launch.py` |
+| Jetson / real hardware | `… real:=true` |
+| Real + RViz | `… real:=true rviz:=true` |
+| Gazebo headless | `pixi run sim-headless` or `… gazebo:=true headless:=true` |
 
-| What you want | Command |
-|---------------|---------|
-| Default Jetson stack (no RViz / no Gazebo) | `ros2 launch lucy_bringup lucy.launch.py real:=true` |
-| Jetson + RViz | `ros2 launch lucy_bringup lucy.launch.py real:=true rviz:=true` |
-| Dev + panel + RViz (no micro-ROS / cameras) | `ros2 launch lucy_bringup lucy.launch.py rviz:=true` |
-| Gazebo sim + panel (`rviz:=false` = headless Gazebo) | `ros2 launch lucy_bringup lucy.launch.py gazebo:=true` |
+`gazebo:=true` cannot be combined with `real:=true`. With Gazebo, `rviz` is forwarded to the robot package's `gazebo.launch.py`.
 
-`gazebo:=true` cannot be combined with `real:=true` (the launch aborts). With Gazebo, `rviz` maps to `start_rviz` in `inmoov_urdf/gazebo.launch.py`.
+### Control panel: SIMULATION ONLY + RELOAD
 
-### SIMULATION ONLY + RELOAD (control panel)
+From **Configuration → ACTIVATE**, enable **SIMULATION ONLY** to run **VALIDATE → ACTIVATE → RELOAD** without BUILD/FLASH. The pipeline writes mock ros2_control artifacts and calls **`/lucy_control/restart`**. Hardware mode runs the same **RELOAD** after BUILD/FLASH.
 
-From **Configuration → ACTIVATE**, enable **SIMULATION ONLY** to run **VALIDATE → ACTIVATE → RELOAD** without BUILD/FLASH. The pipeline generates a single mock `ros2_control` block and `lucy_sim_controller`, installs `inmoov_ros2_control.xacro` + `controllers.yaml` into the source robot tree, then calls **`/lucy_control/restart`** (`lucy_control_supervisor`) to restart `robot_state_publisher`, `ros2_control_node` (RViz-only), and controller spawners.
+**Gazebo caveat:** joint changes in URDF hardware blocks may require a full Gazebo restart when `use_gazebo_sim:=true`.
 
-Hardware mode runs the same **RELOAD** step after BUILD/FLASH once ros2_control artifacts are regenerated.
-
-**Gazebo caveat:** spawners and RSP can be restarted without relaunching the world; if you add/remove joints in the URDF hardware blocks, `gz_ros2_control` may require a full Gazebo restart — the supervisor response notes this when `use_gazebo_sim:=true`.
-
-## Ports and environment overrides
+## Ports and environment
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `DEV` | unset | `true` → use `url_ssh` in `repos.json` during `install.sh` (SSH clones) |
-| `PORT_CONTROL_PANEL` | next free port from container port | Host port published for the control panel URL |
-| `PORT_CONTROL_PANEL_CONTAINER` | `VITE_PORT` from `src/lucy_control_panel/.env`, else `5000` | Port the Vite dev server listens on |
-| `LUCY_LCP_PUBLISHED_HOST_PORT` | set by `launch_lucy.sh` | Host port embedded in launcher control-panel URLs |
-| `LUCY_LCP_CONTAINER_PORT` | same as container Vite port | Internal Vite port for launcher URL templates |
-| `LUCY_LCP_SCHEME` | `http` or `https` from `VITE_HTTPS` | Scheme for control panel URLs in the launcher |
-| `PORT_ROSBRIDGE` | `9090` | rosbridge WebSocket port (optional `.env` override) |
+| `DEV` | unset | `true` → SSH clones during `install.sh` |
+| `PORT_CONTROL_PANEL` | auto | Host port for control panel URL |
+| `PORT_CONTROL_PANEL_CONTAINER` | `5000` (or `VITE_PORT`) | Vite listen port |
+| `PORT_ROSBRIDGE` | `9090` | rosbridge WebSocket |
+| `LUCY_ROBOT_PACKAGE` | `inmoov_urdf` | Robot package for `pixi run core` / `sim-*` |
+| `LUCY_NIX_GL` | `auto` | Set `0` to skip host GL prepend (**breaks NixOS Gazebo sim**) |
+| `LUCY_NIX_GL_WRAPPER` | auto | `nixGLIntel`, `nixGLDefault`, or `nixGL` |
 
-Vite proxies `/rosbridge` to `ws://127.0.0.1:9090` inside the dev server. rosbridge listens on port `9090` by default.
+Vite proxies `/rosbridge` to `ws://127.0.0.1:9090`. Launcher sets `LUCY_LCP_*` vars for panel URLs — see [`launch_lucy.sh`](../launch_lucy.sh).
 
-## Pixi lock and dependencies
+## More
 
-RoboStack packages are declared in [`pixi.toml`](../pixi.toml) and locked in **`pixi.lock`**. After changing dependencies, run `pixi install` to refresh the lock for all platforms in `pixi.toml`. Full workflow: [`docs/pixi_setup.md`](pixi_setup.md).
+| Document | Contents |
+|----------|----------|
+| [`docs/launcher_packages.md`](launcher_packages.md) | Adding packages to the Control Center |
+| [`docs/pixi_setup.md`](pixi_setup.md) | Pixi/RoboStack deps, lock workflow, component tasks |
+| [`docs/pixi_release.md`](pixi_release.md) | Release packaging (pixi-build-ros) |
+| [`windows/README.md`](../windows/README.md) | Windows installer and `Lucy.exe` |
+| [`src/lucy_ros_packages/docs/DEVELOPER.md`](../src/lucy_ros_packages/docs/DEVELOPER.md) | bringup, ros2_control, CI |
+| [`src/lucy_ros_packages/doc/ROS2_CONTROL.md`](../src/lucy_ros_packages/doc/ROS2_CONTROL.md) | ros2_control on Lucy |
+| [`src/inmoov_urdf/docs/DEVELOPER.md`](../src/inmoov_urdf/docs/DEVELOPER.md) | URDF, meshes, sim launches |

@@ -50,7 +50,7 @@ Use Pixi target tables in `pixi.toml`:
 - **tmux** — host package (apt, Homebrew); not in Pixi
 - `[feature.ros.target.osx-*]` — `pygraphviz`, Cyclone DDS RMW
 
-## Build and activation
+## Build, launch, and activation
 
 | Task | Command |
 |------|---------|
@@ -59,7 +59,26 @@ Use Pixi target tables in `pixi.toml`:
 | Control panel deps | `pixi run panel-install` |
 | Tests | `pixi run test` |
 | ROS doctor | `pixi run doctor` |
-| Interactive shell | `pixi shell` |
+| Dev shell (ROS CLI) | `pixi run shell` |
+
+### Launch component tasks
+
+Run in **separate terminals** (or use `./launch_lucy.sh` Control Center instead). ROS stacks use [`scripts/pixi_lucy_launch.sh`](../scripts/pixi_lucy_launch.sh).
+
+| Task | Command |
+|------|---------|
+| Core | `pixi run core` |
+| Gazebo GUI | `pixi run sim` |
+| Gazebo headless | `pixi run sim-headless` |
+| Sim + RViz | `pixi run sim-rviz` |
+| RViz | `pixi run rviz` |
+| Control panel | `pixi run control-panel` |
+| rqt | `pixi run rqt` |
+| Lucy CLI | `pixi run lucy-cli` |
+
+Robot package: `LUCY_ROBOT_PACKAGE=thais_urdf pixi run sim-headless` (default `inmoov_urdf`).
+
+See [`docs/developer_lucy_packages.md`](developer_lucy_packages.md#launch) for Control Center vs Pixi workflows and the debug shell.
 
 Colcon uses `--symlink-install` on Linux/macOS and `--merge-install` on Windows (`pixi.toml` `[feature.build]` tasks).
 
