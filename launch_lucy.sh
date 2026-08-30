@@ -119,10 +119,7 @@ case "${1:-}" in
     exec pixi run -- "$@"
     ;;
   --shell)
-    echo "Interactive pixi shell (workspace overlay active)."
-    echo "  ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
-    echo "  ros2 launch lucy_bringup lucy.launch.py real:=true"
-    exec pixi shell
+    exec bash "${SCRIPT_DIR}/scripts/pixi_dev_shell.sh"
     ;;
 esac
 

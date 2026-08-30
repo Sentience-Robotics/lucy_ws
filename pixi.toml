@@ -79,8 +79,20 @@ panel-build = { cmd = "yarn build", cwd = "src/lucy_control_panel" }
 
 [feature.dev.tasks]
 doctor = "ros2 doctor --report"
-launch-sim = "ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
 workspace-test = { cmd = "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests -q -p pytester -p python -p terminal" }
+shell = "bash scripts/pixi_dev_shell.sh"
+
+# lucy_bringup stacks (scripts/pixi_lucy_launch.sh — NixOS GL via scripts/nix_gl_env.sh)
+core = { cmd = "bash scripts/pixi_lucy_launch.sh" }
+sim = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true" }
+sim-headless = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true headless:=true" }
+sim-rviz = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true headless:=true rviz:=true" }
+rviz = { cmd = "bash scripts/pixi_lucy_launch.sh rviz:=true" }
+
+# Standalone components (run in separate terminals alongside core / sim-*)
+control-panel = { cmd = "yarn dev", cwd = "src/lucy_control_panel" }
+rqt = "rqt"
+lucy-cli = "ros2 run lucy_cli tui"
 
 # --- platform-specific host packages ---
 [target.linux.dependencies]
