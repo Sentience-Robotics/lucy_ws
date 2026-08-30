@@ -4,7 +4,7 @@
 # Usage:
 #   ./install.sh                     clone/pull repos + pixi install + build
 #   ./install.sh --update | update   same as above
-#   ./install.sh --repair              wipe build/install/log + re-clone src repos
+#   ./install.sh --repair              wipe build/install/log, re-clone src repos, re-lock Pixi
 #   ./install.sh --build-only        skip git; pixi run build + panel-install
 #   ./install.sh --skip-build        clone/pull only (CI)
 #
@@ -235,9 +235,11 @@ if [ "$MODE" = "repair" ]; then
   echo "Repair: removing colcon artifacts (build/, install/, log/) ..."
   rm -rf build install log
   echo "Repair: removing listed repos under src/ ..."
-  while IFS=$'\t' read -r name _ _; do
+  while IFS=$'\t' read -r name _ _ _optional; do
     remove_workspace_src_repo "$name"
   done < <(parse_repos)
+  echo "Repair: re-solving Pixi lock (pixi lock) ..."
+  pixi lock
 fi
 
 case "$(echo "${DEV:-}" | tr '[:upper:]' '[:lower:]')" in
