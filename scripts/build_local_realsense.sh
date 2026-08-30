@@ -13,9 +13,13 @@
 # replace pixi run build — it adds librealsense + realsense-ros to install/.
 # install.sh runs this when LUCY_BUILD_REALSENSE=1 (after colcon + panel-install).
 #
-# Linux: uses nproc for -j. macOS often lacks nproc — adjust -j manually if needed.
+# Uses a portable CPU count for cmake -j (nproc on Linux, sysctl on macOS).
 
 set -euo pipefail
+
+parallel_jobs() {
+  nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -43,7 +47,7 @@ build_librealsense() {
     -DBUILD_GRAPHICAL_EXAMPLES=OFF \
     -DBUILD_WITH_OPENMP=OFF
 
-  cmake --build "${BUILD_DIR}/librealsense" -j"$(nproc)"
+  cmake --build "${BUILD_DIR}/librealsense" -j"$(parallel_jobs)"
   cmake --install "${BUILD_DIR}/librealsense"
 }
 
