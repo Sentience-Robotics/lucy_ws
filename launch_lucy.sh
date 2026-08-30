@@ -15,6 +15,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Prefer user-local Pixi (official installer) over distro/nix packages.
+export PATH="${HOME}/.pixi/bin:${PATH}"
+
 if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a
   # shellcheck disable=SC1091

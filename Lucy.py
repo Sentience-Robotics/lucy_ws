@@ -39,7 +39,17 @@ def set_dev_mode(is_enabled):
         if not dev_found:
             f.write(f"DEV={str(is_enabled).lower()}\n")
 
+def prepend_pixi_to_path():
+    """Prefer ~/.pixi/bin over system/nix pixi (official installer is usually newer)."""
+    pixi_bin = os.path.join(os.path.expanduser("~"), ".pixi", "bin")
+    if os.path.isdir(pixi_bin):
+        path = os.environ.get("PATH", "")
+        parts = path.split(os.pathsep) if path else []
+        if pixi_bin not in parts:
+            os.environ["PATH"] = pixi_bin + os.pathsep + path
+
 def check_prereqs():
+    prepend_pixi_to_path()
     if shutil.which("pixi") is None:
         print("Missing pixi. Install: https://pixi.prefix.dev/latest/installation/")
         return False

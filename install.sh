@@ -15,6 +15,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Prefer user-local Pixi (official installer) over distro/nix packages.
+export PATH="${HOME}/.pixi/bin:${PATH}"
+
 if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a
   # shellcheck disable=SC1091
@@ -58,16 +61,55 @@ check_cmd() {
   fi
 }
 
-check_pixi_version() {
+ensure_pixi() {
   local ver min="${LUCY_PIXI_MIN_VERSION:-0.78.0}"
-  ver="$(pixi --version 2>/dev/null | awk "{print \$2}")"
-  if [ -z "$ver" ]; then
-    echo "install.sh: could not read pixi version." >&2
+
+  if command -v pixi &>/dev/null; then
+    ver="$(pixi --version 2>/dev/null | awk '{print $2}')"
+    if [ -n "$ver" ] && printf '%s\n%s\n' "$min" "$ver" | sort -C -V; then
+      return 0
+    fi
+  else
+    ver=""
+  fi
+
+  if [ "${LUCY_SKIP_PIXI_UPGRADE:-}" = "1" ]; then
+    if [ -z "$ver" ]; then
+      echo "install.sh: pixi not found." >&2
+    else
+      echo "install.sh: pixi $ver is older than required $min." >&2
+    fi
+    echo "Install/upgrade: curl -fsSL https://pixi.sh/install.sh | bash" >&2
     exit 1
   fi
-  if ! printf '%s\n%s\n' "$min" "$ver" | sort -C -V; then
-    echo "install.sh: pixi $ver is older than recommended $min (multi-platform lock needs newer pixi)." >&2
-    echo "Upgrade: curl -fsSL https://pixi.sh/install.sh | bash" >&2
+
+  if ! command -v curl &>/dev/null; then
+    if [ -z "$ver" ]; then
+      echo "install.sh: pixi not found; curl is required to install it." >&2
+    else
+      echo "install.sh: pixi $ver is older than required $min (multi-platform lock needs newer pixi)." >&2
+    fi
+    echo "Install/upgrade: curl -fsSL https://pixi.sh/install.sh | bash" >&2
+    exit 1
+  fi
+
+  if [ -n "$ver" ]; then
+    echo "install.sh: pixi $ver is older than $min — installing latest via pixi.sh ..."
+  else
+    echo "install.sh: pixi not found — installing via pixi.sh ..."
+  fi
+  curl -fsSL https://pixi.sh/install.sh | bash
+  export PATH="${HOME}/.pixi/bin:${PATH}"
+
+  if ! command -v pixi &>/dev/null; then
+    echo "install.sh: pixi install finished but pixi is not on PATH." >&2
+    echo 'Add to your shell profile: export PATH="$HOME/.pixi/bin:$PATH"' >&2
+    exit 1
+  fi
+
+  ver="$(pixi --version 2>/dev/null | awk '{print $2}')"
+  if [ -z "$ver" ] || ! printf '%s\n%s\n' "$min" "$ver" | sort -C -V; then
+    echo "install.sh: pixi $ver still below $min after install." >&2
     exit 1
   fi
 }
@@ -121,15 +163,14 @@ for r in data.get('repos', []):
 }
 
 mark_optional_colcon_ignore() {
-  case "$(echo "${CI:-}" | tr '[:upper:]' '[:lower:]')" in
-    1|true|yes) ;;
-    *) return 0 ;;
+  case "$(echo "${LUCY_BUILD_OPTIONAL:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes) return 0 ;;
   esac
   while IFS=$'\t' read -r name _ _ optional; do
     name="${name//$'\r'/}"
     optional="${optional//$'\r'/}"
     if [ "$optional" = "1" ] && [ -d "src/${name}" ]; then
-      echo "CI: skipping colcon build for optional repo ${name} (COLCON_IGNORE)"
+      echo "install.sh: skipping colcon build for optional repo ${name} (COLCON_IGNORE; set LUCY_BUILD_OPTIONAL=1 to build)"
       touch "src/${name}/COLCON_IGNORE"
     fi
   done < <(parse_repos)
@@ -170,15 +211,13 @@ pixi_workspace_build() {
 }
 
 if [ "$MODE" = "build-only" ]; then
-  check_cmd pixi
-  check_pixi_version
+  ensure_pixi
   pixi_workspace_build
   echo "Build complete. Run './launch_lucy.sh' or Launch in Lucy.py"
   exit 0
 fi
 
-check_cmd pixi
-check_pixi_version
+ensure_pixi
 check_cmd git
 check_cmd python3
 echo "Requirements OK (pixi, git, python3)."
