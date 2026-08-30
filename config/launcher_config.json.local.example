@@ -1,4 +1,5 @@
 {
+  "_comment": "Copy to launcher_config.json.local (gitignored). Overrides config/launcher_config.json.",
   "packages": [
     {
       "id": "core",
@@ -22,6 +23,17 @@
       "command": "robot_package:=inmoov_urdf",
       "requires_pkg": "inmoov_urdf",
       "default_on": true
+    },
+    {
+      "id": "robot_thais",
+      "name": "Robot: Thais",
+      "description": "(robot_package:=thais_urdf)",
+      "type": "modifier",
+      "dependencies": ["core"],
+      "conflicts": ["robot_inmoov"],
+      "command": "robot_package:=thais_urdf",
+      "requires_pkg": "thais_urdf",
+      "default_on": false
     },
     {
       "id": "gazebo",
