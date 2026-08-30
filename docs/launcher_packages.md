@@ -44,10 +44,12 @@ Every package entry in `config/launcher_config.json` uses the following fields t
 
 When you run `./launch_lucy.sh`:
 
-1. It builds and enters the Docker container.
-2. It drops you into a **tmux** session named `lucy_ws`.
-3. It automatically runs `launcher.py` (the TUI) in the main window.
+1. It ensures the workspace is built (`install/setup.bash` exists).
+2. On Linux/macOS with **host tmux**, it starts or attaches to a **tmux** session named `lucy_ws`.
+3. The main window runs `pixi run -- python launcher.py` (Control Center TUI).
+
+Package commands in other tmux windows are wrapped in `pixi run` so each pane gets RoboStack and the colcon overlay. Display and OpenGL-related variables from your shell and `.env` are forwarded into those panes.
 
 When you apply changes in `launcher.py`:
 - **Core + Modifiers:** The script takes the core command, appends all active modifier commands, and spins up a dedicated `core` tmux window.
-- **Interfaces / Tools:** The script spins up a new tmux window named after the package's `id` and executes its command. Alternatively, if a complex command object is provided, it executes the explicit `start` and `stop` shell commands in the background.
+- **Interfaces / Tools:** The script spins up a new tmux window named after the package's `id` and executes its command via Pixi. Legacy complex `{start, stop, is_running}` objects are still supported for local overrides.
