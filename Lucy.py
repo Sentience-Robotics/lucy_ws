@@ -6,8 +6,7 @@ import subprocess
 import sys
 import shutil
 
-MIN_TERM_HEIGHT = 15
-MIN_TERM_WIDTH = 65
+INSTALL_ENV = {"LUCY_PIXI_AUTO_UPGRADE": "1"}
 
 def is_installed():
     """True when the workspace has been built (mirrors launch_lucy.sh's check)."""
@@ -55,19 +54,29 @@ def check_prereqs():
         return False
     return True
 
-def run_command(command, interactive=False):
+def run_command(command, interactive=False, extra_env=None):
     """Runs a command.
 
     If interactive is True, runs natively in the terminal.
     """
     print(f"--- Running: {' '.join(command)} ---")
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
     try:
         if interactive:
             # Inherit standard IO to maintain terminal size and TTY functionality
-            return subprocess.run(command).returncode
+            return subprocess.run(command, env=env).returncode
         else:
             # Popen is fine for non-interactive scripts like install/build
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+                stdin=subprocess.DEVNULL,
+            )
             while True:
                 output = process.stdout.readline()
                 if output == '' and process.poll() is not None:
@@ -190,7 +199,12 @@ def main_tui(stdscr):
                 is_dev_mode = not is_dev_mode
                 set_dev_mode(is_dev_mode)
             elif selected_option == "Update":
-                return {"cmd": ["./install.sh"], "interactive": False, "name": "Install"}
+                return {
+                    "cmd": ["./install.sh"],
+                    "interactive": False,
+                    "name": "Install",
+                    "extra_env": INSTALL_ENV,
+                }
             elif selected_option == "Rebuild":
                 return {
                     "cmd": ["pixi", "run", "build"],
@@ -233,7 +247,7 @@ if __name__ == "__main__":
             sys.exit(1)
         if not wants_install:
             sys.exit(0)
-        rc = run_command(["./install.sh"], interactive=False)
+        rc = run_command(["./install.sh"], extra_env=INSTALL_ENV)
         if rc != 0:
             print(f"\n--- Install finished with exit code {rc} ---")
             print("Press Enter to exit.")
@@ -265,11 +279,15 @@ if __name__ == "__main__":
             # User selected Exit
             break
 
-        rc = run_command(task["cmd"], interactive=task.get("interactive", False))
+        rc = run_command(
+            task["cmd"],
+            interactive=task.get("interactive", False),
+            extra_env=task.get("extra_env"),
+        )
         for follow in task.get("followup", []):
             if rc != 0:
                 break
-            rc = run_command(follow, interactive=False)
+            rc = run_command(follow, interactive=False, extra_env=task.get("extra_env"))
 
         if task.get("interactive", False):
             print(f"--- Session finished with exit code {rc} ---")

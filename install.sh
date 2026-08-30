@@ -12,8 +12,9 @@
 # Optional config/repos.json.local overrides config/repos.json.
 #
 # Pixi: install.sh requires pixi ≥ LUCY_PIXI_MIN_VERSION (default 0.78.0). When pixi
-# is missing or too old, it auto-installs/upgrades via https://pixi.sh/install.sh
-# (curl | bash). Set LUCY_SKIP_PIXI_UPGRADE=1 to fail instead and install manually.
+# is missing or too old, it can install/upgrade via https://pixi.sh/install.sh
+# (curl | bash). Interactive shells prompt first; set LUCY_PIXI_AUTO_UPGRADE=1 to
+# skip the prompt (CI, Lucy.py). Set LUCY_SKIP_PIXI_UPGRADE=1 to fail instead.
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -99,11 +100,12 @@ ensure_pixi() {
 
   if [ -n "$ver" ]; then
     echo "install.sh: pixi $ver is older than $min — installing latest via pixi.sh ..."
-    echo "install.sh: (set LUCY_SKIP_PIXI_UPGRADE=1 to abort and install manually)" >&2
+    echo "install.sh: (set LUCY_SKIP_PIXI_UPGRADE=1 to abort; LUCY_PIXI_AUTO_UPGRADE=1 to skip prompt)" >&2
   else
     echo "install.sh: pixi not found — installing via pixi.sh ..."
-    echo "install.sh: (set LUCY_SKIP_PIXI_UPGRADE=1 to abort and install manually)" >&2
+    echo "install.sh: (set LUCY_SKIP_PIXI_UPGRADE=1 to abort; LUCY_PIXI_AUTO_UPGRADE=1 to skip prompt)" >&2
   fi
+  confirm_pixi_install
   curl -fsSL https://pixi.sh/install.sh | bash
   export PATH="${HOME}/.pixi/bin:${PATH}"
 
@@ -118,6 +120,29 @@ ensure_pixi() {
     echo "install.sh: pixi $ver still below $min after install." >&2
     exit 1
   fi
+}
+
+confirm_pixi_install() {
+  case "$(echo "${LUCY_PIXI_AUTO_UPGRADE:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes) return 0 ;;
+  esac
+  case "$(echo "${CI:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes) return 0 ;;
+  esac
+  if [ ! -t 0 ]; then
+    echo "install.sh: pixi install/upgrade needs confirmation in non-interactive mode." >&2
+    echo "Set LUCY_PIXI_AUTO_UPGRADE=1 or run from an interactive terminal." >&2
+    exit 1
+  fi
+  printf 'Install/upgrade pixi via https://pixi.sh/install.sh? [y/N] ' >&2
+  read -r reply
+  case "$reply" in
+    y|Y|yes|Yes|YES) return 0 ;;
+    *)
+      echo "install.sh: aborted — install pixi manually or set LUCY_PIXI_AUTO_UPGRADE=1." >&2
+      exit 1
+      ;;
+  esac
 }
 
 remove_workspace_src_repo() {
