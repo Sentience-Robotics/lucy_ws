@@ -127,20 +127,22 @@ case "${1:-}" in
 esac
 
 # tmux is a host tool (not in Pixi). Session runs on the host; launcher runs in pixi run.
+TMUX_SESSION="${LUCY_TMUX_SESSION:-lucy_ws}"
 case "$(uname -s)" in
   Linux|Darwin)
     if command -v tmux >/dev/null 2>&1; then
       LAUNCH_CMD="cd \"${SCRIPT_DIR}\" && pixi run -- python launcher.py"
+      export LUCY_TMUX_SESSION="$TMUX_SESSION"
       exec bash -c "
         set -e
         tmux start-server
-        if ! tmux has-session -t lucy_ws 2>/dev/null; then
-          tmux new-session -d -s lucy_ws -n Lucy \"${LAUNCH_CMD}\"
+        if ! tmux has-session -t ${TMUX_SESSION} 2>/dev/null; then
+          tmux new-session -d -s ${TMUX_SESSION} -n Lucy \"${LAUNCH_CMD}\"
         else
-          tmux send-keys -t lucy_ws:Lucy C-c 2>/dev/null || true
-          tmux send-keys -t lucy_ws:Lucy \"${LAUNCH_CMD}\" C-m
+          tmux send-keys -t ${TMUX_SESSION}:Lucy C-c 2>/dev/null || true
+          tmux send-keys -t ${TMUX_SESSION}:Lucy \"${LAUNCH_CMD}\" C-m
         fi
-        tmux attach-session -t lucy_ws
+        tmux attach-session -t ${TMUX_SESSION}
       "
     fi
     echo "tmux not found — install tmux for the multi-window launcher (see README)." >&2

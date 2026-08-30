@@ -19,10 +19,12 @@ fi
 printf 'DEV=true\n' > .env
 
 export LUCY_WS_ROOT="$ROOT"
+TMUX_SESSION="${LUCY_TMUX_SESSION:-lucy_ws}"
+export LUCY_TMUX_SESSION="$TMUX_SESSION"
 
 tmux start-server
-tmux kill-session -t lucy_ws 2>/dev/null || true
-tmux new-session -d -s lucy_ws -n Lucy 'sleep 300'
+tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+tmux new-session -d -s "$TMUX_SESSION" -n Lucy 'sleep 300'
 
 pixi run -- python3 <<'PY'
 import os
@@ -56,7 +58,7 @@ wait_for() {
     elapsed=$((elapsed + 2))
     if [ "$elapsed" -ge "$timeout" ]; then
       echo "ci_tmux_launcher_smoke: timeout waiting for ${label}" >&2
-      tmux list-windows -t lucy_ws 2>/dev/null || true
+      tmux list-windows -t "$TMUX_SESSION" 2>/dev/null || true
       return 1
     fi
   done
@@ -66,5 +68,5 @@ wait_for() {
 wait_for '[r]osbridge_websocket' 'rosbridge' 180
 wait_for '[v]ite' 'control panel (vite)' 180
 
-tmux kill-session -t lucy_ws 2>/dev/null || true
+tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 echo "ci_tmux_launcher_smoke: OK"

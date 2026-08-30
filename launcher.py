@@ -19,6 +19,7 @@ DEFAULT_CONFIG_FILE = CONFIG_DIR / "launcher_config.json"
 LOCAL_CONFIG_FILE = CONFIG_DIR / "launcher_config.json.local"
 STATE_FILE = WORKSPACE_ROOT / ".lucy_launcher_modifiers.json"
 SELECTION_FILE = WORKSPACE_ROOT / ".lucy_launcher_state.json"
+TMUX_SESSION = os.environ.get("LUCY_TMUX_SESSION", "lucy_ws")
 MIN_TERM_HEIGHT = 22
 MIN_TERM_WIDTH = 65
 
@@ -34,12 +35,12 @@ _pkg_stop_times = {}    # pkg_id -> float, timestamp when an async stop was issu
 # Native GUI. Send SIGINT first for a clean ros2 launch shutdown, wait for the
 # sim/RViz to exit, force-kill any stragglers, then remove the window.
 CORE_TEARDOWN = (
-    "tmux send-keys -t lucy_ws:core C-c 2>/dev/null; "
+    f"tmux send-keys -t {TMUX_SESSION}:core C-c 2>/dev/null; "
     "for _ in $(seq 1 12); do "
     "pgrep -f '[g]z sim' >/dev/null 2>&1 || pgrep -x rviz2 >/dev/null 2>&1 || break; sleep 0.25; "
     "done; "
     "pkill -f '[g]z sim' 2>/dev/null; pkill -x rviz2 2>/dev/null; "
-    "tmux kill-window -t lucy_ws:core 2>/dev/null"
+    f"tmux kill-window -t {TMUX_SESSION}:core 2>/dev/null"
 )
 
 def get_dev_mode():
@@ -175,9 +176,9 @@ def _pixi_workspace_script(user_cmd: str) -> str:
 def _tmux_new_pixi_window(window: str, user_cmd: str, remain_on_exit: bool = False) -> str:
     """Open a tmux window that runs user_cmd inside pixi run (tmux panes don't inherit pixi)."""
     inner = f"bash -lc {shlex.quote(_pixi_workspace_script(user_cmd))}"
-    cmd = f"tmux new-window -d -t lucy_ws -n {window} {inner}"
+    cmd = f"tmux new-window -d -t {TMUX_SESSION} -n {window} {inner}"
     if remain_on_exit:
-        cmd += f"; tmux set-window-option -t lucy_ws:{window} remain-on-exit on"
+        cmd += f"; tmux set-window-option -t {TMUX_SESSION}:{window} remain-on-exit on"
     return cmd
 
 def _complex_package_start(pkg) -> str:
@@ -208,7 +209,7 @@ def _pane_exit_status(pkg_id):
     remain-on-exit keeps the dead pane (and its output) so we can read the code:
     0 is a clean exit (STOPPED), anything else (incl. signal death) a crash (CRASHED)."""
     out = subprocess.run(
-        f"tmux list-panes -t lucy_ws:{pkg_id} -F '#{{pane_dead}}:#{{pane_dead_status}}' 2>/dev/null",
+        f"tmux list-panes -t {TMUX_SESSION}:{pkg_id} -F '#{{pane_dead}}:#{{pane_dead_status}}' 2>/dev/null",
         shell=True, capture_output=True, text=True,
     ).stdout
     for line in out.splitlines():
@@ -606,7 +607,7 @@ def apply_changes(state):
                         _pkg_start_times.pop(mod.id, None)
                         _intended_running.discard(mod.id)
             elif pkg.type in ['tool', 'interface']:
-                run_shell_command_async(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+                run_shell_command_async(f"tmux kill-window -t {TMUX_SESSION}:{pkg.id} 2>/dev/null")
             elif pkg.type == 'modifier' and 'stop' in pkg.lifecycle_hooks:
                 run_shell_command_async(pkg.lifecycle_hooks['stop'])
             else:
@@ -624,14 +625,14 @@ def apply_changes(state):
          crashed = pkg.pane_dead and pkg.pane_exit_status != 0
          if pkg.selected and pkg.id not in _pkg_stop_times and (not pkg.is_running or crashed):
             if pkg.pane_dead:
-                run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+                run_shell_command(f"tmux kill-window -t {TMUX_SESSION}:{pkg.id} 2>/dev/null")
                 pkg.pane_dead = False
                 pkg.is_running = False
             if pkg.is_complex_command():
                 run_shell_command(_complex_package_start(pkg))
                 # Keep a crashed service's window open with its error (see core).
                 if pkg.readiness_check:
-                    run_shell_command(f"tmux set-window-option -t lucy_ws:{pkg.id} remain-on-exit on 2>/dev/null")
+                    run_shell_command(f"tmux set-window-option -t {TMUX_SESSION}:{pkg.id} remain-on-exit on 2>/dev/null")
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
             elif pkg.type == 'core':
@@ -665,7 +666,7 @@ def apply_changes(state):
             pkg.is_running = True
 
     if last_launched_window:
-        run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
+        run_shell_command(f"tmux select-window -t {TMUX_SESSION}:{last_launched_window}")
 
 def restore_selection(state):
     """Pre-tick packages from the last applied selection (.lucy_launcher_state.json)."""
@@ -812,7 +813,7 @@ if __name__ == "__main__":
         sys.exit(1)
     load_workspace_env()
     if needs_tmux_session() and not is_in_tmux():
-        print("Error: launcher.py must run inside the lucy_ws tmux session (./launch_lucy.sh).", file=sys.stderr)
+        print(f"Error: launcher.py must run inside the {TMUX_SESSION} tmux session (./launch_lucy.sh).", file=sys.stderr)
         sys.exit(1)
     os.chdir(WORKSPACE_ROOT)
 
@@ -838,6 +839,6 @@ if __name__ == "__main__":
         if needs_tmux_session():
             print("Terminating tmux session...")
             time.sleep(0.5)
-            run_shell_command("tmux kill-session -t lucy_ws 2>/dev/null")
+            run_shell_command(f"tmux kill-session -t {TMUX_SESSION} 2>/dev/null")
     else:
         pass
