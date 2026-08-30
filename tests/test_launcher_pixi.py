@@ -21,7 +21,8 @@ def test_state_file_is_workspace_scoped():
 def test_pixi_workspace_script_wraps_ros2():
     body = _pixi_workspace_script("ros2 doctor --report")
     assert f"cd {WORKSPACE_ROOT}" in body
-    assert "pixi run -- ros2 doctor --report" in body
+    assert "pixi run -- bash -lc" in body
+    assert "ros2 doctor --report" in body
 
 
 def test_pixi_workspace_script_preserves_pixi_command():

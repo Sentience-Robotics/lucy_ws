@@ -11,22 +11,26 @@ ROOT = Path(__file__).resolve().parents[1]
 PARSE_REPOS_SNIPPET = """
 import json, os, sys
 
+def clean(s):
+    return str(s).strip().strip('\\r\\n')
+
 use_ssh = os.environ.get('DEV', '').strip().lower() in ('1', 'true', 'yes')
 
 with open(sys.argv[1]) as f:
     data = json.load(f)
 for r in data.get('repos', []):
-    name = r.get('name', '').strip()
-    branch = r.get('branch', 'main').strip()
-    url_https = (r.get('url_https') or r.get('url') or '').strip()
-    url_ssh = (r.get('url_ssh') or '').strip()
+    name = clean(r.get('name', ''))
+    branch = clean(r.get('branch', 'main'))
+    url_https = clean(r.get('url_https') or r.get('url') or '')
+    url_ssh = clean(r.get('url_ssh') or '')
     url = (url_ssh or url_https) if use_ssh else (url_https or url_ssh)
+    optional = 1 if r.get('optional') else 0
     if name and url:
-        print(name, branch, url, sep='\\t')
+        print(name, branch, url, optional, sep='\\t')
 """
 
 
-def _parse_repos(config_path: Path, dev: bool = False) -> list[tuple[str, str, str]]:
+def _parse_repos(config_path: Path, dev: bool = False) -> list[tuple[str, str, str, str]]:
     env = os.environ.copy()
     if dev:
         env["DEV"] = "true"
@@ -41,8 +45,8 @@ def _parse_repos(config_path: Path, dev: bool = False) -> list[tuple[str, str, s
     )
     rows = []
     for line in proc.stdout.strip().splitlines():
-        name, branch, url = line.split("\t")
-        rows.append((name, branch, url))
+        name, branch, url, optional = line.split("\t")
+        rows.append((name, branch, url, optional))
     return rows
 
 
@@ -63,7 +67,7 @@ def test_parse_repos_https_default(tmp_path):
         )
     )
     rows = _parse_repos(cfg)
-    assert rows == [("foo_pkg", "main", "https://example.com/foo.git")]
+    assert rows == [("foo_pkg", "main", "https://example.com/foo.git", "0")]
 
 
 def test_parse_repos_ssh_when_dev_true(tmp_path):
@@ -83,7 +87,54 @@ def test_parse_repos_ssh_when_dev_true(tmp_path):
         )
     )
     rows = _parse_repos(cfg, dev=True)
-    assert rows == [("foo_pkg", "dev", "git@example.com:foo.git")]
+    assert rows == [("foo_pkg", "dev", "git@example.com:foo.git", "0")]
+
+
+def test_parse_repos_marks_optional_repos(tmp_path):
+    cfg = tmp_path / "repos.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "repos": [
+                    {
+                        "name": "required_pkg",
+                        "branch": "main",
+                        "url_https": "https://example.com/required.git",
+                    },
+                    {
+                        "name": "opt_pkg",
+                        "branch": "main",
+                        "optional": True,
+                        "url_https": "https://example.com/opt.git",
+                    },
+                ]
+            }
+        )
+    )
+    rows = _parse_repos(cfg)
+    assert rows == [
+        ("required_pkg", "main", "https://example.com/required.git", "0"),
+        ("opt_pkg", "main", "https://example.com/opt.git", "1"),
+    ]
+
+
+def test_parse_repos_strips_carriage_returns(tmp_path):
+    cfg = tmp_path / "repos.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "repos": [
+                    {
+                        "name": "foo_pkg",
+                        "branch": "main",
+                        "url_https": "https://example.com/foo.git\r",
+                    }
+                ]
+            }
+        )
+    )
+    rows = _parse_repos(cfg)
+    assert rows == [("foo_pkg", "main", "https://example.com/foo.git", "0")]
 
 
 def test_tracked_repos_json_parses():

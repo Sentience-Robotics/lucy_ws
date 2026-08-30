@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
-import curses
+try:
+    import curses
+except ImportError:
+    curses = None  # Windows: no _curses; TUI helpers import-only on other platforms
 import os
 import sys
 import subprocess
@@ -804,6 +807,9 @@ def main(stdscr):
             continue
 
 if __name__ == "__main__":
+    if curses is None:
+        print("Error: launcher TUI requires curses (not available on this platform).", file=sys.stderr)
+        sys.exit(1)
     load_workspace_env()
     if needs_tmux_session() and not is_in_tmux():
         print("Error: launcher.py must run inside the lucy_ws tmux session (./launch_lucy.sh).", file=sys.stderr)

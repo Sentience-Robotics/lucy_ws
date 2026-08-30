@@ -88,7 +88,7 @@ vite_scheme_from_envfile() {
 
 check_cmd pixi
 
-if [[ ! -f "$SCRIPT_DIR/install/setup.bash" ]]; then
+if [[ ! -f "$SCRIPT_DIR/install/setup.bash" && ! -f "$SCRIPT_DIR/install/setup.bat" ]]; then
   echo "Workspace not built. Run ./install.sh or Install in Lucy.py" >&2
   exit 1
 fi

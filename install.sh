@@ -101,19 +101,38 @@ parse_repos() {
   python3 -c "
 import json, os, sys
 
+def clean(s):
+    return str(s).strip().strip('\r\n')
+
 use_ssh = os.environ.get('DEV', '').strip().lower() in ('1', 'true', 'yes')
 
 with open(sys.argv[1]) as f:
     data = json.load(f)
 for r in data.get('repos', []):
-    name = r.get('name', '').strip()
-    branch = r.get('branch', 'main').strip()
-    url_https = (r.get('url_https') or r.get('url') or '').strip()
-    url_ssh = (r.get('url_ssh') or '').strip()
+    name = clean(r.get('name', ''))
+    branch = clean(r.get('branch', 'main'))
+    url_https = clean(r.get('url_https') or r.get('url') or '')
+    url_ssh = clean(r.get('url_ssh') or '')
     url = (url_ssh or url_https) if use_ssh else (url_https or url_ssh)
+    optional = 1 if r.get('optional') else 0
     if name and url:
-        print(name, branch, url, sep='\t')
+        print(name, branch, url, optional, sep='\t')
 " "$CONFIG_FILE"
+}
+
+mark_optional_colcon_ignore() {
+  case "$(echo "${CI:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes) ;;
+    *) return 0 ;;
+  esac
+  while IFS=$'\t' read -r name _ _ optional; do
+    name="${name//$'\r'/}"
+    optional="${optional//$'\r'/}"
+    if [ "$optional" = "1" ] && [ -d "src/${name}" ]; then
+      echo "CI: skipping colcon build for optional repo ${name} (COLCON_IGNORE)"
+      touch "src/${name}/COLCON_IGNORE"
+    fi
+  done < <(parse_repos)
 }
 
 pixi_install() {
@@ -187,7 +206,10 @@ case "$(echo "${DEV:-}" | tr '[:upper:]' '[:lower:]')" in
 esac
 
 mkdir -p src
-while IFS=$'\t' read -r name branch url; do
+while IFS=$'\t' read -r name branch url optional; do
+  name="${name//$'\r'/}"
+  branch="${branch//$'\r'/}"
+  url="${url//$'\r'/}"
   if [ ! -d "src/${name}/.git" ]; then
     if [ -e "src/${name}" ]; then
       echo "Removing stale src/${name} ..."
@@ -199,6 +221,8 @@ while IFS=$'\t' read -r name branch url; do
     update_git_repo "$name" "$branch" "$url"
   fi
 done < <(parse_repos)
+
+mark_optional_colcon_ignore
 
 pixi_workspace_build
 echo "Install complete. Run './launch_lucy.sh' or Launch in Lucy.py"

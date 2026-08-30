@@ -61,16 +61,16 @@ env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 
 # --- colcon build tasks (RoboStack Getting Started pattern) ---
 [feature.build.target.unix.tasks]
-build = { cmd = "rm -rf build/camera_ros && PYTHONWARNINGS=ignore::UserWarning colcon build --symlink-install --cmake-args -GNinja -Wno-dev", inputs = ["src"] }
-build-release = "PYTHONWARNINGS=ignore::UserWarning colcon build --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
+build = { cmd = "rm -rf build/camera_ros && colcon build --symlink-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev", inputs = ["src"] }
+build-release = "colcon build --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
 clean = "rm -rf build install log"
-test = { cmd = "colcon test", depends-on = ["build"] }
+test = { cmd = "bash scripts/ci_colcon_test.sh", depends-on = ["build"] }
 
 [feature.build.target.win-64.tasks]
-build = { cmd = "rm -rf build/camera_ros && PYTHONWARNINGS=ignore::UserWarning colcon build --merge-install --cmake-args -GNinja -Wno-dev", inputs = ["src"] }
-build-release = "PYTHONWARNINGS=ignore::UserWarning colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
+build = { cmd = "rm -rf build/camera_ros && colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev", inputs = ["src"] }
+build-release = "colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
 clean = "rm -rf build install log"
-test = { cmd = "colcon test", depends-on = ["build"] }
+test = { cmd = "bash scripts/ci_colcon_test.sh --merge-install", depends-on = ["build"] }
 
 [feature.panel.tasks]
 panel-install = { cmd = "yarn install", cwd = "src/lucy_control_panel" }
