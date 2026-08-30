@@ -74,7 +74,7 @@ jobs:
 
       - name: Run colcon tests
         shell: bash
-        run: pixi run test
+        run: pixi run test-only
 
       - name: ROS doctor
         shell: bash

@@ -12,9 +12,50 @@ fi
 
 export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
 
-args=(test --return-code-on-test-failure --packages-skip "${skip[@]}")
+args=(
+  test
+  --return-code-on-test-failure
+  --packages-skip "${skip[@]}"
+)
 for opt in "$@"; do
   args+=("$opt")
 done
 
-exec colcon "${args[@]}"
+dump_failure_logs() {
+  mapfile -t tested < <(colcon list --names-only --packages-skip "${skip[@]}")
+
+  echo "::group::colcon test-result"
+  if [ "${#tested[@]}" -gt 0 ]; then
+    colcon test-result --verbose --packages-select "${tested[@]}" || true
+  else
+    colcon test-result --verbose || true
+  fi
+  echo "::endgroup::"
+
+  echo "::group::Failed test logs"
+  if [ -d log ]; then
+    find log -type f \( -name 'stdout.log' -o -name 'stderr.log' \) -path '*/test_*/*' | while read -r f; do
+      if grep -qE 'FAILED|ERROR|Failed|Traceback|NO TESTS RAN' "$f" 2>/dev/null; then
+        echo "--- ${f} ---"
+        tail -120 "$f"
+      fi
+    done
+  fi
+  for ctest_log in build/*/Testing/Temporary/LastTest.log; do
+    if [ -f "$ctest_log" ] && grep -qE 'Failed|FAILED' "$ctest_log" 2>/dev/null; then
+      echo "--- ${ctest_log} ---"
+      tail -80 "$ctest_log"
+    fi
+  done
+  echo "::endgroup::"
+}
+
+set +e
+colcon "${args[@]}"
+rc=$?
+set -e
+
+if [ "$rc" -ne 0 ]; then
+  dump_failure_logs
+  exit "$rc"
+fi

@@ -65,12 +65,14 @@ build = { cmd = "rm -rf build/camera_ros && colcon build --symlink-install --cma
 build-release = "colcon build --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
 clean = "rm -rf build install log"
 test = { cmd = "bash scripts/ci_colcon_test.sh", depends-on = ["build"] }
+test-only = "bash scripts/ci_colcon_test.sh"
 
 [feature.build.target.win-64.tasks]
 build = { cmd = "rm -rf build/camera_ros && colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev", inputs = ["src"] }
 build-release = "colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
 clean = "rm -rf build install log"
 test = { cmd = "bash scripts/ci_colcon_test.sh --merge-install", depends-on = ["build"] }
+test-only = { cmd = "bash scripts/ci_colcon_test.sh --merge-install" }
 
 [feature.panel.tasks]
 panel-install = { cmd = "yarn install", cwd = "src/lucy_control_panel" }
