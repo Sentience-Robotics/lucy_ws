@@ -10,6 +10,10 @@
 #
 # Optional .env: DEV=true uses url_ssh from repos config.
 # Optional config/repos.json.local overrides config/repos.json.
+#
+# Pixi: install.sh requires pixi ≥ LUCY_PIXI_MIN_VERSION (default 0.78.0). When pixi
+# is missing or too old, it auto-installs/upgrades via https://pixi.sh/install.sh
+# (curl | bash). Set LUCY_SKIP_PIXI_UPGRADE=1 to fail instead and install manually.
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -95,8 +99,10 @@ ensure_pixi() {
 
   if [ -n "$ver" ]; then
     echo "install.sh: pixi $ver is older than $min — installing latest via pixi.sh ..."
+    echo "install.sh: (set LUCY_SKIP_PIXI_UPGRADE=1 to abort and install manually)" >&2
   else
     echo "install.sh: pixi not found — installing via pixi.sh ..."
+    echo "install.sh: (set LUCY_SKIP_PIXI_UPGRADE=1 to abort and install manually)" >&2
   fi
   curl -fsSL https://pixi.sh/install.sh | bash
   export PATH="${HOME}/.pixi/bin:${PATH}"
