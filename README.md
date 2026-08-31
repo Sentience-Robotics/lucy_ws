@@ -61,7 +61,7 @@ python windows/Lucy.py                   # launch
 
 ### Opening the Control Panel
 
-After **`Launch`**, enable **Core + Control Panel** in the launcher. Once it is running, the **Lucy Control Panel is accessible in your browser at [http://localhost:4000](http://localhost:4000)** (or the next free port if 4000 is already taken). The launcher also shows the exact URL next to the Control Panel entry once it's up.
+After **`Launch`**, enable **Core + Control Panel** in the launcher. Once it is running, the **Lucy Control Panel is accessible in your browser at [http://localhost:4004](http://localhost:4004)** (or the next free port if 4004 is already taken). The launcher also shows the exact URL next to the Control Panel entry once it's up.
 
 
 ## Using the workspace

@@ -31,7 +31,7 @@ IMAGE_NAME = install_ops.IMAGE_NAME
 WORKSPACE_DIR_HOST = PROJECT_ROOT
 WORKSPACE_DIR_CONTAINER = install_ops.WORKSPACE_CONTAINER
 
-LCP_DEFAULT_PORT = 4000
+LCP_DEFAULT_PORT = 4004
 
 _CLI_MODES = frozenset(('install', 'update', 'repair', 'build-only', 'check-prereqs'))
 
