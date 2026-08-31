@@ -24,13 +24,6 @@
       "optional": true,
       "url_https": "https://github.com/micro-ROS/micro-ROS-Agent.git",
       "url_ssh": "git@github.com:micro-ROS/micro-ROS-Agent.git"
-    },
-    {
-      "name": "audio_common",
-      "branch": "ros2",
-      "optional": true,
-      "url_https": "https://github.com/ros-drivers/audio_common.git",
-      "url_ssh": "git@github.com:ros-drivers/audio_common.git"
     }
   ]
 }
