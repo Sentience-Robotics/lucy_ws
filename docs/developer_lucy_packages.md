@@ -118,7 +118,7 @@ Hardware mode runs the same **RELOAD** step after BUILD/FLASH once ros2_control 
 |---------|---------|---------|
 | `DEV` | unset | `true` → use `url_ssh` in `repos.json` (install) and the interactive dev shell (launch) |
 | `PORT_CONTROL_PANEL` | matches container port | Host port the control panel is published on |
-| `PORT_CONTROL_PANEL_CONTAINER` | `VITE_PORT` from `src/lucy_control_panel/.env`, else `5000` | Port the Vite dev server listens on inside the container |
+| `PORT_CONTROL_PANEL_CONTAINER` | `VITE_PORT` from `src/lucy_control_panel/.env`, else `4004` | Port the Vite dev server listens on inside the container |
 | `DOCKER_GUI_DISPLAY` | host `$DISPLAY` | X display string passed to the container (use when the host `DISPLAY` doesn't reach Docker, e.g. Docker Desktop) |
 | `DOCKER_GUI_USE_HOST_NETWORK` | unset | Run with `--network=host` and `DISPLAY=:0` (alternative GUI path) |
 | `LUCY_DOCKER_PLATFORM` | content of `.lucy-docker-platform`, else host CPU | Docker `--platform` to build/run with (e.g. `linux/arm64`) |
