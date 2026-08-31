@@ -1,4 +1,4 @@
-"""Tests for Jetson platform detection (Python + shell parity)."""
+"""Tests for Jetson platform detection (Python API + bash wrapper)."""
 
 import os
 import subprocess
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lucy_control_supervisor.jetson_platform import (
+from launcher.platform import (
     ensure_headless_runtime_dir,
     headless_runtime_dir,
     is_jetson,
@@ -35,7 +35,7 @@ def _run_detect_jetson(env: dict | None = None) -> int:
 def test_is_jetson_respects_explicit_mode(monkeypatch):
     monkeypatch.delenv("LUCY_GPU_MODE", raising=False)
     monkeypatch.setattr(
-        "lucy_control_supervisor.jetson_platform.Path.is_file",
+        "launcher.platform.Path.is_file",
         lambda self: False,
     )
     monkeypatch.setenv("LUCY_GPU_MODE", "jetson")
@@ -47,11 +47,11 @@ def test_is_jetson_respects_explicit_mode(monkeypatch):
 def test_is_jetson_does_not_treat_nvidia_as_jetson(monkeypatch):
     monkeypatch.setenv("LUCY_GPU_MODE", "nvidia")
     monkeypatch.setattr(
-        "lucy_control_supervisor.jetson_platform.Path.is_file",
+        "launcher.platform.Path.is_file",
         lambda self: False,
     )
     monkeypatch.setattr(
-        "lucy_control_supervisor.jetson_platform.Path.read_text",
+        "launcher.platform.Path.read_text",
         lambda self, **kwargs: (_ for _ in ()).throw(OSError("mock")),
     )
     assert is_jetson() is False
@@ -64,7 +64,7 @@ def test_is_jetson_from_tegra_release(monkeypatch, tmp_path):
         return str(self) == "/etc/nv_tegra_release"
 
     monkeypatch.setattr(
-        "lucy_control_supervisor.jetson_platform.Path.is_file", fake_is_file
+        "launcher.platform.Path.is_file", fake_is_file
     )
     assert is_jetson() is True
 
