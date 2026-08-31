@@ -516,3 +516,18 @@ def test_orphan_signature_covers_latching_and_locking_nodes():
     assert not _matches_orphan_signature(f"{ws}/Lucy.py")
     # An unrelated spawner outside ros2_control should not match on the word alone.
     assert not _matches_orphan_signature("/usr/bin/some_random_spawner --foo")
+
+
+def test_core_teardown_kills_rviz_before_sigint():
+    """rviz2 must be killed before the teardown SIGINT reaches it.
+
+    Its rclcpp signal handler throws std::system_error("mutex lock failed") during
+    shutdown on macOS; the exception escapes, std::terminate calls abort(), and the
+    process dies on SIGABRT. macOS files that as a crash and shows "rviz2 quit
+    unexpectedly" on every stop. Measured: SIGINT and SIGTERM each produce a crash
+    report, SIGKILL produces none."""
+    from launcher.tmux import _core_teardown_shell
+
+    teardown = _core_teardown_shell()
+    assert "pkill -9 -x rviz2" in teardown
+    assert teardown.index("pkill -9 -x rviz2") < teardown.index("C-c")
