@@ -28,7 +28,7 @@ def test_state_file_is_workspace_scoped():
 def test_pixi_workspace_script_wraps_ros2():
     body = _pixi_workspace_script("ros2 doctor --report")
     assert f"cd {WORKSPACE_ROOT}" in body
-    assert "pixi run -- bash -lc" in body
+    assert "pixi run -- bash -c" in body
     assert "nix_gl_env.sh" in body
     assert "ros2 doctor --report" in body
 
@@ -39,9 +39,19 @@ def test_pixi_workspace_script_preserves_pixi_command():
     assert "pixi run -- pixi" not in body
 
 
-def test_pixi_workspace_script_complex_shell_uses_bash_lc():
+def test_pixi_workspace_script_complex_shell_uses_bash_c():
     body = _pixi_workspace_script("echo hi && ros2 doctor")
-    assert "pixi run -- bash -lc" in body
+    assert "pixi run -- bash -c" in body
+
+
+def test_pixi_workspace_script_inner_shell_is_not_a_login_shell():
+    """A login shell runs /etc/profile -> path_helper on macOS, which puts
+    /usr/local/bin ahead of the Pixi env. Anything with a `#!/usr/bin/env python3`
+    shebang then runs under the system Python, and rclpy's compiled extension is
+    built for one CPython minor version only, so the import fails with
+    "No module named 'rclpy._rclpy_pybind11'" whenever the two disagree."""
+    for cmd in ("ros2 doctor --report", "echo hi && ros2 doctor"):
+        assert "bash -lc" not in _pixi_workspace_script(cmd)
 
 
 def test_gui_env_exports_forwards_display():

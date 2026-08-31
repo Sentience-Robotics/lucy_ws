@@ -49,15 +49,28 @@ def _env_prelude() -> str:
 
 
 def _pixi_workspace_script(user_cmd: str) -> str:
-    """Shell script body: workspace root + Pixi env (RoboStack + colcon overlay)."""
+    """Shell script body: workspace root + Pixi env (RoboStack + colcon overlay).
+
+    The inner shell is deliberately NOT a login shell. On macOS /etc/profile runs
+    path_helper, which rebuilds PATH with /usr/local/bin and friends in front, so
+    a login shell demotes the Pixi env below whatever Python is installed system
+    wide. Anything with a `#!/usr/bin/env python3` shebang — rosbridge_websocket
+    among them — then runs under that interpreter instead of Pixi's, and rclpy's
+    compiled extension is built for exactly one CPython minor version:
+
+        _rclpy_pybind11.cpython-312-darwin.so
+
+    Under any other version the import fails with "No module named
+    'rclpy._rclpy_pybind11'". It only appears to work when the system Python
+    happens to match Pixi's. `bash -c` keeps Pixi's PATH ordering intact."""
     user_cmd = user_cmd.strip()
     prelude = _env_prelude()
     if user_cmd.startswith("pixi "):
         pixi_part = user_cmd
     elif prelude or any(op in user_cmd for op in (";", "&&", "||", "|", "&")):
-        pixi_part = f"pixi run -- bash -lc {shlex.quote(prelude + user_cmd)}"
+        pixi_part = f"pixi run -- bash -c {shlex.quote(prelude + user_cmd)}"
     elif user_cmd.startswith("ros2 "):
-        pixi_part = f"pixi run -- bash -lc {shlex.quote(prelude + user_cmd)}"
+        pixi_part = f"pixi run -- bash -c {shlex.quote(prelude + user_cmd)}"
     else:
         pixi_part = f"pixi run -- {user_cmd}"
     body = f"cd {WORKSPACE_ROOT} && {pixi_part}"
