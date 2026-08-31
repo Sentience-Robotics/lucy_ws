@@ -81,6 +81,27 @@ def _matches_orphan_signature(cmdline: str) -> bool:
         return True
     if "vite" in cl:
         return True
+    # Nodes the stack starts underneath `ros2 launch` or the control supervisor.
+    # They are reparented to init when a session is killed hard, and a survivor is
+    # not merely idle waste:
+    #   robot_state_publisher keeps a *latched* /robot_description alive, so the
+    #     next Gazebo run can spawn from a stale description and gz_ros2_control
+    #     then fails to load its hardware plugins;
+    #   a spawner holds $ROS_HOME/locks/ros2-control-controller-spawner.lock, and
+    #     every later spawner gives up after 5 x 20s, leaving controllers
+    #     unconfigured with no controller ever activated.
+    for marker in (
+        "robot_state_publisher",
+        "ros2_control_node",
+        "config_pipeline_node",
+        "client_registry_node",
+        "parameter_bridge",
+        "control_supervisor_node",
+    ):
+        if marker in cmdline:
+            return True
+    if "spawner" in cmdline and "controller_manager" in cmdline:
+        return True
     return False
 
 

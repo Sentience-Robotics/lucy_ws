@@ -491,3 +491,28 @@ def test_finish_teardown_clears_pending_preserve(monkeypatch):
     launcher._finish_teardown()
     assert launcher.process._pending_preserve_windows == frozenset()
     assert launcher.process._pending_protect_vite is False
+
+
+def test_orphan_signature_covers_latching_and_locking_nodes():
+    """robot_state_publisher and the controller spawner must be reaped.
+
+    Left parented to init by a hard session kill, neither is merely idle: the
+    publisher keeps a latched /robot_description alive, so the next Gazebo run can
+    spawn from a stale description and gz_ros2_control fails to load its hardware
+    plugins; a surviving spawner holds the ros2-control spawner lock, so every
+    later spawner gives up and no controller is ever activated."""
+    from launcher.process import _matches_orphan_signature
+
+    ws = str(WORKSPACE_ROOT)
+    assert _matches_orphan_signature(
+        f"{ws}/.pixi/envs/default/lib/robot_state_publisher/robot_state_publisher --ros-args"
+    )
+    assert _matches_orphan_signature(
+        f"{ws}/.pixi/envs/default/lib/controller_manager/spawner joint_state_broadcaster"
+    )
+    assert _matches_orphan_signature(f"{ws}/install/lucy_config_pipeline/lib/config_pipeline_node")
+    # The launcher itself must never match, or it would reap its own process.
+    assert not _matches_orphan_signature(f"python -m launcher")
+    assert not _matches_orphan_signature(f"{ws}/Lucy.py")
+    # An unrelated spawner outside ros2_control should not match on the word alone.
+    assert not _matches_orphan_signature("/usr/bin/some_random_spawner --foo")
