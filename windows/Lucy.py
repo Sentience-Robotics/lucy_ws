@@ -65,6 +65,32 @@ def _workspace_built():
     )
 
 
+def _find_git_bash():
+    """Find Git for Windows bash.exe, never the WSL bash.exe."""
+    candidates = [
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"),
+                     "Git", "bin", "bash.exe"),
+        os.path.join(os.environ.get("ProgramW6432", r"C:\Program Files"),
+                     "Git", "bin", "bash.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+                     "Git", "bin", "bash.exe"),
+    ]
+
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+
+    # Git Bash may also be discoverable through git.exe.
+    git = shutil.which("git")
+    if git:
+        git_root = os.path.dirname(os.path.dirname(os.path.abspath(git)))
+        candidate = os.path.join(git_root, "bin", "bash.exe")
+        if os.path.isfile(candidate):
+            return candidate
+
+    return None
+
+
 def launch_workspace():
     """Start Pixi and attach to the Lucy Control Center launcher."""
     if not _workspace_built():
@@ -81,7 +107,7 @@ def launch_workspace():
         )
         sys.exit(1)
 
-    bash = shutil.which("bash")
+    bash = _find_git_bash()
     launch_script = os.path.join(PROJECT_ROOT, "launch_lucy.sh")
     if not bash:
         print(

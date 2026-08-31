@@ -3864,20 +3864,22 @@ environments:
       - conda: https://prefix.dev/conda-forge/noarch/ca-certificates-2026.7.22-h4c7d964_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/catkin_pkg-1.1.0-pyhd8ed1ab_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-cmake-0.2.30-pyhd8ed1ab_0.conda
-      - conda: https://prefix.dev/conda-forge/noarch/colcon-core-0.19.0-pyhd8ed1ab_1.conda
+      - conda: https://prefix.dev/conda-forge/noarch/colcon-core-0.17.1-pyhd8ed1ab_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-defaults-0.2.9-pyhd8ed1ab_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-devtools-0.3.0-pyhd8ed1ab_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-library-path-0.2.1-pyhd8ed1ab_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-metadata-0.2.5-pyhd8ed1ab_1.conda
+      - conda: https://prefix.dev/conda-forge/noarch/colcon-mixin-0.2.3-pyhd8ed1ab_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-output-0.2.14-pyhd8ed1ab_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-package-information-0.4.1-pyhd8ed1ab_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-package-selection-0.2.10-pyhd8ed1ab_1.conda
-      - conda: https://prefix.dev/conda-forge/noarch/colcon-parallel-executor-0.4.0-pyhe01879c_0.conda
+      - conda: https://prefix.dev/conda-forge/noarch/colcon-parallel-executor-0.2.4-py_0.tar.bz2
       - conda: https://prefix.dev/conda-forge/noarch/colcon-pkg-config-0.1.0-pyhd8ed1ab_1.conda
-      - conda: https://prefix.dev/conda-forge/noarch/colcon-powershell-0.5.0-pyhd8ed1ab_0.conda
+      - conda: https://prefix.dev/conda-forge/noarch/colcon-powershell-0.4.0-pyhd8ed1ab_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-python-setup-py-0.2.9-pyhff2d567_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-recursive-crawl-0.2.3-pyhd8ed1ab_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-ros-0.5.0-pyhd8ed1ab_0.conda
+      - conda: https://prefix.dev/conda-forge/noarch/colcon-ros-domain-id-coordinator-0.2.4-pyhd8ed1ab_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/colcon-test-result-0.3.8-pyhd8ed1ab_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/colorama-0.4.6-pyhd8ed1ab_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/coloredlogs-15.0.1-pyhd8ed1ab_4.conda
@@ -21242,9 +21244,9 @@ packages:
   run_exports: {}
   size: 30528
   timestamp: 1781648219269
-- conda: https://prefix.dev/conda-forge/noarch/colcon-core-0.19.0-pyhd8ed1ab_1.conda
-  sha256: 565322c13eb28db869d8de16f5ae14caebb2b58f76c11ab8eaddeb5eaa2e50e9
-  md5: d7c6db7125d9f78ec34451f4b4d471cb
+- conda: https://prefix.dev/conda-forge/noarch/colcon-core-0.17.1-pyhd8ed1ab_0.conda
+  sha256: 78964749d438633cf87f5bdf86dd372a081b3ccf87e348c7b3bf55c0f883ffe3
+  md5: b955145d4a363f54c010e6e910887d94
   depends:
   - coloredlogs
   - distlib
@@ -21253,13 +21255,13 @@ packages:
   - pytest-cov
   - pytest-repeat
   - pytest-rerunfailures
-  - python >=3.9
+  - python >=3.6
   - setuptools >=30.3.0
   license: Apache-2.0
   license_family: APACHE
   run_exports: {}
-  size: 88696
-  timestamp: 1742163247059
+  size: 85206
+  timestamp: 1721974373561
 - conda: https://prefix.dev/conda-forge/noarch/colcon-core-0.21.1-pyhcf101f3_0.conda
   sha256: 436539fca078783b00ab279aa89fb0c9481c4e632f82e655566bf08d870b0fec
   md5: 912327818a310c48829efbda3dc635a6
@@ -21326,6 +21328,18 @@ packages:
   run_exports: {}
   size: 20031
   timestamp: 1757624342935
+- conda: https://prefix.dev/conda-forge/noarch/colcon-mixin-0.2.3-pyhd8ed1ab_1.conda
+  sha256: beabb15276e1e246b7b5715f82b7fa43593dda6cb51e0fee229729e0d4a8f2aa
+  md5: 8f6f5ee1a01268b62a07ff35e818c522
+  depends:
+  - colcon-core >=0.12
+  - python >=3.9
+  - pyyaml
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports: {}
+  size: 25148
+  timestamp: 1736162602690
 - conda: https://prefix.dev/conda-forge/noarch/colcon-output-0.2.14-pyhd8ed1ab_0.conda
   sha256: 832624fa22e6e6ce6dd55ad1cea9c719c41e6c8279ff44e0deaba71c797d8bda
   md5: 283bd31fe9199004e57966fe177d0dd6
@@ -21359,6 +21373,17 @@ packages:
   run_exports: {}
   size: 18069
   timestamp: 1757614388574
+- conda: https://prefix.dev/conda-forge/noarch/colcon-parallel-executor-0.2.4-py_0.tar.bz2
+  sha256: e113ec677d09ef36f9cecddc6e0e1dba91f6c9c070b799cf4194eec983ffd35e
+  md5: 23c05271de5c2e445a95cac2b110f761
+  depends:
+  - colcon-core >=0.3.15
+  - python >=3.5
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports: {}
+  size: 12492
+  timestamp: 1571000234413
 - conda: https://prefix.dev/conda-forge/noarch/colcon-parallel-executor-0.4.0-pyhe01879c_0.conda
   sha256: 45285d47851b2d38c3ae7665af68f49f7a670737e6320d2715cf5870747007d2
   md5: 1bad6182810fe70aa0baaf2ec0c2747d
@@ -21382,6 +21407,17 @@ packages:
   run_exports: {}
   size: 13616
   timestamp: 1775238006255
+- conda: https://prefix.dev/conda-forge/noarch/colcon-powershell-0.4.0-pyhd8ed1ab_1.conda
+  sha256: 6aeb528c0433e11052d08cd5982ae324c0a2257f8445c5ac9130919ebc5f8e43
+  md5: 7568a13447ca84751fd58eb6542d9768
+  depends:
+  - colcon-core >=0.3.18
+  - python >=3.10
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports: {}
+  size: 17321
+  timestamp: 1757616979293
 - conda: https://prefix.dev/conda-forge/noarch/colcon-powershell-0.5.0-pyhd8ed1ab_0.conda
   sha256: 9afc4546ba72326e6a7e0e9874879709e3c14260e49ae11663164bd0f3911106
   md5: 3f5f803ff3703d28c8ec4cc9b3564257
@@ -21432,6 +21468,17 @@ packages:
   run_exports: {}
   size: 23852
   timestamp: 1719301582281
+- conda: https://prefix.dev/conda-forge/noarch/colcon-ros-domain-id-coordinator-0.2.4-pyhd8ed1ab_0.conda
+  sha256: d829c30a58e698fc6b1aa5b075ee204b0119da297994ef44d0e0eccd82673f08
+  md5: 13e2d4daa3c127b5a144999e41eb7ae9
+  depends:
+  - colcon-core >=0.12.0
+  - python >=3.9
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports: {}
+  size: 14891
+  timestamp: 1753971216917
 - conda: https://prefix.dev/conda-forge/noarch/colcon-test-result-0.3.8-pyhd8ed1ab_1.conda
   sha256: a9657a89b55efc8abd46d3b32bd4cb9ed06ecc84b76ddf5e6d336945633a9269
   md5: 1f45017750d20d6538970315e10a2f01
