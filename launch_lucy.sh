@@ -38,12 +38,13 @@ check_cmd() {
   fi
 }
 
+# Delegates to scripts/port_open.sh so this and the launcher readiness probes
+# share one implementation. That also covers the case this used to miss:
+# Debian-family bash is sometimes built without net redirections, where the
+# /dev/tcp fallback fails exactly like a closed port, and every candidate port
+# would look free.
 host_port_in_use() {
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
-  else
-    (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
-  fi
+  bash "${SCRIPT_DIR}/scripts/port_open.sh" "$1"
 }
 
 resolve_host_port() {
