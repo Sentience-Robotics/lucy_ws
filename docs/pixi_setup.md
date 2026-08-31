@@ -29,15 +29,6 @@ pixi install          # updates pixi.lock for every platform in pixi.toml
 
 **Pixi ≥ 0.78** is recommended for multi-platform lock resolution (`curl -fsSL https://pixi.sh/install.sh | bash`).
 
-## RoboStack vs source clones
-
-| Approach | When to use |
-|----------|-------------|
-| **Pixi / RoboStack** | Standard ROS Jazzy packages (`ros-jazzy-desktop`, `ros-jazzy-ros-gz`, controllers, rosbridge, etc.) |
-| **Clone to `src/`** | Packages not on RoboStack, forks, or workspace-specific repos (`lucy_ros_packages`, `inmoov_urdf`) |
-| **Optional `src/` clones** | `micro_ros_agent` — not on RoboStack; cloned by default for release/CI parity but **not required** for core bringup or the control panel. Entries carry `"optional": true` in `repos.json`; omit from `repos.json.local` if you do not need them |
-| **Local build** | RealSense — not in Pixi; run `./scripts/build_local_realsense.sh` **after** a normal `pixi run build` (or `LUCY_BUILD_REALSENSE=1 ./install.sh` at end of install) |
-
 ### Mutex pin
 
 `ros2-distro-mutex = "0.15.*"` in `pixi.toml` keeps all RoboStack packages on the same rebuild cycle ([RoboStack #125](https://github.com/RoboStack/ros-jazzy/issues/125)).

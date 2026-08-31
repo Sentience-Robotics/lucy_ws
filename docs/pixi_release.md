@@ -16,7 +16,7 @@ Full-stack artifact (not `lucy_bringup` alone):
 | Option | Best for |
 |--------|----------|
 | Private conda channel (prefix.dev) | Networked workstations |
-| Pixi Pack bundles | Jetson / air-gapped |
+| Pixi Pack bundles | Jetson |
 
 ## Suggested follow-up commits
 
