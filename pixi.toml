@@ -61,8 +61,8 @@ env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 
 # --- colcon build tasks (RoboStack Getting Started pattern) ---
 [feature.build.target.unix.tasks]
-build = { cmd = "rm -rf build/camera_ros && colcon build --symlink-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev", inputs = ["src"] }
-build-release = "colcon build --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
+build = { cmd = "rm -rf build/camera_ros && colcon build --symlink-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev && bash scripts/macos_link_workspace_libs.sh", inputs = ["src"] }
+build-release = "colcon build --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev && bash scripts/macos_link_workspace_libs.sh"
 clean = "rm -rf build install log"
 test = { cmd = "bash scripts/ci_colcon_test.sh", depends-on = ["build"] }
 test-only = "bash scripts/ci_colcon_test.sh"
