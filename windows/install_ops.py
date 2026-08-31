@@ -246,7 +246,7 @@ def parse_repos(project_root: str, developer: bool, repos_branch: Optional[str] 
         name = repo.get("name", "").strip().strip("\r\n")
         if not name:
             continue
-        branch = (repos_branch or repo.get("branch", DEFAULT_REPOS_BRANCH)).strip().strip("\r\n")
+        branch = (repo.get("branch") or repos_branch or DEFAULT_REPOS_BRANCH).strip().strip("\r\n")
         url_https = (repo.get("url_https") or repo.get("url") or "").strip().strip("\r\n")
         url_ssh = (repo.get("url_ssh") or "").strip().strip("\r\n")
         url = (url_ssh or url_https) if developer else (url_https or url_ssh)

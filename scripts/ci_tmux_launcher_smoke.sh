@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CI smoke: tmux + pixi-wrapped core (headless sim) and control panel.
-# Exercises the same tmux/pixi paths as launcher.py apply_changes without the TUI.
+# Exercises the same tmux/pixi paths as launcher apply_changes without the TUI.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -67,6 +67,16 @@ wait_for() {
 
 wait_for '[r]osbridge_websocket' 'rosbridge' 180
 wait_for '[v]ite' 'control panel (vite)' 180
+
+pixi run -- python3 <<'PY'
+import os
+
+os.chdir(os.environ["LUCY_WS_ROOT"])
+from launcher import load_workspace_env, stop_all_packages, LauncherState, load_config
+
+load_workspace_env()
+stop_all_packages(LauncherState(load_config()))
+PY
 
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 echo "ci_tmux_launcher_smoke: OK"

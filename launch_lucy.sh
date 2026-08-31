@@ -137,7 +137,7 @@ TMUX_SESSION="${LUCY_TMUX_SESSION:-lucy_ws}"
 case "$(uname -s)" in
   Linux|Darwin)
     if command -v tmux >/dev/null 2>&1; then
-      LAUNCH_CMD="cd \"${SCRIPT_DIR}\" && pixi run -- python launcher.py"
+      LAUNCH_CMD="cd \"${SCRIPT_DIR}\" && pixi run -- python -m launcher"
       export LUCY_TMUX_SESSION="$TMUX_SESSION"
       exec bash -c "
         set -e
@@ -157,4 +157,4 @@ case "$(uname -s)" in
 esac
 
 # Git Bash / MSYS on Windows: no tmux — run the Control Center launcher directly.
-exec pixi run -- python launcher.py
+exec pixi run -- python -m launcher
