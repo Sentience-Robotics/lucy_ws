@@ -8,7 +8,9 @@ import threading
 import time
 import json
 
-CONFIG_FILE = "/workspace/config/launcher_config.json"
+CONFIG_DIR = "/workspace/config"
+DEFAULT_CONFIG_FILE = os.path.join(CONFIG_DIR, "launcher_config.json")
+LOCAL_CONFIG_FILE = os.path.join(CONFIG_DIR, "launcher_config.json.local")
 STATE_FILE = "/tmp/launcher_state.json"
 # Persisted across container restarts (lives on the bind-mounted workspace, not
 # /tmp): the set of packages the user last applied, so ticks are remembered.
@@ -52,10 +54,15 @@ def is_in_docker():
 def is_in_tmux():
     return 'TMUX' in os.environ
 
+def _launcher_config_path():
+    """config/launcher_config.json.local (gitignored) overrides the tracked file."""
+    return LOCAL_CONFIG_FILE if os.path.exists(LOCAL_CONFIG_FILE) else DEFAULT_CONFIG_FILE
+
 def load_config():
-    if not os.path.exists(CONFIG_FILE):
-        raise FileNotFoundError(f"Configuration file not found at {CONFIG_FILE}")
-    with open(CONFIG_FILE, 'r') as f:
+    config_path = _launcher_config_path()
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file not found at {config_path}")
+    with open(config_path, 'r') as f:
         return json.load(f)
 
 def load_state():
@@ -209,6 +216,50 @@ def _env_enabled(var_name):
     if not var_name:
         return True
     return os.environ.get(var_name, "").strip().lower() in ("1", "true", "yes")
+
+
+def _gui_desktop_available():
+    return _env_enabled("LUCY_GUI_VNC_AVAILABLE")
+
+
+def _selection_needs_gui_display(state):
+    """True when a ticked package renders to the in-container virtual desktop."""
+    return any(
+        p.selected and getattr(p, "runs_on_vnc", False)
+        for p in state.packages
+    )
+
+
+def _ensure_gui_display(state):
+    """Start Xvfb (+ fluxbox) when RViz/Gazebo are selected on arm64/VNC hosts."""
+    if not _gui_desktop_available() or not _selection_needs_gui_display(state):
+        return
+    run_shell_command("bash /workspace/docker/gui_desktop.sh display start")
+
+
+def _core_launch_display_prefix(state):
+    """DISPLAY= prefix for core launch when GL apps use the virtual desktop."""
+    if not _gui_desktop_available() or not _selection_needs_gui_display(state):
+        return ""
+    num = os.environ.get("LUCY_GUI_DISPLAY_NUM", "99")
+    return f"DISPLAY=:{num} "
+
+
+def _sync_novnc_for_gui(state):
+    """Auto-tick noVNC when RViz/Gazebo need the in-container desktop (arm64/Jetson)."""
+    novnc = state.get_by_id("novnc")
+    if not novnc or not _gui_desktop_available():
+        return
+    headless = state.get_by_id("headless")
+    if headless and headless.selected:
+        return
+    if any(
+        p.selected and p.display_switch and p.id != "novnc"
+        for p in state.packages
+    ):
+        return
+    if _selection_needs_gui_display(state):
+        novnc.selected = True
 
 def _ros_pkg_installed(pkg_name):
     """True when a ROS package is built in the workspace overlay (install/<pkg>).
@@ -565,6 +616,8 @@ def apply_changes(state):
 
     # Second Pass: Start processes that should be turned on (never re-launch one that is still shutting down).
     # A crashed service (non-zero exit) is relaunched too, after reaping the dead window; a clean exit (STOPPED) is left alone.
+    _ensure_gui_display(state)
+    display_prefix = _core_launch_display_prefix(state)
     for pkg in state.packages:
          crashed = pkg.pane_dead and pkg.pane_exit_status != 0
          if pkg.selected and pkg.id not in _pkg_stop_times and (not pkg.is_running or crashed):
@@ -584,7 +637,7 @@ def apply_changes(state):
                 selected_modifiers = [p for p in state.packages if p.type == 'modifier' and p.selected]
                 modifier_args = [p.command for p in selected_modifiers]
                 modifier_ids = [p.id for p in selected_modifiers]
-                full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
+                full_cmd = f"{display_prefix}{base_cmd} {' '.join(modifier_args)}"
                 # remain-on-exit keeps the window (and the crash output) open if
                 # ros2 launch dies, so the failure is visible and detectable.
                 run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}'; tmux set-window-option -t lucy_ws:core remain-on-exit on")
@@ -666,6 +719,7 @@ def main(stdscr):
     state = LauncherState(load_config())
     restore_selection(state)
     default_robot_selection(state)
+    _sync_novnc_for_gui(state)
     current_idx = 0
     error_msg = None
     status_msg = None
@@ -681,6 +735,7 @@ def main(stdscr):
         if lcp_pkg:
             lcp_pkg.selected = True
         default_robot_selection(state)
+        _sync_novnc_for_gui(state)
         apply_changes(state)
         status_msg = "Starting default services for production mode..."
         state = LauncherState(load_config())

@@ -254,7 +254,7 @@ FunctionEnd
 Section "Install"
   SetOutPath "$INSTDIR"
   File "..\..\dist\${MyAppExeName}"
-  File "..\..\Dockerfile.humble"
+  File "..\..\docker\Dockerfile.jazzy"
   File "..\..\install.sh"
   File "..\..\launch_lucy.sh"
   File "..\..\Lucy.py"

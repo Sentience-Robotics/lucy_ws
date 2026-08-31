@@ -1,6 +1,6 @@
 # Lucy `lucy_ws` developer guide
 
-ROS 2 **Humble**. This document covers everything beyond the basic install/launch flow in the top-level [`README.md`](../README.md): per-repository docs, all install/launch flags, dev mode, ports, environment overrides, and an overview of the packages dropped under `src/`.
+ROS 2 **Jazzy** on Ubuntu 24.04 Noble. This document covers everything beyond the basic install/launch flow in the top-level [`README.md`](../README.md): per-repository docs, all install/launch flags, dev mode, ports, environment overrides, and an overview of the packages dropped under `src/`.
 
 ## Cross-repository docs
 
@@ -9,9 +9,9 @@ Maintainer documentation for each Lucy sub-repository is **owned per repository*
 | Repository | Developer documentation |
 |------------|-------------------------|
 | **lucy_ros_packages** | [`lucy_ros_packages/docs/DEVELOPER.md`](../src/lucy_ros_packages/docs/DEVELOPER.md) — bringup, `lucy_ros2_control`, `camera_ros`, CI; [**ros2_control on Lucy**](../src/lucy_ros_packages/doc/ROS2_CONTROL.md) |
-| **inmoov_urdf** | [`thais_urdf/docs/DEVELOPER.md`](../src/thais_urdf/docs/DEVELOPER.md) — URDF/xacro, meshes, launches, RViz |
+| **inmoov_urdf** | [`inmoov_urdf/docs/DEVELOPER.md`](../src/inmoov_urdf/docs/DEVELOPER.md) — URDF/xacro, meshes, launches, RViz |
 
-Repository-level READMEs: [`lucy_ros_packages`](../src/lucy_ros_packages/README.md), [`inmoov_urdf`](../src/thais_urdf/README.md).
+Repository-level READMEs: [`lucy_ros_packages`](../src/lucy_ros_packages/README.md), [`inmoov_urdf`](../src/inmoov_urdf/README.md).
 
 ## Packages dropped under `src/` by `install.sh`
 
@@ -23,9 +23,9 @@ The exact set of repositories, branches and clone URLs is in [`config/repos.json
 
 ## `install.sh`
 
-The first run clones missing sub-repositories, builds the Docker image (`lucy_ros2:humble`), and runs `rosdep` + `colcon build --symlink-install` + `yarn install` inside the container.
+The first run clones missing sub-repositories, builds the Docker image (`lucy_ros2:jazzy`), and runs `rosdep` + `colcon build --symlink-install` + `yarn install` inside the container.
 
-`--symlink-install` keeps `install/share/<robot_package>/config/controllers.yaml` pointing at the **source tree** paths that `lucy_config_pipeline` writes (`src/thais_urdf/config/controllers.yaml`), so launch files and the pipeline stay aligned during iterative hardware edits.
+`--symlink-install` keeps `install/share/<robot_package>/config/controllers.yaml` pointing at the **source tree** paths that `lucy_config_pipeline` writes (`src/inmoov_urdf/config/controllers.yaml`), so launch files and the pipeline stay aligned during iterative hardware edits.
 
 Subsequent runs fast-forward each clone to the branch declared in `config/repos.json` and rebuild the workspace.
 
@@ -38,7 +38,7 @@ Subsequent runs fast-forward each clone to the branch declared in `config/repos.
 
 ### Apple Silicon notes
 
-Docker Desktop on Apple Silicon defaults to `linux/amd64` ROS images and runs them under emulation, producing platform warnings and unreliable `apt` / `rosdep`. The image `osrf/ros:humble-desktop` on Docker Hub is **amd64-only**; `--arm` switches to `ros:humble-ros-base-jammy` + `ros-humble-desktop` so a real `linux/arm64` base exists.
+Docker Desktop on Apple Silicon defaults to `linux/amd64` when no platform is pinned, which runs the container under emulation and can make `apt` / `rosdep` unreliable. Use `./install.sh --arm` to build and run a native `linux/arm64` image on `ubuntu:24.04` with `ros-jazzy-*` packages from apt (recorded in `.lucy-docker-platform`).
 
 ### SSH vs HTTPS clones (`DEV=true`)
 
@@ -82,7 +82,7 @@ On Windows, **`Lucy-Setup.exe`** (or `Lucy.exe --cli …`) writes **`config/inst
 Builds the Docker image if needed, mounts the workspace at `/workspace`, sources the built ROS overlay, then:
 
 - **Normal mode (default)** — starts the control panel (Vite) in the background and runs `ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true` in the foreground. GUI / X11 forwarded automatically when available.
-- **Dev mode (`DEV=true` in env or `.env`)** — same control panel in the background, but drops you into an interactive Humble shell so you can run any `ros2 launch` yourself (the script prints typical commands).
+- **Dev mode (`DEV=true` in env or `.env`)** — same control panel in the background, but drops you into an interactive Jazzy shell so you can run any `ros2 launch` yourself (the script prints typical commands).
 
 | Command | What it does |
 |---------|--------------|
@@ -128,4 +128,4 @@ Inside the container, Vite proxies `/rosbridge` to `ws://127.0.0.1:9090`, and ro
 
 ## Docker image rebuilds
 
-`docker/ensure_image.sh` stamps each built image with `LABEL lucy.dockerfile.sha256="<sha256>|<platform>"`. Both `install.sh` and `launch_lucy.sh` rebuild the image when the label no longer matches the current `Dockerfile.humble` + target platform.
+`docker/ensure_image.sh` stamps each built image with `LABEL lucy.dockerfile.sha256="<sha256>|<platform>"`. Both `install.sh` and `launch_lucy.sh` rebuild the image when the label no longer matches the current `Dockerfile.jazzy` + target platform.

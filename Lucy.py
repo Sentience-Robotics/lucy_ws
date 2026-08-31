@@ -74,6 +74,8 @@ def not_installed_screen(stdscr):
     stdscr.nodelay(0)
     stdscr.timeout(-1)
 
+    is_dev_mode = get_dev_mode()
+
     while True:
         stdscr.clear()
         h, w = stdscr.getmaxyx()
@@ -83,19 +85,37 @@ def not_installed_screen(stdscr):
         lines = [
             ("Lucy is not installed on this machine.", curses.A_BOLD),
             ("", curses.A_NORMAL),
-            ("Press ENTER to install it.", curses.A_NORMAL),
-            ("Press Q or ESC to close.", curses.A_DIM),
         ]
         start = max(2, h // 2 - len(lines) // 2)
         for i, (text, attr) in enumerate(lines):
             stdscr.addstr(start + i, max(0, (w - len(text)) // 2), text, attr)
+
+        checkbox = "[x]" if is_dev_mode else "[ ]"
+        dev_line = f"{checkbox} Developer Mode"
+        stdscr.addstr(start + len(lines), max(0, (w - len(dev_line)) // 2), dev_line)
+        hint_line = "(SSH clones, interactive dev shell)"
+        stdscr.addstr(start + len(lines) + 1, max(0, (w - len(hint_line)) // 2), hint_line, curses.A_DIM)
+
+        footer = [
+            ("", curses.A_NORMAL),
+            ("Press ENTER to install", curses.A_NORMAL),
+            ("Press Q or ESC to close", curses.A_DIM),
+        ]
+        for i, (text, attr) in enumerate(footer):
+            stdscr.addstr(start + len(lines) + 3 + i, max(0, (w - len(text)) // 2), text, attr)
+
+        stdscr.addstr(h - 2, 2, "Space: Toggle Developer Mode", curses.A_DIM)
         stdscr.refresh()
 
         key = stdscr.getch()
         if key in (ord('\n'), ord('\r')):
+            set_dev_mode(is_dev_mode)
             return True
         if key in (ord('q'), ord('Q'), 27):  # q / ESC
             return False
+        if key == ord(' '):
+            is_dev_mode = not is_dev_mode
+            set_dev_mode(is_dev_mode)
 
 def main_tui(stdscr):
     """The main curses TUI function. Returns the command to run."""

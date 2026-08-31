@@ -2,7 +2,7 @@
 # One-time setup for the Lucy workspace.
 #
 # Clones the sub-repositories listed in config/repos.json into ./src/, builds the
-# Docker image (lucy_ros2:humble), and runs `rosdep install`, `colcon build`
+# Docker image (lucy_ros2:jazzy), and runs `rosdep install`, `colcon build`
 # and `yarn install` for the control panel — all inside that container.
 #
 # Run from the workspace root (directory containing this script).
@@ -29,9 +29,9 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-# Container image + workspace mount path (must match Dockerfile.humble WORKDIR).
-IMAGE_NAME="lucy_ros2:humble"
-DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
+# Container image + workspace mount path (must match Dockerfile.jazzy.base WORKDIR).
+IMAGE_NAME="lucy_ros2:jazzy"
+DOCKERFILE_PATH="$SCRIPT_DIR/docker/Dockerfile.jazzy"
 WORKSPACE="/workspace"
 # config/repos.json.local (gitignored) overrides the tracked config/repos.json,
 # so contributors can point repos at their own forks/branches without touching
@@ -44,6 +44,8 @@ fi
 
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/docker/ensure_image.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/docker/gpu_detect.sh"
 
 ensure_docker_image() {
   ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME" "$DOCKERFILE_PATH"
@@ -103,15 +105,22 @@ remove_workspace_src_repo() {
   local name="$1"
   rm -rf "src/${name}" 2>/dev/null || true
   docker_run_platform_flags "$SCRIPT_DIR"
-  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" --rm \
+  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${GPU_DOCKER_ARGS[@]}" --rm \
+    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
-    "$IMAGE_NAME" -c "rm -rf ${WORKSPACE}/src/${name}"
+    "$IMAGE_NAME" /bin/bash -c "rm -rf ${WORKSPACE}/src/${name}"
 }
 
 update_git_repo() {
-  local name="$1" branch="$2"
+  local name="$1" branch="$2" url="$3"
   local dir="src/${name}"
   echo "Updating ${name} (branch ${branch}) ..."
+  local current_url
+  current_url="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
+  if [ "$current_url" != "$url" ]; then
+    echo "install.sh: updating origin remote for ${name} -> ${url}"
+    git -C "$dir" remote set-url origin "$url"
+  fi
   git -C "$dir" fetch origin
   if ! git -C "$dir" checkout "$branch"; then
     git -C "$dir" checkout -b "$branch" "origin/${branch}"
@@ -150,12 +159,13 @@ docker_workspace_install() {
   ensure_docker_image
   docker_run_platform_flags "$SCRIPT_DIR"
   docker_run_it_flags
+  lucy_gpu_launch_message
   echo "Docker install: rosdep, colcon build, yarn install (lucy_control_panel) ..."
   local inner_cmd
   read -r -d '' inner_cmd <<'EOS' || true
-source /opt/ros/humble/setup.bash \
-  && [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash \
+source /opt/ros/jazzy/setup.bash \
   && cd /workspace \
+  && rosdep init && rosdep update \
   && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common" \
   && rm -rf build/camera_ros install/camera_ros \
   && colcon build --symlink-install \
@@ -163,9 +173,10 @@ source /opt/ros/humble/setup.bash \
        ( cd src/lucy_control_panel && yarn install ); \
      fi
 EOS
-  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
+  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" "${GPU_DOCKER_ARGS[@]}" --rm \
+    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
-    "$IMAGE_NAME" -c "$inner_cmd"
+    "$IMAGE_NAME" bash -c "$inner_cmd"
 }
 
 # ----------------------------------------------------------------------------
@@ -234,7 +245,7 @@ while IFS=$'\t' read -r name branch url; do
     echo "Cloning ${name} into src/${name} (branch: ${branch}) ..."
     git clone -b "$branch" "$url" "src/${name}"
   else
-    update_git_repo "$name" "$branch"
+    update_git_repo "$name" "$branch" "$url"
   fi
 done < <(parse_repos)
 

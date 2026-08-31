@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the Lucy stack (ROS 2 Humble + control panel) inside Docker.
+# Start the Lucy stack (ROS 2 Jazzy + control panel) inside Docker.
 #
 # Prerequisite: ./install.sh — clones src/, builds the Docker image, builds the workspace.
 #
@@ -8,13 +8,14 @@
 #   ./launch_lucy.sh --headless     same but without GUI / X11 (Gazebo runs headless, RViz disabled)
 #   ./launch_lucy.sh <command>      run a single command in the container (no control panel, no auto-launch)
 #
-# Dev mode (DEV=true in env or .env): drop into an interactive Humble shell with the control
+# Dev mode (DEV=true in env or .env): drop into an interactive Jazzy shell with the control
 # panel running in background; you launch the ROS stack yourself (handy commands are printed).
 #
 # Ports published on the host: rosbridge 9090, control panel PORT_CONTROL_PANEL (defaults to
 # VITE_PORT from src/lucy_control_panel/.env, else 4000). Vite proxies /rosbridge to the bridge.
 #
 # Docker platform follows the last ./install.sh run (.lucy-docker-platform; override with LUCY_DOCKER_PLATFORM).
+# GPU mode is auto-detected via docker/gpu_detect.sh (jetson / nvidia / dri / software).
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,12 +55,16 @@ resolve_host_port() {  # $1 = label, $2 = desired port -> echoes a free port
   echo "$2"  # nothing free in range; let docker surface the real error
 }
 
-IMAGE_NAME="lucy_ros2:humble"
-DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.humble"
+IMAGE_NAME="lucy_ros2:jazzy"
+DOCKERFILE_PATH="$SCRIPT_DIR/docker/Dockerfile.jazzy"
 WORKSPACE="/workspace"
 
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/docker/ensure_image.sh"
+
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/docker/gpu_detect.sh"
+lucy_resolve_host_display
 
 ensure_docker_image() {
   ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME" "$DOCKERFILE_PATH"
@@ -86,13 +91,22 @@ case "$(echo "${LUCY_FORCE_VNC:-}" | tr '[:upper:]' '[:lower:]')" in
   1|true|yes) USE_VNC=1 ;;
   0|false|no) USE_VNC=0 ;;
 esac
+
+# Prefer native X11 + GPU when hardware acceleration is available (Jetson / NVIDIA / DRI).
+if [ "$USE_VNC" = 1 ] && [ "${LUCY_GPU_MODE:-software}" != "software" ] && [ -n "${DISPLAY:-}" ]; then
+  case "$(echo "${LUCY_FORCE_VNC:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes) ;;
+    *) USE_VNC=0 ;;
+  esac
+fi
+
 if [ "${1:-}" = "--headless" ]; then
   shift
   echo "Headless: no X11 (Gazebo runs headless; RViz is disabled by the launch)."
 elif [ "$USE_VNC" = 1 ]; then
-  # VNC desktop: native X11/GLX is unavailable or unreliable for GL apps (RViz,
-  # Gazebo). Offer an opt-in virtual desktop via noVNC/VNC from the launcher. The
-  # display is not started automatically — enable it in the launcher.
+  # VNC desktop: software GL fallback when no hardware GPU path is available.
+  # With jetson/nvidia/dri, prefer native X11 above; if you still land here (no DISPLAY),
+  # RViz/Gazebo render via Xvfb + llvmpipe on CPU — see message below.
   GUI_VNC_PORT="$(resolve_host_port VNC "${LUCY_GUI_VNC_PORT:-5901}")"
   GUI_NOVNC_PORT="$(resolve_host_port noVNC "${LUCY_GUI_NOVNC_PORT:-6080}")"
   GUI_VNC_PASSWORD="${LUCY_GUI_VNC_PASSWORD:-lucy}"
@@ -100,11 +114,18 @@ elif [ "$USE_VNC" = 1 ]; then
     -e LUCY_GUI_VNC_AVAILABLE=1
     -e LUCY_GUI_VNC_PASSWORD="$GUI_VNC_PASSWORD"
     -e LUCY_ORIGINAL_DISPLAY="${DISPLAY:-}"
-    -e LIBGL_ALWAYS_SOFTWARE=1
-    -e GALLIUM_DRIVER=llvmpipe
     -e LUCY_GUI_NOVNC_PUBLISHED_PORT="$GUI_NOVNC_PORT"
     -e LUCY_GUI_VNC_PUBLISHED_PORT="$GUI_VNC_PORT"
+    -e XDG_RUNTIME_DIR=/tmp/runtime-root
   )
+  if [ "${LUCY_GPU_MODE:-software}" = "software" ]; then
+    X11_ARGS+=(
+      -e LIBGL_ALWAYS_SOFTWARE=1
+      -e GALLIUM_DRIVER=llvmpipe
+    )
+  else
+    echo "GUI: noVNC virtual desktop (Jetson/NVIDIA GL when __GLX_VENDOR_LIBRARY_NAME=nvidia is set)" >&2
+  fi
   GUI_PORT_ARGS=(
     -p "${GUI_VNC_PORT}:5901"
     -p "${GUI_NOVNC_PORT}:6080"
@@ -113,7 +134,7 @@ elif [ "$USE_VNC" = 1 ]; then
   echo "       Browser (noVNC):  http://localhost:${GUI_NOVNC_PORT}/vnc.html  (no password)"
   echo "       VNC Viewer:       localhost:${GUI_VNC_PORT}  (password: ${GUI_VNC_PASSWORD})"
 else
-  # AMD64: native X11 forwarding, no VNC.
+  # Native X11 forwarding (GPU path on Jetson / NVIDIA / DRI when DISPLAY is set).
   GUI_DISPLAY="${DOCKER_GUI_DISPLAY:-$DISPLAY}"
   if [ -n "$GUI_DISPLAY" ]; then
     if command -v xhost &>/dev/null; then
@@ -124,7 +145,11 @@ else
       echo "GUI: DISPLAY=:0 (host network)."
     else
       X11_ARGS=(-e DISPLAY="$GUI_DISPLAY" -v /tmp/.X11-unix:/tmp/.X11-unix:rw)
-      echo "GUI: DISPLAY=$GUI_DISPLAY"
+      if [ "${LUCY_GPU_MODE:-software}" != "software" ]; then
+        echo "GUI: DISPLAY=$GUI_DISPLAY (hardware GPU — nvidia runtime / DRI)"
+      else
+        echo "GUI: DISPLAY=$GUI_DISPLAY"
+      fi
     fi
   else
     echo "GUI: DISPLAY not set; Gazebo will run headless (RViz disabled)."
@@ -134,6 +159,8 @@ fi
 ensure_docker_image
 docker_run_platform_flags "$SCRIPT_DIR"
 docker_run_it_flags
+
+lucy_gpu_launch_message
 
 # ----------------------------------------------------------------------------
 # Port mapping (control panel + rosbridge)
@@ -190,19 +217,25 @@ DOCKER_PORT_ARGS=(
   -p "${PORT_CONTROL_PANEL}:${PORT_CONTROL_PANEL_CONTAINER}"
 )
 
+DOCKER_ENV_ARGS=(
+  -e LUCY_LCP_PUBLISHED_HOST_PORT="$PORT_CONTROL_PANEL"
+  -e LUCY_LCP_CONTAINER_PORT="$PORT_CONTROL_PANEL_CONTAINER"
+  -e LUCY_LCP_SCHEME="$LCP_SCHEME"
+)
+
 # ----------------------------------------------------------------------------
 # Container scripts
 # ----------------------------------------------------------------------------
 
-SETUP="source /opt/ros/humble/setup.bash && [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash"
+SETUP="source /opt/ros/jazzy/setup.bash"
 SOURCE_WORKSPACE="cd $WORKSPACE && source install/setup.bash"
 LAUNCH_GAZEBO_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py gazebo:=true rviz:=true"
 LAUNCH_RVIZ_BRIDGE_CP="ros2 launch lucy_bringup lucy.launch.py rviz:=true"
 
 # Preamble run inside the container: source ROS + overlay.
 read -r -d '' CONTAINER_PREAMBLE <<'EOS' || true
-set -e
-source /opt/ros/humble/setup.bash
+set -e;
+source /opt/ros/jazzy/setup.bash
 [ -f /opt/gz_ros2_control_ws/install/setup.bash ] && source /opt/gz_ros2_control_ws/install/setup.bash
 cd /workspace
 if [[ ! -f install/setup.bash ]]; then
@@ -251,17 +284,21 @@ if [ $# -eq 0 ]; then
     --name lucy_dev \
     "${DOCKER_PORT_ARGS[@]}" \
     "${GUI_PORT_ARGS[@]}" \
+    "${GPU_DOCKER_ARGS[@]}" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \
+    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
     -e LUCY_LCP_PUBLISHED_HOST_PORT="$PORT_CONTROL_PANEL" \
     -e LUCY_LCP_CONTAINER_PORT="$PORT_CONTROL_PANEL_CONTAINER" \
     -e LUCY_LCP_SCHEME="$LCP_SCHEME" \
-    "$IMAGE_NAME" -c "$CONTAINER_SCRIPT"
+    "$IMAGE_NAME" /bin/bash -c "$CONTAINER_SCRIPT"
 else
   docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" --rm \
     --name lucy_dev \
     "${DOCKER_PORT_ARGS[@]}" \
+    "${GPU_DOCKER_ARGS[@]}" \
     -v "$SCRIPT_DIR:$WORKSPACE" \
     "${X11_ARGS[@]}" \
-    "$IMAGE_NAME" -c "${SETUP} && ${SOURCE_WORKSPACE} && $*"
+    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
+    "$IMAGE_NAME" /bin/bash -c "${SETUP} && ${SOURCE_WORKSPACE} && $*"
 fi

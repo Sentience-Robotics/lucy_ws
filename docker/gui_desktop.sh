@@ -30,6 +30,17 @@ VNC_PASSWORD="${LUCY_GUI_VNC_PASSWORD:-lucy}"
 VNC_PASSWD_FILE=/tmp/.lucy_vncpasswd
 export DISPLAY=":${DISPLAY_NUM}"
 
+# When the container was started with Jetson/NVIDIA GPU passthrough, prefer the
+# NVIDIA GLX vendor so Xvfb-backed RViz/Gazebo use the Tegra GPU instead of llvmpipe.
+case "${LUCY_GPU_MODE:-}" in
+  jetson|nvidia)
+    export __GLX_VENDOR_LIBRARY_NAME=nvidia
+    export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json
+    ;;
+esac
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-root}"
+mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
 log() { echo "[gui_desktop] $*"; }
 # Match by exact process name (comm), not full command line, so these checks can't
 # accidentally match the surrounding shell whose argv may mention these binaries.

@@ -1,6 +1,6 @@
-# Lucy ROS 2 workspace (Humble)
+# Lucy ROS 2 workspace (Jazzy)
 
-Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Humble, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host (plus **`xhost`** on Linux for GUI forwarding; on macOS the GUI is viewed over VNC with no extra software — see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo)).
+Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Jazzy, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host (plus **`xhost`** on Linux for GUI forwarding; on macOS the GUI is viewed over VNC with no extra software — see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo)).
 
 ## Requirements
 
@@ -32,7 +32,7 @@ Then open a terminal and move into the project folder before running anything:
 cd lucy_ws
 ```
 
-> The manager (`Lucy.py`) must be run **from the repository root** — it reads `config/`, `Dockerfile.humble` and mounts the workspace relative to that directory.
+> The manager (`Lucy.py`) must be run **from the repository root** — it reads `config/`, `docker/Dockerfile.jazzy` and mounts the workspace relative to that directory.
 
 ## Quick start
 
