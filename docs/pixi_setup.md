@@ -18,7 +18,7 @@ When adding or changing workspace packages:
 1. Read `package.xml` / `CMakeLists.txt` for new `depend` / `find_package` entries.
 2. Check whether RoboStack provides `ros-jazzy-<name>` on [prefix.dev/robostack-jazzy](https://prefix.dev/robostack-jazzy).
 3. If available, add to `pixi.toml` under `[feature.ros.dependencies]`.
-4. If not available (e.g. `micro_ros_agent`, `audio_common`), add a clone entry to `config/repos.json` (use `"optional": true` when the stack works without it).
+4. If not available (e.g. `micro_ros_agent`), add a clone entry to `config/repos.json` (use `"optional": true` when the stack works without it).
 5. Regenerate the lock and install:
 
 ```bash
@@ -35,7 +35,7 @@ pixi install          # updates pixi.lock for every platform in pixi.toml
 |----------|-------------|
 | **Pixi / RoboStack** | Standard ROS Jazzy packages (`ros-jazzy-desktop`, `ros-jazzy-ros-gz`, controllers, rosbridge, etc.) |
 | **Clone to `src/`** | Packages not on RoboStack, forks, or workspace-specific repos (`lucy_ros_packages`, `inmoov_urdf`) |
-| **Optional `src/` clones** | `micro_ros_agent`, `audio_common` — not on RoboStack; cloned by default for release/CI parity but **not required** for core bringup or the control panel. Entries carry `"optional": true` in `repos.json`; omit from `repos.json.local` if you do not need them |
+| **Optional `src/` clones** | `micro_ros_agent` — not on RoboStack; cloned by default for release/CI parity but **not required** for core bringup or the control panel. Entries carry `"optional": true` in `repos.json`; omit from `repos.json.local` if you do not need them |
 | **Local build** | RealSense — not in Pixi; run `./scripts/build_local_realsense.sh` **after** a normal `pixi run build` (or `LUCY_BUILD_REALSENSE=1 ./install.sh` at end of install) |
 
 ### Mutex pin
