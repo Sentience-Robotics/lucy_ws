@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 
-import curses
+try:
+    import curses
+except ImportError:
+    curses = None  # Windows: no _curses; TUI helpers import-only on other platforms
 import os
 import sys
 import subprocess
 import threading
 import time
 import json
+import shlex
+from pathlib import Path
 
-CONFIG_DIR = "/workspace/config"
-DEFAULT_CONFIG_FILE = os.path.join(CONFIG_DIR, "launcher_config.json")
-LOCAL_CONFIG_FILE = os.path.join(CONFIG_DIR, "launcher_config.json.local")
-STATE_FILE = "/tmp/launcher_state.json"
-# Persisted across container restarts (lives on the bind-mounted workspace, not
-# /tmp): the set of packages the user last applied, so ticks are remembered.
-SELECTION_FILE = "/workspace/.lucy_launcher_state.json"
+WORKSPACE_ROOT = Path(__file__).resolve().parent
+CONFIG_DIR = WORKSPACE_ROOT / "config"
+DEFAULT_CONFIG_FILE = CONFIG_DIR / "launcher_config.json"
+LOCAL_CONFIG_FILE = CONFIG_DIR / "launcher_config.json.local"
+STATE_FILE = WORKSPACE_ROOT / ".lucy_launcher_modifiers.json"
+SELECTION_FILE = WORKSPACE_ROOT / ".lucy_launcher_state.json"
+TMUX_SESSION = os.environ.get("LUCY_TMUX_SESSION", "lucy_ws")
 MIN_TERM_HEIGHT = 22
 MIN_TERM_WIDTH = 65
 
@@ -27,19 +32,19 @@ _pkg_stop_times = {}    # pkg_id -> float, timestamp when an async stop was issu
 
 # Tearing down the core window with `tmux kill-window` alone orphans the GUI
 # processes ros2 launch spawned (notably `gz sim`), so they keep showing on the
-# VNC desktop. Send SIGINT first for a clean ros2 launch shutdown, wait for the
+# Native GUI. Send SIGINT first for a clean ros2 launch shutdown, wait for the
 # sim/RViz to exit, force-kill any stragglers, then remove the window.
 CORE_TEARDOWN = (
-    "tmux send-keys -t lucy_ws:core C-c 2>/dev/null; "
+    f"tmux send-keys -t {TMUX_SESSION}:core C-c 2>/dev/null; "
     "for _ in $(seq 1 12); do "
     "pgrep -f '[g]z sim' >/dev/null 2>&1 || pgrep -x rviz2 >/dev/null 2>&1 || break; sleep 0.25; "
     "done; "
     "pkill -f '[g]z sim' 2>/dev/null; pkill -x rviz2 2>/dev/null; "
-    "tmux kill-window -t lucy_ws:core 2>/dev/null"
+    f"tmux kill-window -t {TMUX_SESSION}:core 2>/dev/null"
 )
 
 def get_dev_mode():
-    env_path = "/workspace/.env"
+    env_path = WORKSPACE_ROOT / ".env"
     if not os.path.exists(env_path):
         return False
     with open(env_path, "r") as f:
@@ -48,15 +53,59 @@ def get_dev_mode():
                 return line.strip().split("=")[1].lower() == "true"
     return False
 
-def is_in_docker():
-    return os.path.exists('/.dockerenv')
+def load_workspace_env():
+    """Load optional .env into os.environ (ports, GUI overrides, DEV=)."""
+    env_path = WORKSPACE_ROOT / ".env"
+    if not env_path.exists():
+        return
+    with open(env_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            val = val.strip().strip('"').strip("'")
+            os.environ[key] = val
+
+# Forward into tmux panes — GUI processes do not inherit the launcher session env.
+_GUI_ENV_KEYS = (
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
+    "QT_QPA_PLATFORM",
+    "QT_XCB_GL_INTEGRATION",
+    "LIBGL_ALWAYS_SOFTWARE",
+    "MESA_LOADER_DRIVER_OVERRIDE",
+    "LIBGL_DRIVERS_PATH",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "__EGL_VENDOR_LIBRARY_FILENAMES",
+    "GZ_IP",
+)
+
+def _gui_env_exports() -> str:
+    parts = []
+    for key in _GUI_ENV_KEYS:
+        val = os.environ.get(key)
+        if val:
+            parts.append(f"export {key}={shlex.quote(val)}")
+    return "; ".join(parts)
 
 def is_in_tmux():
     return 'TMUX' in os.environ
 
+
+def needs_tmux_session():
+    """tmux launcher is used on Linux/macOS; Windows runs launcher.py directly."""
+    return sys.platform not in ('win32', 'cygwin', 'msys') and os.name != 'nt'
+
 def _launcher_config_path():
     """config/launcher_config.json.local (gitignored) overrides the tracked file."""
-    return LOCAL_CONFIG_FILE if os.path.exists(LOCAL_CONFIG_FILE) else DEFAULT_CONFIG_FILE
+    return str(LOCAL_CONFIG_FILE if LOCAL_CONFIG_FILE.exists() else DEFAULT_CONFIG_FILE)
 
 def load_config():
     config_path = _launcher_config_path()
@@ -66,7 +115,7 @@ def load_config():
         return json.load(f)
 
 def load_state():
-    if not os.path.exists(STATE_FILE):
+    if not STATE_FILE.is_file():
         return {"modifiers": []}
     with open(STATE_FILE, 'r') as f:
         try:
@@ -96,6 +145,48 @@ def save_selection(selected_ids):
     except OSError:
         pass
 
+NIX_GL_ENV_SCRIPT = WORKSPACE_ROOT / "scripts" / "nix_gl_env.sh"
+
+def _nix_gl_source() -> str:
+    """Source hook for NixOS: prepend host Mesa before Pixi conda GL (no-op elsewhere)."""
+    if os.environ.get("LUCY_NIX_GL", "auto").lower() in ("0", "false", "no", "off"):
+        return ""
+    if not NIX_GL_ENV_SCRIPT.is_file():
+        return ""
+    return f"source {shlex.quote(str(NIX_GL_ENV_SCRIPT))}; "
+
+def _pixi_workspace_script(user_cmd: str) -> str:
+    """Shell script body: workspace root + Pixi env (RoboStack + colcon overlay)."""
+    user_cmd = user_cmd.strip()
+    nix_gl = _nix_gl_source()
+    if user_cmd.startswith("pixi "):
+        pixi_part = user_cmd
+    elif nix_gl or any(op in user_cmd for op in (";", "&&", "||", "|", "&")):
+        pixi_part = f"pixi run -- bash -lc {shlex.quote(nix_gl + user_cmd)}"
+    elif user_cmd.startswith("ros2 "):
+        pixi_part = f"pixi run -- bash -lc {shlex.quote(nix_gl + user_cmd)}"
+    else:
+        pixi_part = f"pixi run -- {user_cmd}"
+    body = f"cd {WORKSPACE_ROOT} && {pixi_part}"
+    exports = _gui_env_exports()
+    if exports:
+        body = f"{exports}; {body}"
+    return body
+
+def _tmux_new_pixi_window(window: str, user_cmd: str, remain_on_exit: bool = False) -> str:
+    """Open a tmux window that runs user_cmd inside pixi run (tmux panes don't inherit pixi)."""
+    inner = f"bash -lc {shlex.quote(_pixi_workspace_script(user_cmd))}"
+    cmd = f"tmux new-window -d -t {TMUX_SESSION} -n {window} {inner}"
+    if remain_on_exit:
+        cmd += f"; tmux set-window-option -t {TMUX_SESSION}:{window} remain-on-exit on"
+    return cmd
+
+def _complex_package_start(pkg) -> str:
+    """Legacy complex {start,stop,is_running} entries — route through Pixi when possible."""
+    if pkg.id == "control_panel":
+        return _tmux_new_pixi_window("control_panel", "pixi run panel-dev", remain_on_exit=True)
+    return pkg.command["start"]
+
 def run_shell_command(cmd, capture_output=False):
     if capture_output:
         return subprocess.run(cmd, shell=True, capture_output=True, text=True).returncode == 0
@@ -118,7 +209,7 @@ def _pane_exit_status(pkg_id):
     remain-on-exit keeps the dead pane (and its output) so we can read the code:
     0 is a clean exit (STOPPED), anything else (incl. signal death) a crash (CRASHED)."""
     out = subprocess.run(
-        f"tmux list-panes -t lucy_ws:{pkg_id} -F '#{{pane_dead}}:#{{pane_dead_status}}' 2>/dev/null",
+        f"tmux list-panes -t {TMUX_SESSION}:{pkg_id} -F '#{{pane_dead}}:#{{pane_dead_status}}' 2>/dev/null",
         shell=True, capture_output=True, text=True,
     ).stdout
     for line in out.splitlines():
@@ -152,13 +243,11 @@ class Package:
         # Without it, a package is considered "ready" the instant its window exists.
         self.readiness_check = data.get('readiness_check')
         self.readiness_timeout = data.get('readiness_timeout', LOADING_TIMEOUT)
-        # GUI app that renders to the in-container VNC desktop (Gazebo/RViz/rqt):
-        # drives the "(VNC)" hint and skips the tmux auto-switch on launch.
+        # Legacy config fields (VNC removed); kept for JSON compat, unused.
         self.runs_on_vnc = data.get('runs_on_vnc', False)
-        # Toggling this package switches the in-container virtual display on/off.
         self.display_switch = data.get('display_switch', False)
-        # Access URL shown after [RUNNING] (control panel / VNC endpoints). May
-        # reference env vars as ${VAR} — expanded at render time.
+        # Access URL shown after [RUNNING] (e.g. control panel). May reference env
+        # vars as ${VAR} — expanded at render time.
         self.url = data.get('url')
         # Navigation hint for non-web packages (e.g. "Ctrl-B W" for tmux windows).
         self.nav_hint = data.get('nav_hint', '')
@@ -210,56 +299,11 @@ class Package:
 def _env_enabled(var_name):
     """True when a package has no env gate, or its `requires_env` var is truthy.
 
-    Lets entries like the VNC/noVNC viewers appear only where they make sense
-    (the in-container virtual desktop sets LUCY_GUI_VNC=1; a normal Linux host
-    with native X11 leaves it unset, hiding them)."""
+    Optional packages can gate on an env var via `requires_env` in launcher_config."""
     if not var_name:
         return True
     return os.environ.get(var_name, "").strip().lower() in ("1", "true", "yes")
 
-
-def _gui_desktop_available():
-    return _env_enabled("LUCY_GUI_VNC_AVAILABLE")
-
-
-def _selection_needs_gui_display(state):
-    """True when a ticked package renders to the in-container virtual desktop."""
-    return any(
-        p.selected and getattr(p, "runs_on_vnc", False)
-        for p in state.packages
-    )
-
-
-def _ensure_gui_display(state):
-    """Start Xvfb (+ fluxbox) when RViz/Gazebo are selected on arm64/VNC hosts."""
-    if not _gui_desktop_available() or not _selection_needs_gui_display(state):
-        return
-    run_shell_command("bash /workspace/docker/gui_desktop.sh display start")
-
-
-def _core_launch_display_prefix(state):
-    """DISPLAY= prefix for core launch when GL apps use the virtual desktop."""
-    if not _gui_desktop_available() or not _selection_needs_gui_display(state):
-        return ""
-    num = os.environ.get("LUCY_GUI_DISPLAY_NUM", "99")
-    return f"DISPLAY=:{num} "
-
-
-def _sync_novnc_for_gui(state):
-    """Auto-tick noVNC when RViz/Gazebo need the in-container desktop (arm64/Jetson)."""
-    novnc = state.get_by_id("novnc")
-    if not novnc or not _gui_desktop_available():
-        return
-    headless = state.get_by_id("headless")
-    if headless and headless.selected:
-        return
-    if any(
-        p.selected and p.display_switch and p.id != "novnc"
-        for p in state.packages
-    ):
-        return
-    if _selection_needs_gui_display(state):
-        novnc.selected = True
 
 def _ros_pkg_installed(pkg_name):
     """True when a ROS package is built in the workspace overlay (install/<pkg>).
@@ -268,7 +312,7 @@ def _ros_pkg_installed(pkg_name):
     actually built show up — mirrors lucy.launch.py's runtime discovery."""
     if not pkg_name:
         return True
-    return os.path.isdir(os.path.join("/workspace", "install", pkg_name))
+    return (WORKSPACE_ROOT / "install" / pkg_name).is_dir()
 
 def _pkg_visible(pkg_config, dev_mode):
     """Whether a package appears in the launcher: hidden when it is `dev_only` and
@@ -393,15 +437,6 @@ def _has_unapplied_changes(state):
             return True
     return False
 
-def _vnc_hint(pkg, state):
-    """'(VNC)' for GUI packages when the virtual desktop is active (a display_switch
-    package is running). Tells the user the window appears in the VNC viewer."""
-    if not pkg.runs_on_vnc or not pkg.selected:
-        return ""
-    if any(p.display_switch and p.is_running for p in state.packages):
-        return "(VNC)"
-    return ""
-
 def _nav_hint(pkg):
     """Navigation hint for packages without a web URL (e.g. tmux terminal windows)."""
     if not pkg.nav_hint or not pkg.is_running:
@@ -443,7 +478,7 @@ def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hi
             col += len(text)
         except curses.error:
             pass
-    # '(VNC)' reminder after the status label.
+    # Navigation hint after the status label (e.g. Ctrl-B W).
     if hint:
         text = f" {hint}"
         try:
@@ -470,7 +505,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
     stdscr.clear()
     title = "Lucy Control Center"
     stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
-    stdscr.addstr(h - 1, 2, "Enter: Apply | Space: Toggle | X: Stop All & Exit Docker", curses.A_BOLD)
+    stdscr.addstr(h - 1, 2, "Enter: Apply | Space: Toggle | X: Stop All & Exit", curses.A_BOLD)
 
     if status_msg:
         stdscr.addstr(h - 2, 2, status_msg, curses.A_BOLD)
@@ -507,7 +542,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
             else:
                 indent = ""
             status = get_pkg_status(p)
-            hint = _vnc_hint(p, state) or _nav_hint(p)
+            hint = _nav_hint(p)
             _draw_pkg_row(stdscr, row + i, 4, prefix, indent, checkbox, p.name, attr,
                           status, hint, _status_url(p))
         row += len(items) + 1
@@ -554,36 +589,6 @@ def apply_changes(state):
                  _pkg_start_times.pop(mod.id, None)
                  _intended_running.discard(mod.id)
 
-    # Display switch: if a VNC tool (display_switch package) is being toggled,
-    # restart core first so GL apps open on the right DISPLAY after the virtual
-    # desktop starts or stops. VNC tools are applied synchronously here so the
-    # display is ready before core relaunches in the normal start pass below.
-    display_switch_pkgs = [p for p in state.packages if p.display_switch]
-    if any(p.selected != p.is_running for p in display_switch_pkgs):
-        if core_pkg and core_pkg.is_running:
-            run_shell_command(CORE_TEARDOWN)
-            save_state({"modifiers": []})
-            core_pkg.is_running = False
-            _pkg_start_times.pop('core', None)
-            _intended_running.discard('core')
-            for mod in state.packages:
-                if mod.type == 'modifier':
-                    mod.is_running = False
-                    _pkg_start_times.pop(mod.id, None)
-                    _intended_running.discard(mod.id)
-        for pkg in display_switch_pkgs:
-            if pkg.selected and not pkg.is_running:
-                run_shell_command(pkg.command['start'])
-                pkg.is_running = True
-                _pkg_start_times[pkg.id] = time.time()
-                _intended_running.add(pkg.id)
-            elif not pkg.selected and pkg.is_running:
-                run_shell_command(pkg.command['stop'])
-                pkg.is_running = False
-                _pkg_stop_times.pop(pkg.id, None)
-                _pkg_start_times.pop(pkg.id, None)
-                _intended_running.discard(pkg.id)
-
     # First Pass: Stop processes that should be turned off (or were forced off).
     # Stops run asynchronously so the TUI stays responsive and can show STOPPING
     # while a slow shutdown runs; the package leaves STOPPING once its probe reports
@@ -602,7 +607,7 @@ def apply_changes(state):
                         _pkg_start_times.pop(mod.id, None)
                         _intended_running.discard(mod.id)
             elif pkg.type in ['tool', 'interface']:
-                run_shell_command_async(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+                run_shell_command_async(f"tmux kill-window -t {TMUX_SESSION}:{pkg.id} 2>/dev/null")
             elif pkg.type == 'modifier' and 'stop' in pkg.lifecycle_hooks:
                 run_shell_command_async(pkg.lifecycle_hooks['stop'])
             else:
@@ -616,20 +621,18 @@ def apply_changes(state):
 
     # Second Pass: Start processes that should be turned on (never re-launch one that is still shutting down).
     # A crashed service (non-zero exit) is relaunched too, after reaping the dead window; a clean exit (STOPPED) is left alone.
-    _ensure_gui_display(state)
-    display_prefix = _core_launch_display_prefix(state)
     for pkg in state.packages:
          crashed = pkg.pane_dead and pkg.pane_exit_status != 0
          if pkg.selected and pkg.id not in _pkg_stop_times and (not pkg.is_running or crashed):
             if pkg.pane_dead:
-                run_shell_command(f"tmux kill-window -t lucy_ws:{pkg.id} 2>/dev/null")
+                run_shell_command(f"tmux kill-window -t {TMUX_SESSION}:{pkg.id} 2>/dev/null")
                 pkg.pane_dead = False
                 pkg.is_running = False
             if pkg.is_complex_command():
-                run_shell_command(pkg.command['start'])
+                run_shell_command(_complex_package_start(pkg))
                 # Keep a crashed service's window open with its error (see core).
                 if pkg.readiness_check:
-                    run_shell_command(f"tmux set-window-option -t lucy_ws:{pkg.id} remain-on-exit on 2>/dev/null")
+                    run_shell_command(f"tmux set-window-option -t {TMUX_SESSION}:{pkg.id} remain-on-exit on 2>/dev/null")
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
             elif pkg.type == 'core':
@@ -637,10 +640,8 @@ def apply_changes(state):
                 selected_modifiers = [p for p in state.packages if p.type == 'modifier' and p.selected]
                 modifier_args = [p.command for p in selected_modifiers]
                 modifier_ids = [p.id for p in selected_modifiers]
-                full_cmd = f"{display_prefix}{base_cmd} {' '.join(modifier_args)}"
-                # remain-on-exit keeps the window (and the crash output) open if
-                # ros2 launch dies, so the failure is visible and detectable.
-                run_shell_command(f"tmux new-window -d -t lucy_ws -n core '{full_cmd}'; tmux set-window-option -t lucy_ws:core remain-on-exit on")
+                full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
+                run_shell_command(_tmux_new_pixi_window("core", full_cmd, remain_on_exit=True))
                 save_state({"modifiers": modifier_ids})
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
@@ -649,27 +650,26 @@ def apply_changes(state):
                     _intended_running.add(mod.id)
             elif pkg.type in ['tool', 'interface']:
                 if pkg.type == 'interface':
-                    # remain-on-exit leaves the dead pane so the launcher can read the exit code (STOPPED vs CRASHED).
-                    # A wrapper shell on `read` would keep the pane alive and mask the exit.
-                    run_shell_command(
-                        f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}'; "
-                        f"tmux set-window-option -t lucy_ws:{pkg.id} remain-on-exit on"
-                    )
+                    run_shell_command(_tmux_new_pixi_window(pkg.id, pkg.command, remain_on_exit=True))
                 else:
-                    run_shell_command(f"tmux new-window -d -t lucy_ws -n {pkg.id} '{pkg.command}; echo \"--- Process finished, press any key to close ---\"; read'")
+                    run_shell_command(
+                        _tmux_new_pixi_window(
+                            pkg.id,
+                            f'{pkg.command}; echo "--- Process finished, press any key to close ---"; read',
+                        )
+                    )
                 # Only auto-switch to tool windows (e.g. console), not interfaces which manage their own terminal visibility (lucy_cli, control_panel).
-                if not pkg.runs_on_vnc and pkg.type == 'tool':
+                if pkg.type == 'tool':
                     last_launched_window = pkg.id
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
             pkg.is_running = True
 
     if last_launched_window:
-        run_shell_command(f"tmux select-window -t lucy_ws:{last_launched_window}")
+        run_shell_command(f"tmux select-window -t {TMUX_SESSION}:{last_launched_window}")
 
 def restore_selection(state):
-    """Pre-tick the packages the user last applied (persisted), so they don't have
-    to re-select them after a restart. Running packages stay ticked regardless."""
+    """Pre-tick packages from the last applied selection (.lucy_launcher_state.json)."""
     saved = load_selection()
     if saved is None:
         return
@@ -677,14 +677,12 @@ def restore_selection(state):
     for pkg in state.packages:
         if pkg.requires_pkg:
             continue
-        pkg.selected = (pkg.id in saved) or pkg.is_running
-    # Robot radios: at most one ticked (saved choice wins over stale is_running).
+        pkg.selected = pkg.id in saved
+    # Robot radios: exactly one ticked when saved names a robot.
     chosen = next((p for p in robots if p.id in saved), None)
-    if chosen is None:
-        running = [p for p in robots if p.is_running]
-        chosen = running[0] if len(running) == 1 else None
-    for pkg in robots:
-        pkg.selected = pkg is chosen
+    if chosen is not None:
+        for pkg in robots:
+            pkg.selected = pkg is chosen
 
 def default_robot_selection(state):
     """Auto-tick a robot-package modifier when none is selected yet (mirrors
@@ -719,7 +717,6 @@ def main(stdscr):
     state = LauncherState(load_config())
     restore_selection(state)
     default_robot_selection(state)
-    _sync_novnc_for_gui(state)
     current_idx = 0
     error_msg = None
     status_msg = None
@@ -735,11 +732,11 @@ def main(stdscr):
         if lcp_pkg:
             lcp_pkg.selected = True
         default_robot_selection(state)
-        _sync_novnc_for_gui(state)
         apply_changes(state)
+        save_selection({p.id for p in state.packages if p.selected})
         status_msg = "Starting default services for production mode..."
-        state = LauncherState(load_config())
-        restore_selection(state)
+        status_msg_until = time.time() + 3.0
+        state.refresh_status()
 
     while True:
         try:
@@ -793,11 +790,10 @@ def main(stdscr):
                 save_selection({p.id for p in state.packages if p.selected})
                 status_msg = "Configuration Applied!"
                 status_msg_until = time.time() + 2.0
-                state = LauncherState(load_config())
-                restore_selection(state)
+                state.refresh_status()
             elif key in [ord('x'), ord('X')]:
                 h, w = stdscr.getmaxyx()
-                stdscr.addstr(h - 2, 2, "Stop all processes and exit Docker? (y/n)", curses.A_BOLD | curses.color_pair(2))
+                stdscr.addstr(h - 2, 2, "Stop all processes and exit? (y/n)", curses.A_BOLD | curses.color_pair(2))
                 stdscr.refresh()
                 confirm_key = stdscr.getch()
                 if confirm_key in [ord('y'), ord('Y')]:
@@ -812,9 +808,14 @@ def main(stdscr):
             continue
 
 if __name__ == "__main__":
-    if not is_in_docker() or not is_in_tmux():
-        print("Error: This script must be run inside the 'lucy_ws' tmux session within the Docker container.", file=sys.stderr)
+    if curses is None:
+        print("Error: launcher TUI requires curses (not available on this platform).", file=sys.stderr)
         sys.exit(1)
+    load_workspace_env()
+    if needs_tmux_session() and not is_in_tmux():
+        print(f"Error: launcher.py must run inside the {TMUX_SESSION} tmux session (./launch_lucy.sh).", file=sys.stderr)
+        sys.exit(1)
+    os.chdir(WORKSPACE_ROOT)
 
     status, state = None, None
     try:
@@ -833,10 +834,11 @@ if __name__ == "__main__":
                     run_shell_command(pkg.command['stop'])
                 elif 'stop' in pkg.lifecycle_hooks:
                      run_shell_command(pkg.lifecycle_hooks['stop'])
-        if os.path.exists(STATE_FILE):
-            os.remove(STATE_FILE)
-        print("Terminating tmux session...")
-        time.sleep(0.5)
-        run_shell_command("tmux kill-session -t lucy_ws 2>/dev/null")
+        if STATE_FILE.is_file():
+            STATE_FILE.unlink()
+        if needs_tmux_session():
+            print("Terminating tmux session...")
+            time.sleep(0.5)
+            run_shell_command(f"tmux kill-session -t {TMUX_SESSION} 2>/dev/null")
     else:
         pass
