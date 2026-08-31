@@ -24,7 +24,7 @@ def _gui_env_exports() -> str:
 
 
 def _nix_gl_source() -> str:
-    """Source hook for NixOS: prepend host Mesa before Pixi conda GL (no-op elsewhere)."""
+    """Source hook for host GL (Jetson Tegra / NixOS Mesa) before Pixi conda GL."""
     if os.environ.get("LUCY_NIX_GL", "auto").lower() in ("0", "false", "no", "off"):
         return ""
     if not NIX_GL_ENV_SCRIPT.is_file():

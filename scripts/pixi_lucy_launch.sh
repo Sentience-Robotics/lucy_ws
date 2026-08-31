@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run lucy_bringup inside Pixi with NixOS GL env (scripts/nix_gl_env.sh).
+# Run lucy_bringup inside Pixi with host GL env (scripts/nix_gl_env.sh).
 #
 # Usage:
 #   pixi run core
