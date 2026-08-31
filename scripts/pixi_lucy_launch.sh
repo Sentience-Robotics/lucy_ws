@@ -13,6 +13,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/nix_gl_env.sh
 source "${ROOT}/scripts/nix_gl_env.sh"
+# shellcheck source=scripts/dds_env.sh
+source "${ROOT}/scripts/dds_env.sh"
 ROBOT="${LUCY_ROBOT_PACKAGE:-inmoov_urdf}"
 cd "${ROOT}"
 exec ros2 launch lucy_bringup lucy.launch.py "robot_package:=${ROBOT}" "$@"
