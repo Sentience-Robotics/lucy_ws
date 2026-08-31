@@ -74,7 +74,7 @@ Or Git Bash: `./launch_lucy.sh`
 
 ## Using the Lucy launcher
 
-After **`Launch`**, enable **Core + Control Panel** in the launcher. Once it is running, the **Lucy Control Panel is accessible in your browser at [http://localhost:4004](http://localhost:4004)** (or the next free port if 4004 is already taken). The launcher also shows the exact URL next to the Control Panel entry once it's up.
+**Launch** starts a **tmux** session (Linux/macOS) and the **Lucy Control Center** TUI (`python -m launcher`, or `python launcher.py` / `./launch_lucy.sh`):
 
 | Key | Action |
 |-----|--------|

@@ -7,7 +7,7 @@
 #   1. Prepends host GL libs (nixGL wrapper, or /run/opengl-driver/lib)
 #   2. Sets Mesa EGL vendor + GZ_IP for OGRE / Gazebo transport
 #
-# Usage (via scripts/pixi_lucy_launch.sh or launcher.py):
+# Usage (via scripts/pixi_lucy_launch.sh or python -m launcher):
 #   pixi run sim
 #
 # Do not set LUCY_NIX_GL=0 on NixOS — EGL vars alone are not enough.

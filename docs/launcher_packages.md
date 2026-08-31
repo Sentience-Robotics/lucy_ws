@@ -4,7 +4,7 @@ The launcher's configuration is entirely driven by the `launcher_config.json` fi
 
 ### Local launcher overrides (`config/launcher_config.json.local`)
 
-To customize the launcher package list (add experimental tools, tweak commands, or hide entries) without editing the tracked `config/launcher_config.json`, create **`config/launcher_config.json.local`**. When present it is used instead of `launcher_config.json` by `launcher.py`, and it is gitignored so overrides are never committed.
+To customize the launcher package list (add experimental tools, tweak commands, or hide entries) without editing the tracked `config/launcher_config.json`, create **`config/launcher_config.json.local`**. When present it is used instead of `launcher_config.json` by the launcher (`python -m launcher` or `python launcher.py`), and it is gitignored so overrides are never committed.
 
 Use the same structure as `launcher_config.json` — copy the file and edit as needed, or include only the `packages` entries you want to change if you prefer a full replacement (the local file replaces the tracked file entirely, it is not merged).
 
@@ -40,16 +40,27 @@ Every package entry in `config/launcher_config.json` uses the following fields t
 | `command` | `string` or `object` | The shell command to execute. <br> - **For `"core"`**: The base command (e.g. `ros2 launch ...`). <br> - **For `"modifier"`**: The argument string appended to the core command. <br> - **For `"interface"` / `"tool"`**: A simple string executed in a new tmux window, or a complex object containing `"start"`, `"stop"`, and `"is_running"` shell commands for custom background handling (like the web control panel). |
 | `default_on` | `boolean` | If set to `true`, the package will be selected by default when the launcher boots up (currently unused as the launcher loads an empty initial state, but available for future functionality). |
 
-### Under the Hood (`launcher.py` and `launch_lucy.sh`)
+### Under the Hood (`launcher` and `launch_lucy.sh`)
 
 When you run `./launch_lucy.sh`:
 
 1. It ensures the workspace is built (`install/setup.bash` exists).
 2. On Linux/macOS with **host tmux**, it starts or attaches to a **tmux** session named `lucy_ws`.
-3. The main window runs `pixi run -- python launcher.py` (Control Center TUI).
+3. The main window runs `pixi run -- python -m launcher` (Control Center TUI).
 
 Package commands in other tmux windows are wrapped in `pixi run` so each pane gets RoboStack and the colcon overlay. Display and OpenGL-related variables from your shell and `.env` are forwarded into those panes.
 
-When you apply changes in `launcher.py`:
+When you apply changes in the launcher:
 - **Core + Modifiers:** The script takes the core command, appends all active modifier commands, and spins up a dedicated `core` tmux window.
 - **Interfaces / Tools:** The script spins up a new tmux window named after the package's `id` and executes its command via Pixi. Legacy complex `{start, stop, is_running}` objects are still supported for local overrides.
+
+### Stopping packages and exiting
+
+On **Linux and macOS**, services run in **tmux** windows. On **Windows** (Git Bash, no tmux), the same launcher TUI runs but process detection uses cross-platform logic; orphan cleanup is scoped to this workspace path so other projects are not affected.
+
+- **Q**, **X**, or **Esc** — prompts *Stop all processes and exit?*; on **y**, every running package is torn down, then workspace-scoped orphans are killed in a **single cleanup pass** (including **Gazebo `gz sim`**, which often appears as **ruby** in `top` because Pixi wraps it), then the tmux session ends.
+- Short-lived **`gz sim server`** / **`gz sim gui`** processes often have no workspace path in their command line; cleanup also checks **cwd**, **Pixi/Conda env**, and **`GZ_SIM_*`** variables so they are still reaped safely.
+- **Enter (Apply)** with boxes unticked — stops those packages asynchronously; orphan cleanup runs after each stop completes.
+- **Ctrl+C** outside the TUI — also triggers a full stop on exit.
+
+Unticking a single package (e.g. Control Panel) sends **Ctrl+C** to its tmux window, waits briefly, removes the window, then reaps any workspace-scoped stragglers (`vite`, `gz sim`, `rosbridge`, etc.).

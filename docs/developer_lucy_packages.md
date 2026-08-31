@@ -70,7 +70,7 @@ Developer CLI equivalents:
 | `Lucy.exe` | `./launch_lucy.sh` |
 | `Lucy.exe --cli build-only` | `./install.sh --build-only` |
 
-Launch runs via Git Bash (`bash launch_lucy.sh`). Without tmux, the Control Center runs directly (`pixi run -- python launcher.py`).
+Launch runs via Git Bash (`bash launch_lucy.sh`). Without tmux, the Control Center runs directly (`pixi run -- python -m launcher`).
 
 ### Workspace install (`install.sh`)
 
