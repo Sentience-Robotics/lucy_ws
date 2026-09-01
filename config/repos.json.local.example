@@ -24,6 +24,12 @@
       "optional": true,
       "url_https": "https://github.com/micro-ROS/micro-ROS-Agent.git",
       "url_ssh": "git@github.com:micro-ROS/micro-ROS-Agent.git"
+    },
+    {
+      "name": "thais_urdf",
+      "branch": "dev",
+      "url_https": "https://github.com/Sentience-Robotics/thais_urdf.git",
+      "url_ssh": "git@github.com:Sentience-Robotics/thais_urdf.git"
     }
   ]
 }

@@ -1,0 +1,121 @@
+[workspace]
+name = "lucy_ws"
+description = "Lucy / InMoov ROS 2 Jazzy workspace (RoboStack + Pixi)"
+channels = [
+  "https://prefix.dev/conda-forge",
+  "https://prefix.dev/robostack-jazzy",
+]
+platforms = ["linux-64", "linux-aarch64", "osx-arm64", "osx-64", "win-64"]
+
+# --- shared build / tooling (default feature) ---
+[dependencies]
+python = "*"
+compilers = "*"
+binutils = "*"
+cmake = ">=3.22,<4"
+ninja = "*"
+pkg-config = "*"
+
+colcon-common-extensions = "*"
+
+nodejs = ">=20"
+yarn = "*"
+
+pytest = "*"
+pytest-cov = "*"
+pytest-mock = "*"
+
+# --- ROS Jazzy stack (RoboStack channel) ---
+[feature.ros]
+channels = ["https://prefix.dev/robostack-jazzy"]
+
+[feature.ros.dependencies]
+# Pin distro mutex so all RoboStack packages come from the same rebuild cycle.
+# See: https://github.com/RoboStack/ros-jazzy/issues/125
+ros2-distro-mutex = "0.15.*"
+ros-jazzy-desktop = "*"
+ros-jazzy-ros-gz = "*"
+ros-jazzy-rosbridge-suite = "*"
+ros-jazzy-ros2-control = "*"
+ros-jazzy-ros2-controllers = "*"
+ros-jazzy-gz-ros2-control = "*"
+ros-jazzy-simulation-interfaces = "*"
+ros-jazzy-backward-ros = "*"
+
+# RealSense is not a Pixi dependency — build locally when needed:
+#   ./scripts/build_local_realsense.sh  (or LUCY_BUILD_REALSENSE=1 ./install.sh)
+
+[feature.ros.target.osx-arm64.dependencies]
+pygraphviz = "*"
+ros-jazzy-rmw-cyclonedds-cpp = "*"
+
+[feature.ros.target.osx-64.dependencies]
+pygraphviz = "*"
+ros-jazzy-rmw-cyclonedds-cpp = "*"
+
+[feature.ros.target.osx-arm64.activation]
+env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
+
+[feature.ros.target.osx-64.activation]
+env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
+
+# --- colcon build tasks (RoboStack Getting Started pattern) ---
+[feature.build.target.unix.tasks]
+build = { cmd = "rm -rf build/camera_ros && colcon build --symlink-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev", inputs = ["src"] }
+build-release = "colcon build --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
+clean = "rm -rf build install log"
+test = { cmd = "bash scripts/ci_colcon_test.sh", depends-on = ["build"] }
+test-only = "bash scripts/ci_colcon_test.sh"
+
+[feature.build.target.win-64.tasks]
+build = { cmd = "rm -rf build/camera_ros && colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev", inputs = ["src"] }
+build-release = "colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
+clean = "rm -rf build install log"
+test = { cmd = "bash scripts/ci_colcon_test.sh --merge-install", depends-on = ["build"] }
+test-only = { cmd = "bash scripts/ci_colcon_test.sh --merge-install" }
+
+[feature.panel.tasks]
+panel-install = { cmd = "yarn install", cwd = "src/lucy_control_panel" }
+panel-dev = { cmd = "yarn dev", cwd = "src/lucy_control_panel" }
+panel-build = { cmd = "yarn build", cwd = "src/lucy_control_panel" }
+
+[feature.dev.tasks]
+doctor = "ros2 doctor --report"
+workspace-test = { cmd = "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests -q -p pytester -p python -p terminal" }
+shell = "bash scripts/pixi_dev_shell.sh"
+
+# lucy_bringup stacks (scripts/pixi_lucy_launch.sh — NixOS GL via scripts/nix_gl_env.sh)
+core = { cmd = "bash scripts/pixi_lucy_launch.sh" }
+sim = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true" }
+sim-headless = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true headless:=true" }
+sim-rviz = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true headless:=true rviz:=true" }
+rviz = { cmd = "bash scripts/pixi_lucy_launch.sh rviz:=true" }
+
+# Standalone components (run in separate terminals alongside core / sim-*)
+control-panel = { cmd = "yarn dev", cwd = "src/lucy_control_panel" }
+rqt = { cmd = "bash scripts/pixi_gui_launch.sh rqt" }
+lucy-cli = { cmd = "bash scripts/pixi_gui_launch.sh ros2 run lucy_cli tui" }
+
+# --- platform-specific host packages ---
+[target.linux.dependencies]
+libgl-devel = "*"
+gstreamer = "*"
+
+# tmux is a host tool (see README). Not bundled in Pixi so `pixi run` does not shadow it.
+
+# --- activation: colcon overlay + Gazebo plugin path ---
+[target.unix.activation]
+scripts = ["install/setup.bash"]
+env = { GZ_SIM_SYSTEM_PLUGIN_PATH = "$CONDA_PREFIX/lib" }
+
+# Linux overrides unix activation (does not merge) — repeat setup.bash here.
+[target.linux.activation]
+scripts = ["install/setup.bash", "scripts/gz_rendering_env.sh"]
+env = { GZ_SIM_SYSTEM_PLUGIN_PATH = "$CONDA_PREFIX/lib" }
+
+[target.win.activation]
+scripts = ["install/setup.bat"]
+env = { GZ_SIM_SYSTEM_PLUGIN_PATH = "$CONDA_PREFIX/Library/bin" }
+
+[environments]
+default = { features = ["ros", "build", "panel", "dev"] }

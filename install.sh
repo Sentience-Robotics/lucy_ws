@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
-# One-time setup for the Lucy workspace.
-#
-# Clones the sub-repositories listed in config/repos.json into ./src/, builds the
-# Docker image (lucy_ros2:jazzy), and runs `rosdep install`, `colcon build`
-# and `yarn install` for the control panel — all inside that container.
-#
-# Run from the workspace root (directory containing this script).
+# Lucy workspace setup: clone sub-repos, install RoboStack deps via Pixi, colcon build.
 #
 # Usage:
-#   ./install.sh                     clone missing repos, pull existing ones, rebuild workspace
-#   ./install.sh --update | update   same as above (explicit)
-#   ./install.sh --repair            wipe each repo under src/ then re-clone and rebuild
-#   ./install.sh --build-only        skip git; rebuild the workspace inside the container
-#   ./install.sh --arm               build/run the image as linux/arm64 (Apple Silicon)
-#                                    combine with any other flag, e.g. --arm --build-only
+#   ./install.sh                     clone/pull repos + pixi install + build
+#   ./install.sh --update | update   same as above
+#   ./install.sh --repair              wipe build/install/log, re-clone src repos, re-lock Pixi
+#   ./install.sh --build-only        skip git; pixi run build + panel-install
+#   ./install.sh --skip-build        clone/pull only (CI)
 #
-# Optional .env (copy from .env.example): DEV=true selects `url_ssh` in repos.json (default: `url_https`).
-# Optional config/repos.json.local (gitignored): overrides config/repos.json to point repos at forks/branches.
+# Optional .env: DEV=true uses url_ssh from repos config.
+# Optional config/repos.json.local overrides config/repos.json.
+#
+# Pixi: install.sh requires pixi ≥ LUCY_PIXI_MIN_VERSION (default 0.78.0). When pixi
+# is missing or too old, it can install/upgrade via https://pixi.sh/install.sh
+# (curl | bash). Interactive shells prompt first; set LUCY_PIXI_AUTO_UPGRADE=1 to
+# skip the prompt (CI, Lucy.py). Set LUCY_SKIP_PIXI_UPGRADE=1 to fail instead.
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# Prefer user-local Pixi (official installer) over distro/nix packages.
+export PATH="${HOME}/.pixi/bin:${PATH}"
 
 if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a
@@ -29,86 +30,124 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-# Container image + workspace mount path (must match Dockerfile.jazzy.base WORKDIR).
-IMAGE_NAME="lucy_ros2:jazzy"
-DOCKERFILE_PATH="$SCRIPT_DIR/docker/Dockerfile.jazzy"
-WORKSPACE="/workspace"
-# config/repos.json.local (gitignored) overrides the tracked config/repos.json,
-# so contributors can point repos at their own forks/branches without touching
-# the committed file. Falls back to repos.json when no local override exists.
 CONFIG_FILE="${SCRIPT_DIR}/config/repos.json"
 if [ -f "${SCRIPT_DIR}/config/repos.json.local" ]; then
   CONFIG_FILE="${SCRIPT_DIR}/config/repos.json.local"
   echo "install.sh: using local repo override config/repos.json.local"
 fi
 
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/docker/ensure_image.sh"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/docker/gpu_detect.sh"
-
-ensure_docker_image() {
-  ensure_lucy_docker_image "$SCRIPT_DIR" "$IMAGE_NAME" "$DOCKERFILE_PATH"
-}
-
-# ----------------------------------------------------------------------------
-# Argument parsing
-# ----------------------------------------------------------------------------
-
-# Extract --arm anywhere on the command line (it can be combined with any other flag).
-INSTALL_USE_ARM_IMAGE=0
+SKIP_BUILD=0
+MODE="install"
 _install_argv=()
 for _a in "$@"; do
-  if [ "$_a" = "--arm" ]; then
-    INSTALL_USE_ARM_IMAGE=1
-  else
-    _install_argv+=("$_a")
-  fi
+  case "$_a" in
+    --skip-build) SKIP_BUILD=1 ;;
+    --build-only) MODE="build-only" ;;
+    --repair) MODE="repair" ;;
+    --update|update) ;;
+    *)
+      if [ "$_a" != "--skip-build" ]; then
+        _install_argv+=("$_a")
+      fi
+      ;;
+  esac
 done
 set -- "${_install_argv[@]}"
-
-# `.lucy-docker-platform` is read by docker/ensure_image.sh and launch_lucy.sh
-# so a one-time `--arm` install keeps subsequent runs on arm64.
-DOCKER_PLATFORM_FILE="$SCRIPT_DIR/.lucy-docker-platform"
-if [ "$INSTALL_USE_ARM_IMAGE" = 1 ]; then
-  printf '%s\n' "linux/arm64" >"$DOCKER_PLATFORM_FILE"
-  echo "Using linux/arm64 for Docker build/run (recorded in .lucy-docker-platform)."
-else
-  rm -f "$DOCKER_PLATFORM_FILE"
-fi
-
-MODE="install"
-case "${1:-}" in
-  --build-only) MODE="build-only"; shift ;;
-  --repair)     MODE="repair";     shift ;;
-  --update | update) shift ;;
-esac
 if [ $# -gt 0 ]; then
-  echo "Unknown argument: $1 (try --arm, --repair, --update, or --build-only)" >&2
+  echo "Unknown argument: $1 (try --repair, --update, --build-only, or --skip-build)" >&2
   exit 1
 fi
 
-# ----------------------------------------------------------------------------
-# Helpers
-# ----------------------------------------------------------------------------
-
 check_cmd() {
   if ! command -v "$1" &>/dev/null; then
-    echo "Missing required command: $1. Install it and run install.sh again." >&2
+    echo "Missing required command: $1." >&2
+    echo "Install Pixi: https://pixi.prefix.dev/latest/installation/ (≥ 0.78 recommended)" >&2
     exit 1
   fi
 }
 
-# Wipe src/<name>. We delete from inside the container too because colcon and
-# Python may have created root-owned files (__pycache__, install/) on the bind mount.
+ensure_pixi() {
+  local ver min="${LUCY_PIXI_MIN_VERSION:-0.78.0}"
+
+  if command -v pixi &>/dev/null; then
+    ver="$(pixi --version 2>/dev/null | awk '{print $2}')"
+    if [ -n "$ver" ] && printf '%s\n%s\n' "$min" "$ver" | sort -C -V; then
+      return 0
+    fi
+  else
+    ver=""
+  fi
+
+  if [ "${LUCY_SKIP_PIXI_UPGRADE:-}" = "1" ]; then
+    if [ -z "$ver" ]; then
+      echo "install.sh: pixi not found." >&2
+    else
+      echo "install.sh: pixi $ver is older than required $min." >&2
+    fi
+    echo "Install/upgrade: curl -fsSL https://pixi.sh/install.sh | bash" >&2
+    exit 1
+  fi
+
+  if ! command -v curl &>/dev/null; then
+    if [ -z "$ver" ]; then
+      echo "install.sh: pixi not found; curl is required to install it." >&2
+    else
+      echo "install.sh: pixi $ver is older than required $min (multi-platform lock needs newer pixi)." >&2
+    fi
+    echo "Install/upgrade: curl -fsSL https://pixi.sh/install.sh | bash" >&2
+    exit 1
+  fi
+
+  if [ -n "$ver" ]; then
+    echo "install.sh: pixi $ver is older than $min — installing latest via pixi.sh ..."
+    echo "install.sh: (set LUCY_SKIP_PIXI_UPGRADE=1 to abort; LUCY_PIXI_AUTO_UPGRADE=1 to skip prompt)" >&2
+  else
+    echo "install.sh: pixi not found — installing via pixi.sh ..."
+    echo "install.sh: (set LUCY_SKIP_PIXI_UPGRADE=1 to abort; LUCY_PIXI_AUTO_UPGRADE=1 to skip prompt)" >&2
+  fi
+  confirm_pixi_install
+  curl -fsSL https://pixi.sh/install.sh | bash
+  export PATH="${HOME}/.pixi/bin:${PATH}"
+
+  if ! command -v pixi &>/dev/null; then
+    echo "install.sh: pixi install finished but pixi is not on PATH." >&2
+    echo 'Add to your shell profile: export PATH="$HOME/.pixi/bin:$PATH"' >&2
+    exit 1
+  fi
+
+  ver="$(pixi --version 2>/dev/null | awk '{print $2}')"
+  if [ -z "$ver" ] || ! printf '%s\n%s\n' "$min" "$ver" | sort -C -V; then
+    echo "install.sh: pixi $ver still below $min after install." >&2
+    exit 1
+  fi
+}
+
+confirm_pixi_install() {
+  case "$(echo "${LUCY_PIXI_AUTO_UPGRADE:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes) return 0 ;;
+  esac
+  case "$(echo "${CI:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes) return 0 ;;
+  esac
+  if [ ! -t 0 ]; then
+    echo "install.sh: pixi install/upgrade needs confirmation in non-interactive mode." >&2
+    echo "Set LUCY_PIXI_AUTO_UPGRADE=1 or run from an interactive terminal." >&2
+    exit 1
+  fi
+  printf 'Install/upgrade pixi via https://pixi.sh/install.sh? [y/N] ' >&2
+  read -r reply
+  case "$reply" in
+    y|Y|yes|Yes|YES) return 0 ;;
+    *)
+      echo "install.sh: aborted — install pixi manually or set LUCY_PIXI_AUTO_UPGRADE=1." >&2
+      exit 1
+      ;;
+  esac
+}
+
 remove_workspace_src_repo() {
   local name="$1"
-  rm -rf "src/${name}" 2>/dev/null || true
-  docker_run_platform_flags "$SCRIPT_DIR"
-  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${GPU_DOCKER_ARGS[@]}" --rm \
-    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
-    -v "$SCRIPT_DIR:$WORKSPACE" \
-    "$IMAGE_NAME" /bin/bash -c "rm -rf ${WORKSPACE}/src/${name}"
+  rm -rf "src/${name}"
 }
 
 update_git_repo() {
@@ -131,115 +170,121 @@ update_git_repo() {
   fi
 }
 
-# Reads config/repos.json and prints one `name<TAB>branch<TAB>url` per repo.
-# Picks `url_ssh` when DEV=true, else `url_https` (falls back to the other field, then legacy `url`).
 parse_repos() {
   python3 -c "
 import json, os, sys
+
+def clean(s):
+    return str(s).strip().strip('\r\n')
 
 use_ssh = os.environ.get('DEV', '').strip().lower() in ('1', 'true', 'yes')
 
 with open(sys.argv[1]) as f:
     data = json.load(f)
 for r in data.get('repos', []):
-    name = r.get('name', '').strip()
-    branch = r.get('branch', 'main').strip()
-    url_https = (r.get('url_https') or r.get('url') or '').strip()
-    url_ssh = (r.get('url_ssh') or '').strip()
+    name = clean(r.get('name', ''))
+    branch = clean(r.get('branch', 'main'))
+    url_https = clean(r.get('url_https') or r.get('url') or '')
+    url_ssh = clean(r.get('url_ssh') or '')
     url = (url_ssh or url_https) if use_ssh else (url_https or url_ssh)
+    optional = 1 if r.get('optional') else 0
     if name and url:
-        print(name, branch, url, sep='\t')
+        print(name, branch, url, optional, sep='\t')
 " "$CONFIG_FILE"
 }
 
-# rosdep install + colcon build + yarn install for the control panel, all inside the container.
-# `camera_ros` is wiped because rosdep flips between PEP517/sdist builds depending on the host
-# (Python wheels), and colcon does not always detect that as a reason to rebuild.
-docker_workspace_install() {
-  ensure_docker_image
-  docker_run_platform_flags "$SCRIPT_DIR"
-  docker_run_it_flags
-  lucy_gpu_launch_message
-  echo "Docker install: rosdep, colcon build, yarn install (lucy_control_panel) ..."
-  local inner_cmd
-  read -r -d '' inner_cmd <<'EOS' || true
-source /opt/ros/jazzy/setup.bash \
-  && cd /workspace \
-  && rosdep init && rosdep update \
-  && rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common" \
-  && rm -rf build/camera_ros install/camera_ros \
-  && colcon build --symlink-install \
-  && if [ -f src/lucy_control_panel/package.json ]; then \
-       ( cd src/lucy_control_panel && yarn install ); \
-     fi
-EOS
-  docker run "${DOCKER_RUN_PLATFORM_ARGS[@]}" "${DOCKER_RUN_IT[@]}" "${GPU_DOCKER_ARGS[@]}" --rm \
-    -e LUCY_GPU_MODE="$LUCY_GPU_MODE" \
-    -v "$SCRIPT_DIR:$WORKSPACE" \
-    "$IMAGE_NAME" bash -c "$inner_cmd"
+mark_optional_colcon_ignore() {
+  case "$(echo "${LUCY_BUILD_OPTIONAL:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes) return 0 ;;
+  esac
+  while IFS=$'\t' read -r name _ _ optional; do
+    name="${name//$'\r'/}"
+    optional="${optional//$'\r'/}"
+    if [ "$optional" = "1" ] && [ -d "src/${name}" ]; then
+      echo "install.sh: skipping colcon build for optional repo ${name} (COLCON_IGNORE; set LUCY_BUILD_OPTIONAL=1 to build)"
+      touch "src/${name}/COLCON_IGNORE"
+    fi
+  done < <(parse_repos)
 }
 
-# ----------------------------------------------------------------------------
-# 1. --build-only short-circuit (no git, no host requirements beyond docker)
-# ----------------------------------------------------------------------------
+pixi_install() {
+  echo "Pixi install (RoboStack Jazzy, all workspace platforms) ..."
+  if [ ! -f "${SCRIPT_DIR}/pixi.lock" ]; then
+    echo "No pixi.lock — running pixi lock (solves every platform in pixi.toml) ..."
+    pixi lock
+  fi
+  pixi install
+}
+
+build_local_realsense_optional() {
+  case "$(echo "${LUCY_BUILD_REALSENSE:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes)
+      echo "LUCY_BUILD_REALSENSE enabled — building librealsense locally ..."
+      bash "${SCRIPT_DIR}/scripts/build_local_realsense.sh"
+      ;;
+    *)
+      echo "RealSense: local build when needed — ./scripts/build_local_realsense.sh"
+      ;;
+  esac
+}
+
+pixi_workspace_build() {
+  pixi_install
+  if [ "$SKIP_BUILD" = 1 ]; then
+    echo "Skipping workspace build (--skip-build)."
+    return 0
+  fi
+  echo "Building ROS workspace (colcon) ..."
+  pixi run build
+  echo "Installing control panel dependencies (yarn) ..."
+  pixi run panel-install
+  build_local_realsense_optional
+}
 
 if [ "$MODE" = "build-only" ]; then
-  check_cmd docker
-  docker_workspace_install
-  echo "Build complete. use 'Launch' in 'Lucy.py'"
+  ensure_pixi
+  pixi_workspace_build
+  echo "Build complete. Run './launch_lucy.sh' or Launch in Lucy.py"
   exit 0
 fi
 
-# ----------------------------------------------------------------------------
-# 2. Host requirements
-# ----------------------------------------------------------------------------
-
-check_cmd docker
+ensure_pixi
 check_cmd git
 check_cmd python3
-if [ "${CI:-}" = "true" ] || [ "${CI:-}" = "1" ] || [ "${LUCY_INSTALL_SKIP_XHOST:-}" = "1" ]; then
-  echo "install.sh: skipping xhost check (set CI=1 for headless CI or export LUCY_INSTALL_SKIP_XHOST=1 locally)."
-elif ! command -v xhost &>/dev/null; then
-  echo "Missing required command: xhost. Install it or skip this check by re-running with LUCY_INSTALL_SKIP_XHOST=1 (headless setups)." >&2
-  exit 1
-fi
-echo "Requirements OK (docker, git, python3)."
+echo "Requirements OK (pixi, git, python3)."
 
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "Config not found: $CONFIG_FILE" >&2
-  echo "Set name, branch, url_https and url_ssh for each repo." >&2
   exit 1
 fi
 if [ "$(parse_repos | wc -l)" -eq 0 ]; then
-  echo "No repos with name and url_https/url_ssh in $CONFIG_FILE" >&2
+  echo "No repos with name and url in $CONFIG_FILE" >&2
   exit 1
 fi
 
-# ----------------------------------------------------------------------------
-# 3. (Optional) --repair: wipe every src/<repo> before re-cloning
-# ----------------------------------------------------------------------------
-
 if [ "$MODE" = "repair" ]; then
+  echo "Repair: removing colcon artifacts (build/, install/, log/) ..."
+  rm -rf build install log
   echo "Repair: removing listed repos under src/ ..."
-  ensure_docker_image
-  while IFS=$'\t' read -r name _ _; do
+  while IFS=$'\t' read -r name _ _ _optional; do
     remove_workspace_src_repo "$name"
   done < <(parse_repos)
+  echo "Repair: re-solving Pixi lock (pixi lock) ..."
+  pixi lock
 fi
 
-# ----------------------------------------------------------------------------
-# 4. Clone missing repos / fast-forward existing ones
-# ----------------------------------------------------------------------------
-
 case "$(echo "${DEV:-}" | tr '[:upper:]' '[:lower:]')" in
-  1|true|yes) echo "DEV=true: using url_ssh from config/repos.json." ;;
+  1|true|yes) echo "DEV=true: using url_ssh from repos config." ;;
 esac
+
 mkdir -p src
-while IFS=$'\t' read -r name branch url; do
+while IFS=$'\t' read -r name branch url optional; do
+  name="${name//$'\r'/}"
+  branch="${branch//$'\r'/}"
+  url="${url//$'\r'/}"
   if [ ! -d "src/${name}/.git" ]; then
     if [ -e "src/${name}" ]; then
-      echo "Removing stale src/${name} (not a usable git clone; git refuses non-empty paths) ..."
-      ensure_docker_image
+      echo "Removing stale src/${name} ..."
       remove_workspace_src_repo "$name"
     fi
     echo "Cloning ${name} into src/${name} (branch: ${branch}) ..."
@@ -249,9 +294,7 @@ while IFS=$'\t' read -r name branch url; do
   fi
 done < <(parse_repos)
 
-# ----------------------------------------------------------------------------
-# 5. Build the workspace inside the container
-# ----------------------------------------------------------------------------
+mark_optional_colcon_ignore
 
-docker_workspace_install
-echo "Install complete. Run 'Launch' in 'Lucy.py'"
+pixi_workspace_build
+echo "Install complete. Run './launch_lucy.sh' or Launch in Lucy.py"

@@ -1,0 +1,483 @@
+"""Tests for launcher Pixi/tmux command wrapping (no tmux or ROS required)."""
+
+import os
+
+import launcher
+from launcher import (
+    STATE_FILE,
+    WORKSPACE_ROOT,
+    CORE_TEARDOWN,
+    _core_teardown_shell,
+    _gui_env_exports,
+    _pixi_workspace_script,
+    _tmux_new_pixi_window,
+    _window_teardown_shell,
+    apply_changes,
+    is_lucy_orphan,
+    is_lucy_orphan_cmdline,
+    load_workspace_env,
+    needs_tmux_session,
+    stop_all_packages,
+)
+
+
+def test_state_file_is_workspace_scoped():
+    assert STATE_FILE == WORKSPACE_ROOT / ".lucy_launcher_modifiers.json"
+
+
+def test_pixi_workspace_script_wraps_ros2():
+    body = _pixi_workspace_script("ros2 doctor --report")
+    assert f"cd {WORKSPACE_ROOT}" in body
+    assert "pixi run -- bash -lc" in body
+    assert "nix_gl_env.sh" in body
+    assert "ros2 doctor --report" in body
+
+
+def test_pixi_workspace_script_preserves_pixi_command():
+    body = _pixi_workspace_script("pixi run panel-dev")
+    assert "pixi run panel-dev" in body
+    assert "pixi run -- pixi" not in body
+
+
+def test_pixi_workspace_script_complex_shell_uses_bash_lc():
+    body = _pixi_workspace_script("echo hi && ros2 doctor")
+    assert "pixi run -- bash -lc" in body
+
+
+def test_gui_env_exports_forwards_display():
+    os.environ["DISPLAY"] = ":1"
+    exports = _gui_env_exports()
+    assert "export DISPLAY=" in exports
+    assert ":1" in exports
+    del os.environ["DISPLAY"]
+
+
+def test_tmux_new_pixi_window_wraps_in_bash_lc():
+    cmd = _tmux_new_pixi_window("core", "ros2 launch pkg launch.py", remain_on_exit=True)
+    assert "tmux new-window" in cmd
+    assert "-n core" in cmd
+    assert "bash -lc" in cmd
+    assert "remain-on-exit on" in cmd
+
+
+def test_load_workspace_env_reads_dotenv(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("PORT_CONTROL_PANEL=5555\n")
+    monkeypatch.setattr(launcher, "WORKSPACE_ROOT", tmp_path)
+    os.environ.pop("PORT_CONTROL_PANEL", None)
+    load_workspace_env()
+    assert os.environ.get("PORT_CONTROL_PANEL") == "5555"
+
+
+def test_needs_tmux_session_false_on_windows():
+    if os.name == "nt":
+        assert needs_tmux_session() is False
+
+
+def test_window_teardown_sends_sigint_before_kill():
+    cmd = _window_teardown_shell("control_panel")
+    assert "send-keys" in cmd
+    assert "C-c" in cmd
+    assert "kill-window" in cmd
+    assert "control_panel" in cmd
+    assert "sleep 0.25" in cmd
+
+
+def test_core_teardown_waits_before_kill_window():
+    cmd = _core_teardown_shell()
+    assert "C-c" in cmd
+    assert "kill-window" in cmd
+    assert "pgrep" in cmd
+    assert cmd == CORE_TEARDOWN
+
+
+def test_is_lucy_orphan_cmdline_requires_workspace():
+    ws = str(WORKSPACE_ROOT)
+    assert is_lucy_orphan_cmdline(f"gz sim server {ws}/install/world.sdf")
+    assert not is_lucy_orphan_cmdline("gz sim server /other/project/world.sdf")
+
+
+def test_is_lucy_orphan_gz_sim_server_via_workspace_markers(monkeypatch):
+    monkeypatch.setattr(launcher, "_process_workspace_markers", lambda pid: pid == 1120406)
+    assert is_lucy_orphan(1120406, "gz sim server")
+    assert not is_lucy_orphan(999, "gz sim server")
+
+
+def test_is_lucy_orphan_gz_sim_gui_via_workspace_markers(monkeypatch):
+    monkeypatch.setattr(launcher, "_process_workspace_markers", lambda _pid: True)
+    assert is_lucy_orphan(1, "gz sim gui")
+
+
+def test_is_lucy_orphan_cmdline_excludes_launcher():
+    ws = str(WORKSPACE_ROOT)
+    assert not is_lucy_orphan_cmdline(f"python {ws}/launcher.py")
+    assert not is_lucy_orphan_cmdline(f"python {ws}/Lucy.py")
+
+
+def test_is_lucy_orphan_skips_unrelated_processes(monkeypatch):
+    marker_calls = []
+    monkeypatch.setattr(
+        launcher,
+        "_process_workspace_markers",
+        lambda pid: marker_calls.append(pid) or False,
+    )
+    assert not is_lucy_orphan(42, "/usr/lib/systemd/systemd --user")
+    assert not is_lucy_orphan(42, "firefox")
+    assert marker_calls == []
+
+
+def test_is_lucy_orphan_vite_short_cmdline_via_cwd(monkeypatch):
+    cp = f"{WORKSPACE_ROOT}/src/lucy_control_panel"
+    monkeypatch.setattr(launcher, "_read_proc_cwd", lambda _pid: cp)
+    assert is_lucy_orphan(123, "node node_modules/vite/bin/vite.js")
+
+
+def test_is_lucy_orphan_vite_rejects_other_app_in_workspace():
+    ws = str(WORKSPACE_ROOT)
+    assert not is_lucy_orphan(0, f"node {ws}/other-app/vite.js")
+
+
+def test_is_lucy_orphan_cmdline_vite_scoped_to_control_panel():
+    ws = str(WORKSPACE_ROOT)
+    assert is_lucy_orphan_cmdline(
+        f"node {ws}/src/lucy_control_panel/node_modules/vite/bin/vite.js"
+    )
+    assert not is_lucy_orphan_cmdline(f"node {ws}/other-app/vite.js")
+
+
+def test_find_lucy_orphan_pids_preserves_control_panel_vite(monkeypatch):
+    cp = f"{WORKSPACE_ROOT}/src/lucy_control_panel"
+    monkeypatch.setattr(launcher, "_read_proc_cwd", lambda _pid: cp)
+    vite_pid = 999999
+    vite_cmd = "node node_modules/vite/bin/vite.js"
+
+    def fake_iter():
+        yield vite_pid, vite_cmd
+
+    monkeypatch.setattr(launcher.process, "_iter_processes", fake_iter)
+    assert launcher.is_lucy_orphan(vite_pid, vite_cmd)
+    assert vite_pid not in launcher.find_lucy_orphan_pids(
+        preserve_package_windows=frozenset(["control_panel"]),
+        protect_vite=True,
+    )
+    assert vite_pid in launcher.find_lucy_orphan_pids(
+        preserve_package_windows=frozenset(["control_panel"]),
+        protect_vite=False,
+    )
+    assert vite_pid in launcher.find_lucy_orphan_pids(protect_vite=False)
+
+
+def test_stop_all_packages_single_finish_teardown(monkeypatch):
+    finish_count = []
+
+    class FakePkg:
+        def __init__(self, pid, ptype, running):
+            self.id = pid
+            self.type = ptype
+            self.is_running = running
+            self.lifecycle_hooks = {}
+
+        def is_complex_command(self):
+            return False
+
+    class FakeState:
+        def refresh_status(self):
+            pass
+
+        def get_by_id(self, pid):
+            if pid == "core":
+                return FakePkg("core", "core", True)
+            return None
+
+        packages = [
+            FakePkg("control_panel", "interface", True),
+            FakePkg("core", "core", True),
+        ]
+
+    monkeypatch.setattr(launcher, "_stop_tmux_window", lambda _w: None)
+    monkeypatch.setattr(launcher, "_stop_core_tmux", lambda: None)
+    monkeypatch.setattr(
+        launcher, "_finish_teardown", lambda: finish_count.append(1)
+    )
+    monkeypatch.setattr(launcher, "save_state", lambda _data: None)
+
+    stop_all_packages(FakeState())
+    assert finish_count == [1]
+
+
+def test_stop_all_packages_always_finishes_teardown(monkeypatch):
+    calls = []
+    monkeypatch.setattr(launcher, "_finish_teardown", lambda: calls.append("finish"))
+    stop_all_packages(None)
+    assert calls == ["finish"]
+
+
+def test_stop_all_packages_stops_running_interfaces(monkeypatch):
+    calls = []
+
+    class FakePkg:
+        def __init__(self, pid, ptype, running):
+            self.id = pid
+            self.type = ptype
+            self.is_running = running
+            self.lifecycle_hooks = {}
+
+        def is_complex_command(self):
+            return False
+
+    class FakeState:
+        def refresh_status(self):
+            pass
+
+        def get_by_id(self, _):
+            return None
+
+        packages = [
+            FakePkg("control_panel", "interface", True),
+            FakePkg("core", "core", False),
+        ]
+
+    monkeypatch.setattr(
+        launcher, "_stop_tmux_window", lambda w: calls.append(f"window:{w}")
+    )
+    monkeypatch.setattr(launcher, "_finish_teardown", lambda: calls.append("finish"))
+    monkeypatch.setattr(launcher, "save_state", lambda _data: calls.append("save"))
+
+    stop_all_packages(FakeState())
+    assert calls == ["window:control_panel", "save", "finish"]
+
+
+def test_stop_all_packages_runs_core_teardown_when_running(monkeypatch):
+    calls = []
+
+    class FakePkg:
+        def __init__(self, pid, ptype, running):
+            self.id = pid
+            self.type = ptype
+            self.is_running = running
+            self.lifecycle_hooks = {}
+
+        def is_complex_command(self):
+            return False
+
+    class FakeCore(FakePkg):
+        pass
+
+    core = FakeCore("core", "core", True)
+
+    class FakeState:
+        def refresh_status(self):
+            pass
+
+        def get_by_id(self, pid):
+            return core if pid == "core" else None
+
+        packages = [core]
+
+    monkeypatch.setattr(launcher, "_stop_core_tmux", lambda: calls.append("core"))
+    monkeypatch.setattr(launcher, "_finish_teardown", lambda: calls.append("finish"))
+    monkeypatch.setattr(launcher, "save_state", lambda _data: None)
+
+    stop_all_packages(FakeState())
+    assert calls == ["core", "finish"]
+
+
+def test_stop_all_packages_skips_tmux_on_windows(monkeypatch):
+    monkeypatch.setattr(launcher, "needs_tmux_session", lambda: False)
+    shell_calls = []
+    finish_calls = []
+
+    monkeypatch.setattr(
+        launcher, "run_shell_command", lambda cmd: shell_calls.append(cmd)
+    )
+    monkeypatch.setattr(
+        launcher, "_finish_teardown", lambda: finish_calls.append(True)
+    )
+
+    class FakeCore:
+        id = "core"
+        type = "core"
+        is_running = True
+        lifecycle_hooks = {}
+
+        def is_complex_command(self):
+            return False
+
+    class FakeState:
+        packages = [FakeCore()]
+
+        def refresh_status(self):
+            pass
+
+        def get_by_id(self, _):
+            return FakeCore()
+
+    stop_all_packages(FakeState())
+    assert shell_calls == []
+    assert len(finish_calls) >= 1
+
+
+def test_apply_changes_modifier_restart_calls_finish_teardown(monkeypatch):
+    """Changing modifiers while core is selected must tear down before relaunch."""
+    calls = []
+
+    class FakePkg:
+        def __init__(self, pid, ptype, selected, running, command=""):
+            self.id = pid
+            self.type = ptype
+            self.selected = selected
+            self.is_running = running
+            self.command = command
+            self.lifecycle_hooks = {}
+            self.pane_dead = False
+            self.pane_exit_status = None
+            self.readiness_check = None
+
+        def is_complex_command(self):
+            return False
+
+    core = FakePkg(
+        "core",
+        "core",
+        True,
+        True,
+        "ros2 launch lucy_bringup lucy.launch.py",
+    )
+    gazebo = FakePkg("gazebo", "modifier", True, False, "gazebo:=true")
+
+    class FakeState:
+        packages = [core, gazebo]
+
+        def get_by_id(self, pid):
+            return {"core": core, "gazebo": gazebo}.get(pid)
+
+    monkeypatch.setattr(launcher, "_stop_core_tmux", lambda: calls.append("core_stop"))
+    finish_args = []
+    monkeypatch.setattr(
+        launcher,
+        "_finish_teardown",
+        lambda preserve_package_windows=None, protect_vite=None: finish_args.append(
+            (preserve_package_windows, protect_vite)
+        ),
+    )
+    monkeypatch.setattr(launcher, "save_state", lambda _data: calls.append("save"))
+
+    apply_changes(FakeState())
+    assert calls[0] == "core_stop"
+    assert "save" in calls
+    assert finish_args == [(frozenset(), False)]
+
+
+def test_apply_changes_modifier_restart_preserves_control_panel(monkeypatch):
+    finish_args = []
+
+    class FakePkg:
+        def __init__(self, pid, ptype, selected, running, command="", readiness_check=None):
+            self.id = pid
+            self.type = ptype
+            self.selected = selected
+            self.is_running = running
+            self.command = command
+            self.lifecycle_hooks = {}
+            self.pane_dead = False
+            self.pane_exit_status = None
+            self.readiness_check = readiness_check
+
+        def is_complex_command(self):
+            return False
+
+    core = FakePkg(
+        "core",
+        "core",
+        True,
+        True,
+        "ros2 launch lucy_bringup lucy.launch.py",
+    )
+    gazebo = FakePkg("gazebo", "modifier", True, False, "gazebo:=true")
+    control_panel = FakePkg(
+        "control_panel",
+        "interface",
+        True,
+        True,
+        "pixi run panel-dev",
+        readiness_check="pgrep -f '[v]ite' >/dev/null 2>&1",
+    )
+
+    class FakeState:
+        packages = [core, gazebo, control_panel]
+
+        def get_by_id(self, pid):
+            return {"core": core, "gazebo": gazebo, "control_panel": control_panel}.get(pid)
+
+    monkeypatch.setattr(launcher, "_stop_core_tmux", lambda: None)
+    monkeypatch.setattr(
+        launcher,
+        "_finish_teardown",
+        lambda preserve_package_windows=None, protect_vite=None: finish_args.append(
+            (preserve_package_windows, protect_vite)
+        ),
+    )
+    monkeypatch.setattr(launcher, "save_state", lambda _data: None)
+    monkeypatch.setattr(launcher, "run_shell_command", lambda _cmd: None)
+
+    apply_changes(FakeState())
+    assert finish_args == [(frozenset({"control_panel"}), True)]
+
+
+def test_apply_changes_stopping_core_preserves_running_control_panel(monkeypatch):
+    preserve_calls = []
+
+    class FakePkg:
+        def __init__(self, pid, ptype, selected, running, command="", readiness_check=None):
+            self.id = pid
+            self.type = ptype
+            self.selected = selected
+            self.is_running = running
+            self.command = command
+            self.lifecycle_hooks = {}
+            self.pane_dead = False
+            self.pane_exit_status = None
+            self.readiness_check = readiness_check
+
+        def is_complex_command(self):
+            return False
+
+    core = FakePkg("core", "core", False, True, "ros2 launch lucy_bringup lucy.launch.py")
+    control_panel = FakePkg(
+        "control_panel",
+        "interface",
+        True,
+        True,
+        "pixi run panel-dev",
+        readiness_check="pgrep -f '[v]ite' >/dev/null 2>&1",
+    )
+
+    class FakeState:
+        packages = [core, control_panel]
+
+        def get_by_id(self, pid):
+            return {"core": core, "control_panel": control_panel}.get(pid)
+
+    monkeypatch.setattr(
+        launcher,
+        "set_orphan_preserve_windows",
+        lambda windows, protect_vite=False: preserve_calls.append(
+            (frozenset(windows), protect_vite)
+        ),
+    )
+    monkeypatch.setattr(launcher, "run_teardown_async", lambda fn: fn())
+    monkeypatch.setattr(launcher, "save_state", lambda _data: None)
+    monkeypatch.setattr(launcher, "run_shell_command", lambda _cmd: None)
+
+    apply_changes(FakeState())
+    assert preserve_calls[0] == (frozenset({"control_panel"}), True)
+
+
+def test_finish_teardown_clears_pending_preserve(monkeypatch):
+    launcher.set_orphan_preserve_windows(["control_panel"], protect_vite=True)
+    monkeypatch.setattr(launcher, "cleanup_lucy_orphan_processes", lambda **kwargs: None)
+    monkeypatch.setattr(launcher, "wait_for_orphans_gone", lambda **kwargs: None)
+
+    launcher._finish_teardown()
+    assert launcher.process._pending_preserve_windows == frozenset()
+    assert launcher.process._pending_protect_vite is False

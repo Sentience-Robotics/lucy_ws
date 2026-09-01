@@ -1,16 +1,5 @@
-# Full workspace install (clone + Docker image + rosdep + colcon + yarn) plus a
-# non-interactive launch smoke test, on both x86_64 and ARM64 GitHub-hosted runners.
-#
-# - DEV=false  -> install.sh uses `url_https` from config/repos.json (sub-repos are public).
-# - CI=true    -> install.sh skips the host `xhost` check (no GUI on runners).
-# - variant=arm runs on `ubuntu-24.04-arm` with `./install.sh --arm`; the built image
-#   is then verified to be linux/arm64 (linux/amd64 for the default variant).
-# - Runner OS (22.04 or 24.04) is only the CI host. ROS 2 Jazzy always runs inside
-#   Noble-based images (`ubuntu:24.04` + `ros-jazzy-*` packages; tagged `lucy_ros2:jazzy`).
-# - `ubuntu-24.04-arm` is GitHub's hosted ARM64 runner label; there is no 22.04-arm
-#   standard runner. The container OS stays Noble (24.04) regardless.
-# - The launch smoke test uses `./launch_lucy.sh --headless <command>`, which runs a
-#   single command inside the container (no control panel, no auto Gazebo/RViz).
+# - DEV=false  -> install.sh uses url_https from config/repos.json.
+# - ./install.sh --skip-build clones sub-repos; colcon build runs via pixi run build.
 
 name: Install, Launch & Release
 
@@ -19,7 +8,7 @@ on:
   push:
     branches: [master, dev]
     tags:
-      - 'v*' # Run on version tags like v1.0, v2.3.4
+      - 'v*'
   pull_request:
     branches: [master, dev]
 
@@ -27,9 +16,10 @@ permissions:
   contents: read
 
 jobs:
-  install-and-launch:
+  pixi-install-build-test:
+    name: Pixi install & build (${{ matrix.runner }})
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.variant }}
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.runner }}
       cancel-in-progress: true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
@@ -37,71 +27,77 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: default
-            runner: ubuntu-latest
-            use_arm_install: false
-            expected_arch: linux/amd64
-          - variant: arm
-            runner: ubuntu-24.04-arm
-            use_arm_install: true
-            expected_arch: linux/arm64
+          - runner: ubuntu-latest
+            pixi_platform: linux-64
+          - runner: ubuntu-24.04-arm
+            pixi_platform: linux-aarch64
+          - runner: macos-latest
+            pixi_platform: osx-arm64
+          - runner: windows-latest
+            pixi_platform: win-64
     env:
       DEV: "false"
       CI: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      # Make sure no committed/local .env can flip DEV back to true at install time.
+      - uses: prefix-dev/setup-pixi@v0.10.0
+        with:
+          pixi-version: latest
+          cache: ${{ matrix.pixi_platform != 'win-64' }}
+          post-cleanup: false
+
+      - name: Workspace unit tests
+        shell: bash
+        run: pixi run workspace-test
+
       - name: Drop workspace .env if present
+        shell: bash
         run: rm -f .env .env.local || true
 
-      # Docker Hub metadata/pull flakes (i/o timeout) fail `docker build` before
-      # any Dockerfile layer runs. Pre-pull with retries so the build reuses cache.
-      - name: Pre-pull base images (retry on Hub flakes)
-        run: |
-          pull_with_retry() {
-            image="$1"
-            for attempt in 1 2 3 4 5; do
-              if docker pull "$image"; then
-                return 0
-              fi
-              echo "docker pull ${image} failed (attempt ${attempt}/5), retrying..."
-              sleep $((attempt * 15))
-            done
-            return 1
-          }
-          pull_with_retry ubuntu:24.04
-
-      - name: Install (clone + Docker image + rosdep + colcon + yarn)
+      - name: Clone sub-repositories (skip colcon)
+        shell: bash
         run: |
           chmod +x install.sh launch_lucy.sh
-          if [ "${{ matrix.use_arm_install }}" = true ]; then
-            ./install.sh --arm
-          else
-            ./install.sh
-          fi
+          ./install.sh --skip-build
 
-      - name: Verify Lucy image architecture
+      - name: Build workspace (colcon)
+        shell: bash
+        run: pixi run build
+
+      - name: Install control panel (yarn)
+        shell: bash
+        run: pixi run panel-install
+
+      - name: Run colcon tests
+        shell: bash
+        run: pixi run test-only
+
+      - name: ROS doctor
+        shell: bash
+        run: pixi run doctor
+
+      - name: Launch smoke test (headless)
+        shell: bash
+        run: ./launch_lucy.sh --headless ros2 doctor --report
+
+      - name: Launcher tmux smoke (Linux)
+        if: matrix.pixi_platform == 'linux-64'
+        shell: bash
         run: |
-          osarch=$(docker image inspect lucy_ros2:jazzy --format '{{.Os}}/{{.Architecture}}')
-          echo "lucy_ros2:jazzy -> ${osarch}"
-          if [ "${osarch}" != "${{ matrix.expected_arch }}" ]; then
-            echo "::error::Expected ${{ matrix.expected_arch }} after ./install.sh on ${{ matrix.runner }}, got ${osarch}"
+          chmod +x scripts/ci_tmux_launcher_smoke.sh
+          LUCY_WS_ROOT="$PWD" ./scripts/ci_tmux_launcher_smoke.sh
+
+      - name: Verify Pixi platform
+        shell: bash
+        run: |
+          got=$(pixi info --json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('platform', ''))")
+          echo "pixi platform -> ${got} (expected ${{ matrix.pixi_platform }})"
+          if [ "${got}" != "${{ matrix.pixi_platform }}" ]; then
+            echo "::error::Pixi platform mismatch on ${{ matrix.runner }}"
             exit 1
           fi
 
-      # Single command in the container -> bypasses the control-panel / Gazebo / RViz auto-launch.
-      - name: Launch smoke test (headless, no TTY)
-        run: ./launch_lucy.sh --headless ros2 doctor --report
-
-  # Windows-specific CI. NOTE: GitHub-hosted Windows runners cannot run Linux
-  # containers (no Hyper-V/nested virtualization, no WSL2), so the heavy install
-  # step (docker build of the ROS image + colcon) CANNOT run here — that is
-  # covered for both amd64/arm64 by the Linux `install-and-launch` job above.
-  # This job verifies the Windows-only pieces on real x64 AND arm64 hardware:
-  #   - host CPU -> Docker platform detection (install_ops.host_container_platform)
-  #   - Lucy.exe builds (PyInstaller) and its bundled --cli imports work
-  #   - the NSIS installer compiles
   windows-build-test:
     name: Windows build & installer test (${{ matrix.arch }})
     strategy:
@@ -110,15 +106,21 @@ jobs:
         include:
           - arch: x64
             runner: windows-latest
-            expected_platform: linux/amd64
+            expected_platform: win-64
           - arch: arm64
             runner: windows-11-arm
-            expected_platform: linux/arm64
+            expected_platform: win-64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - uses: prefix-dev/setup-pixi@v0.10.0
+        with:
+          pixi-version: latest
+          cache: false
+          post-cleanup: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -128,14 +130,14 @@ jobs:
       - name: Generate releases manifest
         run: python windows/generate_releases.py
 
-      - name: Verify host architecture detection
+      - name: Verify host Pixi platform detection
         shell: pwsh
         run: |
           $expected = "${{ matrix.expected_platform }}"
-          $got = (python -c "import sys; sys.path.insert(0,'windows'); import install_ops; print(install_ops.host_container_platform())").Trim()
-          Write-Host "host_container_platform() -> $got (expected $expected)"
+          $got = (python -c "import sys; sys.path.insert(0,'windows'); import install_ops; print(install_ops.host_pixi_platform())").Trim()
+          Write-Host "host_pixi_platform() -> $got (expected $expected)"
           if ($got -ne $expected) {
-            Write-Error "Arch detection mismatch: got '$got', expected '$expected'"
+            Write-Error "Platform detection mismatch: got '$got', expected '$expected'"
             exit 1
           }
 
@@ -159,8 +161,6 @@ jobs:
           dist\Lucy.exe --cli check-prereqs
           $code = $LASTEXITCODE
           Write-Host "check-prereqs exit code: $code"
-          # 0 (all present) or 1 (a prereq missing, e.g. no Docker on CI) both mean
-          # the exe ran fine; >1 = crash. Reset the propagated exit code explicitly.
           if ($code -gt 1) { Write-Error "Lucy.exe --cli check-prereqs crashed (exit $code)"; exit 1 }
           exit 0
 
@@ -175,7 +175,7 @@ jobs:
           if (-not (Test-Path "dist/Lucy-Setup-0.0.0-ci.exe")) { Write-Error "Installer not produced"; exit 1 }
 
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: lucy-windows-${{ matrix.arch }}
           path: |
@@ -185,15 +185,14 @@ jobs:
 
   build-and-release-windows-exe:
     name: Build and Release Windows Executable
-    # Only run this job when a new tag is pushed
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: windows-latest
-    needs: install-and-launch
+    needs: pixi-install-build-test
     permissions:
-      contents: write # Required to create a release and upload assets
+      contents: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5

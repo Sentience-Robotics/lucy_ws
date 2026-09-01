@@ -1,3 +1,6 @@
+# Pixi
+.pixi/
+
 # Workspace (filled by install.sh)
 src/
 
@@ -24,11 +27,11 @@ __pycache__/
 .env
 .env.local
 
-# Docker platform choice (./install.sh --arm)
-.lucy-docker-platform
-
-# Launcher remembered tick selection (persisted across container restarts)
+# Launcher remembered tick selection (persisted across restarts)
 .lucy_launcher_state.json
+
+# Launcher runtime modifier state (which core modifiers were applied)
+.lucy_launcher_modifiers.json
 
 # Local repo override (forks/branches; takes precedence over config/repos.json)
 config/repos.json.local
@@ -44,3 +47,4 @@ dist/
 *.spec
 
 *.local
+.local/

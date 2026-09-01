@@ -6,7 +6,6 @@ Used by windows/Lucy.py (launcher + CLI) and the NSIS installer via install_runn
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import platform
@@ -23,16 +22,12 @@ from typing import Callable, Optional
 REQUIREMENT_DOCS = {
     "python": ("Python 3", "https://www.python.org/downloads/"),
     "git": ("Git for Windows", "https://git-scm.com/install/windows"),
-    "docker": ("Docker Desktop", "https://docs.docker.com/desktop/setup/install/windows-install/"),
-    "xserver": ("Windows X server (optional)", "https://github.com/marchaesen/vcxsrv/releases"),
+    "pixi": ("Pixi", "https://pixi.prefix.dev/latest/installation/"),
 }
 
 LUCY_WS_GITHUB = "Sentience-Robotics/lucy_ws"
 DEFAULT_REPOS_BRANCH = "master"
-IMAGE_NAME = "lucy_ros2:jazzy"
-WORKSPACE_CONTAINER = "/workspace"
-DOCKER_PLATFORM_FILE = ".lucy-docker-platform"
-DOCKER_IMAGE_LABEL = "lucy.dockerfile.sha256"
+MIN_PIXI_VERSION = "0.78.0"
 
 InstallMode = str  # "install" | "update" | "repair" | "build-only"
 
@@ -117,12 +112,46 @@ def git_available() -> bool:
         return False
 
 
-def docker_available() -> bool:
+def pixi_available() -> bool:
+    return shutil.which("pixi") is not None
+
+
+def _pixi_version_ok() -> bool:
+    if not pixi_available():
+        return False
     try:
-        result = _run_quiet(["docker", "version"])
-        return result.returncode == 0
+        result = _run_quiet(["pixi", "--version"])
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return False
+    if result.returncode != 0:
+        return False
+    parts = result.stdout.strip().split()
+    version = parts[1] if len(parts) >= 2 else ""
+    if not version:
+        return False
+    return _version_at_least(version, MIN_PIXI_VERSION)
+
+
+def _version_at_least(version: str, minimum: str) -> bool:
+    def parse(v: str) -> list[int]:
+        out: list[int] = []
+        for piece in v.split("."):
+            try:
+                out.append(int(piece))
+            except ValueError:
+                break
+        return out
+
+    cur = parse(version)
+    minv = parse(minimum)
+    for i in range(max(len(cur), len(minv))):
+        c = cur[i] if i < len(cur) else 0
+        m = minv[i] if i < len(minv) else 0
+        if c > m:
+            return True
+        if c < m:
+            return False
+    return True
 
 
 def python_available() -> bool:
@@ -157,13 +186,21 @@ def check_prerequisites(
         name, url = REQUIREMENT_DOCS["python"]
         issues.append({"id": "python", "name": name, "url": url, "detail": "python not found"})
 
-    if not docker_available():
-        name, url = REQUIREMENT_DOCS["docker"]
+    if not pixi_available():
+        name, url = REQUIREMENT_DOCS["pixi"]
         issues.append({
-            "id": "docker",
+            "id": "pixi",
             "name": name,
             "url": url,
-            "detail": "docker not found or Docker Desktop is not running",
+            "detail": "pixi not found in PATH",
+        })
+    elif not _pixi_version_ok():
+        name, url = REQUIREMENT_DOCS["pixi"]
+        issues.append({
+            "id": "pixi",
+            "name": name,
+            "url": url,
+            "detail": f"pixi must be >= {MIN_PIXI_VERSION} for multi-platform lock support",
         })
 
     if developer or not git_available():
@@ -206,12 +243,12 @@ def parse_repos(project_root: str, developer: bool, repos_branch: Optional[str] 
 
     repos = []
     for repo in data.get("repos", []):
-        name = repo.get("name", "").strip()
+        name = repo.get("name", "").strip().strip("\r\n")
         if not name:
             continue
-        branch = repos_branch or repo.get("branch", DEFAULT_REPOS_BRANCH)
-        url_https = (repo.get("url_https") or repo.get("url") or "").strip()
-        url_ssh = (repo.get("url_ssh") or "").strip()
+        branch = (repo.get("branch") or repos_branch or DEFAULT_REPOS_BRANCH).strip().strip("\r\n")
+        url_https = (repo.get("url_https") or repo.get("url") or "").strip().strip("\r\n")
+        url_ssh = (repo.get("url_ssh") or "").strip().strip("\r\n")
         url = (url_ssh or url_https) if developer else (url_https or url_ssh)
         if url:
             repos.append({"name": name, "branch": branch, "url": url})
@@ -242,18 +279,7 @@ def _safe_rmtree(path: str) -> None:
 
 
 def remove_workspace_src_repo(project_root: str, name: str, run_command: Callable) -> None:
-    src_path = os.path.join(project_root, "src", name)
-    _safe_rmtree(src_path)
-    volume = format_volume_mapping(project_root, WORKSPACE_CONTAINER)
-    run_command(
-        [
-            "docker", "run", "--rm",
-            "-v", volume,
-            IMAGE_NAME,
-            "-c", f"rm -rf {WORKSPACE_CONTAINER}/src/{name}",
-        ],
-        check=False,
-    )
+    _safe_rmtree(os.path.join(project_root, "src", name))
 
 
 def _extract_zip_to_dest(zip_path: str, dest: str, repo_name: str) -> None:
@@ -401,11 +427,6 @@ def install_repos(
     return effective_method
 
 
-def format_volume_mapping(host_path: str, container_path: str) -> str:
-    host_abs = os.path.abspath(host_path)
-    return host_abs.replace("\\", "/") + ":" + container_path
-
-
 def _native_machine() -> str:
     """Best-effort *native* CPU arch, seeing through Windows x64 emulation.
 
@@ -421,130 +442,43 @@ def _native_machine() -> str:
     return platform.machine().lower()
 
 
-def host_container_platform() -> str:
-    """Map the host CPU to a Docker Linux platform (mirrors docker/ensure_image.sh)."""
+def host_pixi_platform() -> str:
+    """Map the native host to a Pixi platform id (pixi.toml / pixi.lock)."""
     machine = _native_machine()
-    if machine in ("x86_64", "amd64", "x86"):
-        return "linux/amd64"
+    if sys.platform == "win32":
+        return "win-64"
+    if sys.platform == "darwin":
+        if machine in ("aarch64", "arm64"):
+            return "osx-arm64"
+        return "osx-64"
     if machine in ("aarch64", "arm64"):
-        return "linux/arm64"
-    return f"linux/{machine}"
+        return "linux-aarch64"
+    return "linux-64"
 
 
-def workspace_target_platform(project_root: str) -> str:
-    """Target platform: LUCY_DOCKER_PLATFORM, then .lucy-docker-platform, then host arch."""
-    override = os.environ.get("LUCY_DOCKER_PLATFORM", "").strip()
-    if override:
-        return override
-    marker = os.path.join(project_root, DOCKER_PLATFORM_FILE)
-    if os.path.isfile(marker):
-        try:
-            with open(marker, "r", encoding="utf-8") as f:
-                value = f.readline().strip()
-            if value:
-                return value
-        except OSError:
-            pass
-    return host_container_platform()
+def host_container_platform() -> str:
+    """Legacy alias used by Windows CI — returns Pixi platform, not Docker."""
+    return host_pixi_platform()
 
 
-def _platform_build_settings(target_platform: str) -> tuple[str, int]:
-    """Return (base_image, install_vnc) for a target platform.
-
-    The Jazzy image is built on ubuntu:24.04 (Noble); arm64 also enables the
-    optional VNC desktop tooling in Dockerfile.jazzy.
-    """
-    base_image = "ubuntu:24.04"
-    install_vnc = 1 if target_platform == "linux/arm64" else 0
-    if os.environ.get("LUCY_FORCE_VNC", "").strip().lower() in ("1", "true", "yes"):
-        install_vnc = 1
-    return base_image, install_vnc
+def pixi_install(project_root: str, run_command: Callable, log: Callable[[str], None] = print) -> None:
+    lock_path = os.path.join(project_root, "pixi.lock")
+    if not os.path.isfile(lock_path):
+        log("No pixi.lock — running pixi lock...")
+        run_command(["pixi", "lock"])
+    log("Installing Pixi environment (RoboStack Jazzy)...")
+    run_command(["pixi", "install"])
 
 
-def _dockerfile_build_hash(dockerfile: str) -> str:
-    """sha256 of the Dockerfile ignoring comments/blank lines (mirrors ensure_image.sh)."""
-    kept = []
-    with open(dockerfile, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.rstrip("\n")
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            kept.append(line.rstrip())
-    payload = ("\n".join(kept) + "\n").encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
-def _current_image_label(image_name: str) -> Optional[str]:
-    try:
-        result = subprocess.run(
-            ["docker", "image", "inspect", image_name,
-             "--format", '{{index .Config.Labels "' + DOCKER_IMAGE_LABEL + '"}}'],
-            capture_output=True, text=True,
-        )
-    except FileNotFoundError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
-
-
-def docker_run_platform_args(project_root: str) -> list[str]:
-    """`--platform <target>` so the daemon never guesses the run architecture."""
-    return ["--platform", workspace_target_platform(project_root)]
-
-
-def build_docker_image(
+def build_workspace(
     project_root: str,
     run_command: Callable,
     log: Callable[[str], None] = print,
-    force_rebuild: bool = False,
 ) -> None:
-    dockerfile = os.path.join(project_root, "docker", "Dockerfile.jazzy")
-    target_platform = workspace_target_platform(project_root)
-    base_image, install_vnc = _platform_build_settings(target_platform)
-    build_hash = _dockerfile_build_hash(dockerfile)
-    want_label = f"{build_hash}|{target_platform}|vnc={install_vnc}"
-
-    if not force_rebuild and _current_image_label(IMAGE_NAME) == want_label:
-        log(f"Docker image {IMAGE_NAME} is up to date ({target_platform}); skipping build.")
-        return
-
-    log(f"Building Docker image for {target_platform} (base: {base_image})...")
-    run_command([
-        "docker", "build",
-        "--platform", target_platform,
-        "-f", dockerfile,
-        "--build-arg", f"LUCY_FROM_PLATFORM={target_platform}",
-        "--build-arg", f"LUCY_BASE_IMAGE={base_image}",
-        "--build-arg", f"LUCY_INSTALL_VNC={install_vnc}",
-        "--build-arg", f"DOCKERFILE_SHA256={build_hash}",
-        "--build-arg", f"LUCY_DOCKER_BUILD_PLATFORM={target_platform}",
-        "-t", IMAGE_NAME,
-        project_root,
-    ])
-
-
-def build_workspace(project_root: str, run_command: Callable, log: Callable[[str], None] = print) -> None:
-    log("Building workspace inside the container...")
-    inner_cmd = (
-        "source /opt/ros/jazzy/setup.bash && "
-        "cd /workspace && "
-        'rosdep install --from-paths src --ignore-src -r -y --skip-keys="audio_common thais_urdf" && '
-        "rm -rf build/camera_ros install/camera_ros && "
-        "colcon build --symlink-install && "
-        'if [ -f src/lucy_control_panel/package.json ]; then '
-        "(cd src/lucy_control_panel && yarn install); "
-        "fi"
-    )
-    volume = format_volume_mapping(project_root, WORKSPACE_CONTAINER)
-    run_command([
-        "docker", "run", "--rm",
-        *docker_run_platform_args(project_root),
-        "-v", volume,
-        IMAGE_NAME,
-        "-c", inner_cmd,
-    ])
+    log("Building workspace (colcon via Pixi)...")
+    run_command(["pixi", "run", "build"])
+    log("Installing control panel dependencies (yarn)...")
+    run_command(["pixi", "run", "panel-install"])
 
 
 def set_dev_mode(project_root: str, enabled: bool) -> None:
@@ -600,7 +534,7 @@ def run_install_flow(
         profile["fetch_method"] = effective
 
     set_dev_mode(project_root, dev)
-    build_docker_image(project_root, run_command, log, force_rebuild=(mode == "repair"))
+    pixi_install(project_root, run_command, log)
 
     if mode in ("install", "update", "repair", "build-only"):
         build_workspace(project_root, run_command, log)

@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Install operation to run",
     )
     parser.add_argument("--developer", action="store_true", help="Developer install (requires git, SSH clones)")
-    parser.add_argument("--repos-branch", default="master", help="Branch for sub-repositories")
+    parser.add_argument("--repos-branch", default=None, help="Fallback branch for repos without one set")
     parser.add_argument("--lucy-ws-ref", default="master", help="lucy_ws git ref (branch or tag)")
     parser.add_argument(
         "--lucy-ws-ref-type",

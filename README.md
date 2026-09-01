@@ -1,42 +1,76 @@
 # Lucy ROS 2 workspace (Jazzy)
 
-Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Jazzy, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host (plus **`xhost`** on Linux for GUI forwarding; on macOS the GUI is viewed over VNC with no extra software — see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo)).
+Workspace bringup for the Lucy / InMoov humanoid. ROS 2 Jazzy, Gazebo, RViz, and the web control panel run **natively** via [Pixi](https://pixi.prefix.dev/) and [RoboStack](https://robostack.github.io/) — no Docker required for day-to-day development.
 
 ## Requirements
 
-- [Python3](https://www.python.org/downloads/)
-- [Docker](https://docs.docker.com/engine/install/)
-- [Git](https://git-scm.com/downloads)
+| Requirement | Linux | macOS | Windows |
+|-------------|-------|-------|---------|
+| [Git](https://git-scm.com/downloads) | ✓ | ✓ | ✓ ([Git for Windows](https://git-scm.com/install/windows)) |
+| [Python 3](https://www.python.org/downloads/) (for `Lucy.py`) | ✓ | ✓ | ✓ |
+| [Pixi](https://pixi.prefix.dev/latest/installation/) **≥ 0.78** | ✓ | ✓ | ✓ |
+| **tmux** (multi-window launcher) | ✓ | ✓ (`brew install tmux`) | — (launcher runs directly) |
 
-<sub>Linux GUI forwarding uses `xhost` (preinstalled). On Wayland run `xhost +local:docker` if windows don't open — see [GUI](#gui-rviz-and-gazebo).</sub>
+ROS packages are installed by Pixi into `.pixi/`; you do not need a system ROS install.
 
-> **Windows users:** see the [Windows README](windows/README.md) — **`Lucy-Setup.exe`** to install/update, **`Lucy.exe`** to launch.
+GUI apps (RViz, Gazebo, rqt) use your **native display**. Platform-specific notes (Wayland, AirPlay port conflicts) are in the [developer guide](docs/developer_lucy_packages.md#platform-setup).
 
 ## Get the repository
 
-Install the [requirements](#requirements) first, then grab the repo. You can clone it with Git (recommended — makes updates a `git pull`) or download a ZIP.
-
-**Option A — Clone with Git (recommended):**
+**Clone (recommended):**
 
 ```bash
 git clone https://github.com/Sentience-Robotics/lucy_ws.git
-```
-
-**Option B — Download the ZIP:**
-
-- Open the repository page on GitHub, click the green **Code** button, then **Download ZIP**, and extract it.
-
-Then open a terminal and move into the project folder before running anything:
-
-```bash
 cd lucy_ws
 ```
 
-> The manager (`Lucy.py`) must be run **from the repository root** — it reads `config/`, `docker/Dockerfile.jazzy` and mounts the workspace relative to that directory.
+**Or** download the ZIP from GitHub (**Code → Download ZIP**), extract, and `cd lucy_ws`.
+
+Run `Lucy.py` and the install scripts **from the repository root** — they read `config/` and paths relative to that directory.
+
+## Install
+
+### Linux / macOS
+
+```bash
+curl -fsSL https://pixi.sh/install.sh | bash   # if Pixi is not installed
+export PATH="$HOME/.pixi/bin:$PATH"            # if needed
+./install.sh
+```
+
+**NixOS:** enable [nix-ld](https://github.com/nix-community/nix-ld) so Pixi/RoboStack conda binaries can load the host dynamic linker (required before `./install.sh`):
+
+```nix
+programs.nix-ld.enable = true;
+```
+
+For Gazebo/RViz GL, also see the [NixOS notes](docs/developer_lucy_packages.md#platform-setup) in the developer guide.
+
+### Windows
+
+Install [Pixi](https://pixi.prefix.dev/latest/installation/) **≥ 0.78** first, then close and reopen your terminal so `PATH` is updated.
+
+**PowerShell (recommended):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm -useb https://pixi.sh/install.ps1 | iex"
+```
+
+Alternatives from the [Pixi installation guide](https://pixi.prefix.dev/latest/installation/): `winget install prefix-dev.pixi`, Scoop, or the MSI from GitHub Releases.
+
+**End users:** download **`Lucy-Setup.exe`** from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases). It installs Lucy, clones sub-repos, runs `pixi install`, and builds the workspace. See the [Windows README](windows/README.md).
+
+**Developers (from source):**
+
+```powershell
+python windows\Lucy.py --cli install --repos-branch master
+```
+
+Or from Git Bash: `./install.sh`
 
 ## Quick start
 
-A Python-based Text User Interface (TUI) manages the whole workspace — installing, rebuilding, and launching the environment. From the repository root, run the manager for your platform:
+After install, launch the **Lucy manager** TUI from the repository root.
 
 ### Linux / macOS
 
@@ -44,116 +78,50 @@ A Python-based Text User Interface (TUI) manages the whole workspace — install
 python3 Lucy.py
 ```
 
-> On UNIX systems, if you ever run the scripts by hand, `chmod +x install.sh launch_lucy.sh` first. `./install.sh` is only a fallback to `Lucy.py`.
-
 ### Windows
 
-**Installer (recommended):** download `Lucy-Setup.exe` from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases), then see the [Windows README](windows/README.md).
+**End users:** open **Lucy** from the Start Menu (runs `Lucy.exe` → Control Center).
 
-**From source (developers):**
+**Developers:**
 
-```bash
-python windows/Lucy.py --cli install   # first time
-python windows/Lucy.py                   # launch
+```powershell
+python windows\Lucy.py
 ```
 
-> **Windows** additionally needs a third-party X Server for RViz/Gazebo — see the [Windows README](windows/README.md). End users should use **`Lucy-Setup.exe`** instead of manual install.
+Or Git Bash: `./launch_lucy.sh`
 
-### Opening the Control Panel
+## Using the Lucy launcher
 
-After **`Launch`**, enable **Core + Control Panel** in the launcher. Once it is running, the **Lucy Control Panel is accessible in your browser at [http://localhost:4004](http://localhost:4004)** (or the next free port if 4004 is already taken). The launcher also shows the exact URL next to the Control Panel entry once it's up.
+**Launch** starts a **tmux** session (Linux/macOS) and the **Lucy Control Center** TUI (`python -m launcher`, or `python launcher.py` / `./launch_lucy.sh`):
 
+| Key | Action |
+|-----|--------|
+| **Up/Down** | Navigate |
+| **Space** | Toggle a package or tool |
+| **Enter** | Apply changes / Start / Restart |
+| **X** | Stop all processes and exit |
 
-## Using the workspace
+**Components you can enable:**
 
-Selecting **Launch** from the manager starts everything inside a single **tmux** session in the Docker container. You first land on the **Lucy Control Center** TUI:
+- **Core** — base robot stack (`lucy_bringup`)
+- **Modifiers** — Simulator (Gazebo), **… headless** (server-only sim, under Simulator), Visualizer (RViz), Real Hardware
+- **Interfaces** — Control Panel (web UI), Lucy CLI
+- **Tools** — Console, rqt
 
-- **Up/Down arrows** — navigate
-- **Space** — toggle a package or tool on/off
-- **Enter** — apply your changes (new tools open in their own background windows)
-- **X** — stop all processes and exit the container
+> **Recommended starting point:** **Core + Control Panel** — the web 3D viewer is enough for most work without heavy GUI apps.
 
-### Launch options
+**Control panel:** after Launch, enable **Core + Control Panel**. Open [http://localhost:5000](http://localhost:5000) (or the URL shown in the launcher if another port was chosen).
 
-What you toggle in the launcher falls into a few groups:
+**tmux windows** (Linux/macOS):
 
-- **Core** — the base robot software stack (*lucy_bringup*), everything else builds on it.
-- **Modifiers** (extend Core):
-  - **Simulator (Gazebo)** — physics simulation
-  - **Visualizer (RViz)** — ROS 3D visualizer
-  - **Real Hardware** — connect to the physical robot
-- **Interfaces:**
-  - **Control Panel** — web UI with a built-in 3D viewer
-  - **Lucy CLI** — terminal control interface
-- **Tools** — Console, rqt, and VNC viewers.
+- **`Ctrl+B` then `W`** — window list
+- **`Ctrl+B` then `N`** / **`P`** — next / previous window
 
-Gazebo, RViz and rqt are native GUI apps and need a display — native X11 or the VNC desktop (see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo)). Each interface/viewer that exposes a URL shows it right in the launcher once it's running.
+On Windows, the Control Center runs without tmux (one process tree). Gazebo, RViz, and rqt still open as native GUI apps when enabled.
 
-> **Recommended starting point:** enable **Core + Control Panel**. The control panel's web 3D viewer is usually enough to get going and avoids the heavier GUI apps (Gazebo/RViz) entirely.
+## Developer setup
 
-### Managing tmux windows
-
-Tools (the console, CLI, viewers…) run in background windows, so a few `tmux` basics help you move between them:
-
-- **`Ctrl+B` then `W`** — menu of all running windows; arrow to one and press Enter to switch.
-- **`Ctrl+B` then `N`** — next window.
-- **`Ctrl+B` then `P`** — previous window.
-
-### Developer mode
-
-The manager includes a **Developer Mode** toggle. When ON:
-- repositories are pulled over SSH instead of HTTPS
-- Core & the control panel aren't launched automatically
-- the launch menu also shows **Headless mode** for Gazebo (no GUI / X11)
-
-This setting is stored in a `.env` file.
-
-## GUI: RViz and Gazebo
-
-RViz, Gazebo and rqt are native OpenGL apps. The container can show them two ways:
-
-- **Native X11** — Linux/amd64 hosts with a working GPU. Needs `xhost` on the host for display forwarding.
-- **VNC virtual desktop** — a self-contained desktop inside the container: `Xvfb` rendered by
-  Mesa `llvmpipe` (software OpenGL), a small window manager, and VNC + noVNC servers (see
-  [`docker/gui_desktop.sh`](docker/gui_desktop.sh)). It is the default on Apple Silicon (arm64),
-  where the container gets no native GL context, and can be enabled on any host on demand.
-
-### Choosing VNC vs native X11 (`LUCY_FORCE_VNC`)
-
-By default the mode is picked from your architecture. Set `LUCY_FORCE_VNC` in a root `.env`
-(or the environment) to override — e.g. an amd64 Linux box can opt into the VNC desktop:
-
-| `LUCY_FORCE_VNC` | Behaviour |
-| :-- | :-- |
-| unset *(default)* | Auto: VNC on arm64, native X11 on amd64 |
-| `1` / `yes` / `true` | Force the VNC desktop on any architecture (e.g. an amd64 host without working GLX) |
-| `0` / `no` / `false` | Force VNC off even on arm64 (fall back to native X11 / headless) |
-
-### Connecting to the VNC desktop
-
-Enable **noVNC** (browser) or the **VNC Server** (native clients) from the launcher, then open
-the address it shows. Defaults:
-
-| How | Address | Password |
-| :-- | :-- | :-- |
-| **Browser** (noVNC) | http://localhost:6080/vnc.html | (none) |
-| **RealVNC Viewer** etc. | `localhost:5901` | `lucy` |
-| macOS **Screen Sharing** | `open vnc://localhost:5901` | `lucy` |
-
-- The launcher prints the real URL/port for each viewer once it's running; if a default port is
-  already taken it automatically moves to the next free one.
-- RealVNC Viewer warns the connection is unencrypted — expected over localhost; click through it.
-- Override defaults with `LUCY_GUI_VNC_PORT` / `LUCY_GUI_NOVNC_PORT` (ports) and
-  `LUCY_GUI_VNC_PASSWORD` (max 8 chars) in a root `.env`.
-
-> **Software-rendered:** the VNC desktop has no GPU passthrough, so Gazebo runs but is CPU-slow.
-> For heavy simulation prefer a native-X11 Linux host, or run headless
-> (`./launch_lucy.sh --headless`) and visualize through the control panel.
-
-### macOS notes
-
-- On Apple Silicon, XQuartz can't give the container an OpenGL context, so the VNC desktop is
-  used by default — no setup required.
+For developer mode, Pixi component tasks (`pixi run core`, `sim-headless`, …), debug shell, SSH clones, local repo overrides, ports, and advanced launch options, see the **[developer guide](docs/developer_lucy_packages.md)**.
 
 ## More
 
