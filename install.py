@@ -423,6 +423,9 @@ def pixi_install_command() -> list[str]:
     if sys.platform == "win32":
         return ["powershell", "-NoProfile", "-ExecutionPolicy", "ByPass",
                 "-Command", f"irm -useb {PIXI_INSTALL_URL_WINDOWS} | iex"]
+    if shutil.which("curl") is None:
+        fail("pixi", f"curl is required to install pixi. Install curl, or install pixi "
+                     f"manually: {REQUIREMENT_DOCS['pixi'][1]}")
     return ["sh", "-c", f"curl -fsSL {PIXI_INSTALL_URL_POSIX} | bash"]
 
 

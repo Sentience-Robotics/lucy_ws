@@ -126,6 +126,11 @@ sim-headless = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless
 sim-rviz = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless:=true rviz:=true" }
 rviz = { cmd = "python scripts/pixi_lucy_launch.py rviz:=true" }
 
+# CPython ships no curses on Windows, so the launcher TUI cannot start without this.
+# PyPI-only: there is no conda-forge build.
+[feature.launcher.target.win-64.pypi-dependencies]
+windows-curses = ">=2.4.1"
+
 [feature.launcher.tasks]
 # Standalone components (run in separate terminals alongside core / sim-*)
 control-panel = { cmd = "yarn dev", cwd = "src/lucy_control_panel" }
