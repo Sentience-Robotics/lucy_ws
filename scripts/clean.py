@@ -11,28 +11,18 @@ Removes:
 Works natively on Windows, Linux, and macOS.
 """
 
+import sys
 from pathlib import Path
-import shutil
-
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-
-def remove(path: Path) -> None:
-    if not path.exists():
-        return
-
-    if path.is_dir():
-        print(f"Removing {path}")
-        shutil.rmtree(path)
-    else:
-        print(f"Removing {path}")
-        path.unlink()
+from install import remove_build_artifacts  # noqa: E402
 
 
 def main() -> None:
-    for name in ("build", "install", "log"):
-        remove(ROOT / name)
+    remove_build_artifacts(ROOT)
 
 
 if __name__ == "__main__":
