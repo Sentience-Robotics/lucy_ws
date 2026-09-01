@@ -2,19 +2,19 @@
   "repos": [
     {
       "name": "inmoov_urdf",
-      "branch": "aes/macos-gazebo",
+      "branch": "feat-pixi",
       "url_https": "https://github.com/Sentience-Robotics/inmoov_urdf.git",
       "url_ssh": "git@github.com:Sentience-Robotics/inmoov_urdf.git"
     },
     {
       "name": "lucy_ros_packages",
-      "branch": "aes/macos-hardware-plugin-link",
+      "branch": "feat-pixi",
       "url_https": "https://github.com/Sentience-Robotics/lucy_ros_packages.git",
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_ros_packages.git"
     },
     {
       "name": "lucy_control_panel",
-      "branch": "aes/macos-pixi-fix",
+      "branch": "feat-pixi",
       "url_https": "https://github.com/Sentience-Robotics/lucy_control_panel.git",
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_control_panel.git"
     }
