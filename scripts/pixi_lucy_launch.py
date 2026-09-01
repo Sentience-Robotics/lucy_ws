@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+JOINT_COMMAND_TOPIC = "/lucy/commanded_joint_states"
 
 
 def configure_windows_dll_search_path() -> None:
@@ -90,14 +91,27 @@ def _joint_state_fallback_enabled() -> bool:
     return value not in ("0", "false", "no", "off")
 
 
-def _start_joint_state_publisher():
-    try:
-        return subprocess.Popen(
-            ["ros2", "run", "joint_state_publisher", "joint_state_publisher"], cwd=ROOT
-        )
-    except OSError as exc:
-        print(f"warning: could not start joint_state_publisher: {exc}", file=sys.stderr)
-        return None
+def _start_joint_state_fallback():
+    """Stand in for joint_state_broadcaster and joint_trajectory_controller.
+
+    joint_command_echo turns the panel's trajectory commands into JointState, and
+    joint_state_publisher merges that over the URDF's full joint list, so the
+    model both renders and follows the controls.
+    """
+    commands = [
+        [sys.executable, str(ROOT / "scripts" / "joint_command_echo.py")],
+        [
+            "ros2", "run", "joint_state_publisher", "joint_state_publisher",
+            "--ros-args", "-p", f"source_list:=['{JOINT_COMMAND_TOPIC}']",
+        ],
+    ]
+    started = []
+    for command in commands:
+        try:
+            started.append(subprocess.Popen(command, cwd=ROOT))
+        except OSError as exc:
+            print(f"warning: could not start {command[0]}: {exc}", file=sys.stderr)
+    return started
 
 
 def _stop(proc) -> None:
@@ -125,11 +139,12 @@ def main() -> int:
         *sys.argv[1:],
     ]
 
-    joint_states = _start_joint_state_publisher() if _joint_state_fallback_enabled() else None
+    fallback = _start_joint_state_fallback() if _joint_state_fallback_enabled() else []
     try:
         return subprocess.call(command, cwd=ROOT)
     finally:
-        _stop(joint_states)
+        for proc in fallback:
+            _stop(proc)
 
 
 if __name__ == "__main__":
