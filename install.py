@@ -608,6 +608,45 @@ def pixi_run(project_root: Path | str, args: list[str], run_command: Callable) -
     return run_command(["pixi", *args], cwd=str(project_root))
 
 
+def ensure_windows_libexec_shims(project_root: Path | str, log: Log = print) -> list[str]:
+    """Give conda ROS packages the Windows launcher stubs they ship without.
+
+    RoboStack's win-64 packages install their Python nodes as extensionless Unix
+    scripts (Library/lib/<pkg>/rosbridge_websocket). ros2 launch resolves exec= via
+    PATHEXT, so those never start on Windows -- colcon-built packages work only
+    because setuptools gives them a .exe. Write a .bat next to each one; Windows
+    needs a PATHEXT-matching file, so a stub is the only option here.
+
+    Re-run after every pixi install, which recreates the environment.
+    """
+    if sys.platform != "win32":
+        return []
+
+    created = []
+    for env_dir in sorted((Path(project_root) / ".pixi" / "envs").glob("*")):
+        for script in sorted(env_dir.glob("Library/lib/*/*")):
+            shim = script.with_suffix(".bat")
+            if script.suffix or not script.is_file() or shim.exists():
+                continue
+            if script.with_suffix(".exe").exists() or script.with_suffix(".cmd").exists():
+                continue
+            try:
+                if not script.open("rb").readline().startswith(b"#!"):
+                    continue
+            except OSError:
+                continue
+            shim.write_text(
+                f'@echo off\r\n"%~dp0..\\..\\..\\python.exe" "%~dp0{script.name}" %*\r\n',
+                encoding="ascii",
+            )
+            created.append(f"{script.parent.name}/{script.name}")
+
+    if created:
+        log(f"Windows: added {len(created)} launcher stubs for conda ROS nodes "
+            f"(e.g. {', '.join(created[:3])})")
+    return created
+
+
 def pixi_install(
     project_root: Path | str, run_command: Callable = default_run_command, log: Log = print
 ) -> None:
@@ -616,6 +655,7 @@ def pixi_install(
         pixi_run(project_root, ["lock"], run_command)
     log("Pixi install (RoboStack Jazzy, all workspace platforms) ...")
     pixi_run(project_root, ["install"], run_command)
+    ensure_windows_libexec_shims(project_root, log)
 
 
 def build_local_realsense_optional(
