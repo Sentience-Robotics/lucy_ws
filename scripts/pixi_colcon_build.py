@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from install import msvc_environment, safe_rmtree  # noqa: E402
+from install import msvc_available, msvc_environment, safe_rmtree  # noqa: E402
 
 COLCON_ARGS = [
     "build",
@@ -37,6 +37,8 @@ def build_env() -> dict:
 
     msvc = msvc_environment()
     if msvc is None:
+        if msvc_available():
+            return dict(os.environ)  # already inside a developer prompt
         print(
             "warning: MSVC toolchain not found; C++ packages will fail to configure.\n"
             "         Install the Visual Studio Build Tools with the 'Desktop "

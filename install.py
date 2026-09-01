@@ -319,8 +319,19 @@ def msvc_environment() -> Optional[dict]:
     return env or None
 
 
+def msvc_available() -> bool:
+    """Whether a usable C++ toolchain is already present.
+
+    cl.exe on PATH means we are inside a developer prompt and need nothing more;
+    otherwise vcvars is what lets us construct that environment ourselves.
+    """
+    if sys.platform != "win32":
+        return False
+    return shutil.which("cl") is not None or find_vcvars() is not None
+
+
 def msvc_issue() -> Optional[dict]:
-    if sys.platform != "win32" or find_vcvars() is not None:
+    if sys.platform != "win32" or msvc_available():
         return None
     return requirement_issue(
         "msvc",
@@ -484,7 +495,7 @@ def ensure_msvc(run_command: Callable = default_run_command, log: Log = print) -
     Only the compiler component is requested: the Windows SDK usually ships with
     Windows already, and the full C++ workload is several GB larger.
     """
-    if sys.platform != "win32" or find_vcvars() is not None:
+    if sys.platform != "win32" or msvc_available():
         return
     if env_flag("LUCY_SKIP_MSVC_INSTALL"):
         fail("msvc", "MSVC build tools not found and LUCY_SKIP_MSVC_INSTALL is set.")
@@ -496,7 +507,7 @@ def ensure_msvc(run_command: Callable = default_run_command, log: Log = print) -
     confirm_install("msvc", "Install the Visual Studio Build Tools C++ compiler?", "LUCY_MSVC_AUTO_INSTALL")
     run_command(msvc_install_command())
 
-    if find_vcvars() is None:
+    if not msvc_available():
         fail("msvc", "winget finished but the C++ toolchain is still not detectable. "
                      "Open a new terminal, or install the workload from the Visual Studio Installer.")
     log("install: MSVC build tools ready.")
