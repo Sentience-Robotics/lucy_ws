@@ -153,8 +153,6 @@ the address it shows. Defaults:
 
 ### macOS notes
 
-- **XQuartz is required to install**, not to display: `install.sh` checks for `xhost`, which
-  ships with XQuartz. You install it to get past that check even though the GUI never uses it.
 - On Apple Silicon, XQuartz can't give the container an OpenGL context, so the VNC desktop is
   used by default — nothing further to configure for the GUI.
 
