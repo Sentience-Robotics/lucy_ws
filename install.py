@@ -424,14 +424,19 @@ def pixi_install_command() -> list[str]:
     return ["sh", "-c", f"curl -fsSL {PIXI_INSTALL_URL_POSIX} | bash"]
 
 
-def confirm_pixi_install() -> None:
-    if env_flag("LUCY_PIXI_AUTO_UPGRADE") or env_flag("CI"):
+def confirm_install(req_id: str, prompt: str, auto_env: str) -> None:
+    """Ask before installing third-party software; skip the prompt in CI or when opted in."""
+    if env_flag(auto_env) or env_flag("CI"):
         return
     if not sys.stdin or not sys.stdin.isatty():
-        fail("pixi", "pixi install/upgrade needs confirmation in non-interactive mode. "
-                     "Set LUCY_PIXI_AUTO_UPGRADE=1 or run from an interactive terminal.")
-    if input("Install/upgrade pixi via https://pixi.sh? [y/N] ").strip().lower() not in ("y", "yes"):
-        fail("pixi", "Aborted — install pixi manually or set LUCY_PIXI_AUTO_UPGRADE=1.")
+        fail(req_id, f"{prompt} needs confirmation in non-interactive mode. "
+                     f"Set {auto_env}=1 or run from an interactive terminal.")
+    if input(f"{prompt} [y/N] ").strip().lower() not in ("y", "yes"):
+        fail(req_id, f"Aborted — install it manually or set {auto_env}=1.")
+
+
+def confirm_pixi_install() -> None:
+    confirm_install("pixi", "Install/upgrade pixi via https://pixi.sh?", "LUCY_PIXI_AUTO_UPGRADE")
 
 
 def ensure_pixi(run_command: Callable = default_run_command, log: Log = print) -> None:
@@ -459,6 +464,42 @@ def ensure_pixi(run_command: Callable = default_run_command, log: Log = print) -
                      f"{', '.join(str(d) for d in pixi_bin_dirs())} to PATH and re-run.")
     if not version_at_least(current, minimum):
         fail("pixi", f"pixi {current} still below {minimum} after install.")
+
+
+MSVC_WINGET_ID = "Microsoft.VisualStudio.2022.BuildTools"
+MSVC_WINGET_OVERRIDE = f"--quiet --wait --norestart --add {VC_TOOLS_COMPONENT}"
+
+
+def msvc_install_command() -> list[str]:
+    return [
+        "winget", "install", "--id", MSVC_WINGET_ID,
+        "--accept-source-agreements", "--accept-package-agreements",
+        "--override", MSVC_WINGET_OVERRIDE,
+    ]
+
+
+def ensure_msvc(run_command: Callable = default_run_command, log: Log = print) -> None:
+    """Install the MSVC build tools when missing. Windows only; no-op elsewhere.
+
+    Only the compiler component is requested: the Windows SDK usually ships with
+    Windows already, and the full C++ workload is several GB larger.
+    """
+    if sys.platform != "win32" or find_vcvars() is not None:
+        return
+    if env_flag("LUCY_SKIP_MSVC_INSTALL"):
+        fail("msvc", "MSVC build tools not found and LUCY_SKIP_MSVC_INSTALL is set.")
+    if shutil.which("winget") is None:
+        fail("msvc", "winget not found, so the build tools cannot be installed automatically.")
+
+    log("install: MSVC build tools not found — installing via winget (roughly 1.5 GB) ...")
+    log("install: (LUCY_SKIP_MSVC_INSTALL=1 to abort; LUCY_MSVC_AUTO_INSTALL=1 to skip prompt)")
+    confirm_install("msvc", "Install the Visual Studio Build Tools C++ compiler?", "LUCY_MSVC_AUTO_INSTALL")
+    run_command(msvc_install_command())
+
+    if find_vcvars() is None:
+        fail("msvc", "winget finished but the C++ toolchain is still not detectable. "
+                     "Open a new terminal, or install the workload from the Visual Studio Installer.")
+    log("install: MSVC build tools ready.")
 
 
 # --- repo fetching -----------------------------------------------------------
@@ -743,6 +784,8 @@ def run_flow(
         log("DEV=true: using url_ssh from repos config.")
 
     ensure_pixi(run_command, log)
+    if not skip_build:
+        ensure_msvc(run_command, log)
     require_prerequisites(
         developer=developer, project_root=root, require_build_tools=not skip_build
     )
