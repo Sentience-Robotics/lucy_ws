@@ -1,6 +1,3 @@
-# Pixi + RoboStack workspace install (clone + colcon + yarn) and a headless launch
-# smoke test on Linux, macOS, and Windows GitHub-hosted runners.
-#
 # - DEV=false  -> install.sh uses url_https from config/repos.json.
 # - ./install.sh --skip-build clones sub-repos; colcon build runs via pixi run build.
 

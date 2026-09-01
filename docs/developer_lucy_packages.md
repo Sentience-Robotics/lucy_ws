@@ -94,7 +94,7 @@ Pixi installs RoboStack Jazzy; `colcon build --symlink-install` builds `src/`; `
 | **inmoov_urdf** | URDF, Gazebo/RViz launches |
 | **lucy_ros_packages** | `lucy_bringup`, ros2_control, cameras |
 | **lucy_control_panel** | Web UI |
-| **micro_ros_agent**, **audio_common** | Optional (`optional: true` in repos.json) |
+| **micro_ros_agent** | Optional (`optional: true` in repos.json) |
 
 ## Launch
 

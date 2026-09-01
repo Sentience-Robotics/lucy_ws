@@ -7,7 +7,7 @@ This document outlines the **deferred** end-user release path. The PoC branch ke
 Full-stack artifact (not `lucy_bringup` alone):
 
 - All `lucy_ros_packages/*`, `inmoov_urdf`, optional `thais_urdf`
-- External clones built in CI (`micro_ros_agent`, `audio_common`)
+- External clones built in CI (`micro_ros_agent`)
 - Launcher assets + control panel packaging strategy
 - Release CI manifest with `preview = ["pixi-build"]` only in the release workflow
 
@@ -16,7 +16,7 @@ Full-stack artifact (not `lucy_bringup` alone):
 | Option | Best for |
 |--------|----------|
 | Private conda channel (prefix.dev) | Networked workstations |
-| Pixi Pack bundles | Jetson / air-gapped |
+| Pixi Pack bundles | Jetson |
 
 ## Suggested follow-up commits
 

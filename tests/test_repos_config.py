@@ -150,4 +150,3 @@ def test_optional_flag_preserved_in_json():
     data = json.loads(cfg.read_text())
     optional = [r["name"] for r in data["repos"] if r.get("optional")]
     assert "micro_ros_agent" in optional
-    assert "audio_common" in optional
