@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,12 @@ from launcher.platform import (
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 DETECT_JETSON_SH = WORKSPACE_ROOT / "scripts" / "detect_jetson.sh"
+
+# On Windows "bash" resolves to System32ash.exe (the WSL launcher), which
+# exits 1 with no distro installed and never runs the script.
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX-only shell helper"
+)
 
 
 def _run_detect_jetson(env: dict | None = None) -> int:
@@ -61,7 +68,7 @@ def test_is_jetson_from_tegra_release(monkeypatch, tmp_path):
     monkeypatch.delenv("LUCY_GPU_MODE", raising=False)
 
     def fake_is_file(self):
-        return str(self) == "/etc/nv_tegra_release"
+        return self.as_posix() == "/etc/nv_tegra_release"
 
     monkeypatch.setattr(
         "launcher.platform.Path.is_file", fake_is_file
@@ -80,13 +87,16 @@ def test_ensure_headless_runtime_dir_creates_private_dir(monkeypatch, tmp_path):
     created = ensure_headless_runtime_dir()
     assert created == str(runtime)
     assert runtime.is_dir()
-    assert oct(runtime.stat().st_mode & 0o777) == oct(0o700)
+    if sys.platform != "win32":
+        assert oct(runtime.stat().st_mode & 0o777) == oct(0o700)
 
 
+@posix_only
 def test_shell_detect_jetson_matches_python_for_jetson_mode():
     assert _run_detect_jetson({"LUCY_GPU_MODE": "jetson"}) == 0
 
 
+@posix_only
 @pytest.mark.skipif(not DETECT_JETSON_SH.is_file(), reason="detect_jetson.sh missing")
 def test_shell_detect_jetson_rejects_disabled_mode():
     assert _run_detect_jetson({"LUCY_GPU_MODE": "0"}) != 0

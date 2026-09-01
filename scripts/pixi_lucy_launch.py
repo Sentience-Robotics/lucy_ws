@@ -5,11 +5,53 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
 JOINT_COMMAND_TOPIC = "/lucy/commanded_joint_states"
+JOINT_STATES_TOPIC = "/joint_states"
+# Long enough for a working ros2_control to have spawned its broadcaster.
+FALLBACK_DELAY_S = 25.0
+WINDOWS_EXEC_SUFFIXES = (".exe", ".bat", ".cmd")
+
+
+def node_argv(package: str, executable: str) -> list[str]:
+    """Absolute argv for a node, bypassing the ``ros2 run`` wrapper.
+
+    ``ros2 run`` runs the node as a child of itself, so terminating the wrapper
+    leaves the node publishing. Repeated runs then pile up stand-ins that all
+    write /joint_states with stale poses.
+    """
+    from ament_index_python.packages import get_package_prefix
+
+    lib_dir = Path(get_package_prefix(package)) / "lib" / package
+    matches = sorted(
+        (p for p in lib_dir.glob("*") if p.is_file() and p.stem == executable),
+        key=lambda p: 0 if not p.suffix or p.suffix.lower() in WINDOWS_EXEC_SUFFIXES else 1,
+    )
+    if not matches:
+        raise RuntimeError(f"{package}/{executable} not found in {lib_dir}")
+    best = matches[0]
+    if os.name == "nt" and best.suffix.lower() not in WINDOWS_EXEC_SUFFIXES:
+        return [sys.executable, str(best)]
+    return [str(best)]
+
+
+def joint_states_publisher_count() -> int:
+    """How many nodes already publish /joint_states (0 if it cannot be read)."""
+    try:
+        out = subprocess.run(
+            ["ros2", "topic", "info", JOINT_STATES_TOPIC],
+            capture_output=True, text=True, timeout=30,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    for line in out.splitlines():
+        if line.lower().startswith("publisher count:"):
+            return int(line.split(":", 1)[1].strip() or 0)
+    return 0
 
 
 def configure_windows_dll_search_path() -> None:
@@ -101,7 +143,7 @@ def _start_joint_state_fallback():
     commands = [
         [sys.executable, str(ROOT / "scripts" / "joint_command_echo.py")],
         [
-            "ros2", "run", "joint_state_publisher", "joint_state_publisher",
+            *node_argv("joint_state_publisher", "joint_state_publisher"),
             "--ros-args", "-p", f"source_list:=['{JOINT_COMMAND_TOPIC}']",
         ],
     ]
@@ -112,6 +154,34 @@ def _start_joint_state_fallback():
         except OSError as exc:
             print(f"warning: could not start {command[0]}: {exc}", file=sys.stderr)
     return started
+
+
+def _start_joint_state_fallback_when_needed(started: list) -> threading.Thread:
+    """Start the stand-in only once it is clear nothing else drives /joint_states.
+
+    A second publisher makes the panel alternate between the two poses, so wait
+    for the real stack to settle and check the graph before joining it. Also
+    catches publishers left over from an earlier run.
+    """
+    def wait_then_start() -> None:
+        cancelled.wait(FALLBACK_DELAY_S)
+        if cancelled.is_set():
+            return
+        existing = joint_states_publisher_count()
+        if existing:
+            print(
+                f"{JOINT_STATES_TOPIC} already has {existing} publisher(s); not "
+                "starting the stand-in, which would fight them.",
+                file=sys.stderr,
+            )
+            return
+        started.extend(_start_joint_state_fallback())
+
+    cancelled = threading.Event()
+    thread = threading.Thread(target=wait_then_start, daemon=True)
+    thread.cancelled = cancelled
+    thread.start()
+    return thread
 
 
 def _stop(proc) -> None:
@@ -139,10 +209,18 @@ def main() -> int:
         *sys.argv[1:],
     ]
 
-    fallback = _start_joint_state_fallback() if _joint_state_fallback_enabled() else []
+    fallback: list = []
+    waiter = (
+        _start_joint_state_fallback_when_needed(fallback)
+        if _joint_state_fallback_enabled()
+        else None
+    )
     try:
         return subprocess.call(command, cwd=ROOT)
     finally:
+        if waiter is not None:
+            waiter.cancelled.set()
+            waiter.join(timeout=5)
         for proc in fallback:
             _stop(proc)
 

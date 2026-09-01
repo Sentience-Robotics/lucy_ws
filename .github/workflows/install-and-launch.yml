@@ -79,7 +79,7 @@ jobs:
 
       - name: Launch smoke test (headless)
         shell: bash
-        run: ./launch_lucy.sh --headless ros2 doctor --report
+        run: ./launch_lucy.sh --headless python scripts/ros_doctor.py
 
       - name: Launcher tmux smoke (Linux)
         if: matrix.pixi_platform == 'linux-64'
