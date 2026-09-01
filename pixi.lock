@@ -4497,6 +4497,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-intra-process-demo-0.33.10-np2py312h7e38322_18.conda
       - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-joint-limits-4.45.1-np2py312h5f99496_18.conda
       - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-joint-state-broadcaster-4.40.0-np2py312hf80f32c_18.conda
+      - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-joint-state-publisher-2.4.1-np2py312hf80f32c_18.conda
       - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-joint-trajectory-controller-4.40.0-np2py312hf80f32c_18.conda
       - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-joy-3.3.0-np2py312hf80f32c_18.conda
       - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-kdl-parser-2.11.0-np2py312hf80f32c_18.conda
@@ -84751,6 +84752,27 @@ packages:
   run_exports: {}
   size: 202972
   timestamp: 1782338689417
+- conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-joint-state-publisher-2.4.1-np2py312hf80f32c_18.conda
+  sha256: bbf8b081fbb07103b1165c85ef765bfec69ed0cdeaffc681b53aca1c7479a5fb
+  md5: ef88ae580f3cbc4afeb1e9b36a56f188
+  depends:
+  - packaging
+  - python
+  - ros-jazzy-rclpy
+  - ros-jazzy-ros-workspace
+  - ros-jazzy-sensor-msgs
+  - ros-jazzy-std-msgs
+  - ros2-distro-mutex 0.15.* jazzy_*
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  - ucrt >=10.0.20348.0
+  - numpy >=1.25,<3
+  - ros2-distro-mutex >=0.15.0,<0.16.0a0
+  - python_abi 3.12.* *_cp312
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 53931
+  timestamp: 1782328029385
 - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-joint-trajectory-controller-4.40.0-np2py312hf80f32c_18.conda
   sha256: 3e2c61a0ab67084fcf4e9f1016c38187e677f4e59df40870f9f3a1b76aab9bb8
   md5: 0e40ba1f7b33590134a57100d801a1b8

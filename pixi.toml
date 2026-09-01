@@ -65,8 +65,10 @@ env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 
 [feature.ros.target.win-64.dependencies]
-# >=0.19 speaks the empy 4 API; 0.17.x still imports em.OVERRIDE_OPT and cannot
-# load its build extensions against the empy the rest of the lock resolves to.
+# controller_manager crashes on win-64, so nothing publishes /joint_states.
+# joint_state_publisher supplies it from the URDF (viewer only, not driveable).
+ros-jazzy-joint-state-publisher = "*"
+# 0.17.x imports em.OVERRIDE_OPT and cannot load extensions against empy 4.
 colcon-core = ">=0.19"
 colcon-defaults = ">=0.2.8,<0.3"
 colcon-library-path = ">=0.2.1,<0.3"
@@ -125,6 +127,8 @@ sim = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true" }
 sim-headless = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless:=true" }
 sim-rviz = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless:=true rviz:=true" }
 rviz = { cmd = "python scripts/pixi_lucy_launch.py rviz:=true" }
+# Stand-in for joint_state_broadcaster; run alongside `core`.
+joint-states = "ros2 run joint_state_publisher joint_state_publisher"
 
 [feature.launcher.tasks]
 # Standalone components (run in separate terminals alongside core / sim-*)

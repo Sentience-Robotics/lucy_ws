@@ -264,11 +264,8 @@ def git_identity_warnings() -> list[str]:
 
 
 def workspace_path_issue(project_root: Path | str) -> Optional[dict]:
-    """Windows console-script shims embed the interpreter path unquoted.
-
-    Every entry point in the Pixi env (colcon, pytest, ROS 2 nodes) then fails with
-    'Unable to create process using ...' when the workspace path contains a space.
-    """
+    """Console-script shims pass the interpreter path to CreateProcess unquoted,
+    so every entry point in the Pixi env fails from a path containing a space."""
     path = Path(project_root).resolve()
     if sys.platform != "win32" or " " not in str(path):
         return None
@@ -306,9 +303,7 @@ def find_vcvars() -> Optional[Path]:
 def msvc_environment() -> Optional[dict]:
     """Environment as vcvars64.bat leaves it, so colcon can find cl.exe.
 
-    ROS 2 C++ packages need the MSVC toolchain, which only lands on PATH inside a
-    VS developer shell. Running vcvars and harvesting `set` gives the same result
-    without asking anyone to launch a special prompt.
+    Harvesting `set` after vcvars saves anyone having to open a VS shell.
     """
     vcvars = find_vcvars()
     if vcvars is None:
@@ -614,12 +609,8 @@ def pixi_run(project_root: Path | str, args: list[str], run_command: Callable) -
 def ensure_windows_libexec_shims(project_root: Path | str, log: Log = print) -> list[str]:
     """Give conda ROS packages the Windows launcher stubs they ship without.
 
-    RoboStack's win-64 packages install their Python nodes as extensionless Unix
-    scripts (Library/lib/<pkg>/rosbridge_websocket). ros2 launch resolves exec= via
-    PATHEXT, so those never start on Windows -- colcon-built packages work only
-    because setuptools gives them a .exe. Write a .bat next to each one; Windows
-    needs a PATHEXT-matching file, so a stub is the only option here.
-
+    RoboStack installs its Python nodes as extensionless Unix scripts, which
+    ros2 launch cannot exec because it resolves exec= through PATHEXT.
     Re-run after every pixi install, which recreates the environment.
     """
     if sys.platform != "win32":
@@ -666,12 +657,9 @@ ROSBRIDGE_SIGNAL_PATCHED = """    for sig in (signal.SIGINT, signal.SIGTERM):
 def patch_windows_rosbridge_signals(project_root: Path | str, log: Log = print) -> list[str]:
     """Stop rosbridge crashing on startup under Windows.
 
-    rosbridge_suite 2.6.0 calls loop.add_signal_handler(), which raises
-    NotImplementedError on Windows. It happens just after the listening socket is
-    bound, so the port looks open while nothing ever answers the WebSocket
-    handshake, and respawn hides the crash. Guard the call in place.
-
-    Workaround for an upstream bug; drop once rosbridge_suite ships a fix.
+    rosbridge_suite 2.6.0 calls loop.add_signal_handler(), unimplemented on
+    Windows, just after binding the socket: the port opens but nothing ever
+    answers. Upstream bug; drop this once it ships a fix.
     """
     if sys.platform != "win32":
         return []
