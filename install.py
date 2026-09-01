@@ -647,6 +647,51 @@ def ensure_windows_libexec_shims(project_root: Path | str, log: Log = print) -> 
     return created
 
 
+ROSBRIDGE_SIGNAL_ORIGINAL = """    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, handle_signal)
+"""
+
+ROSBRIDGE_SIGNAL_PATCHED = """    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, handle_signal)
+        except NotImplementedError:
+            # Windows asyncio has no add_signal_handler; fall back to signal.signal.
+            signal.signal(sig, lambda *_: loop.call_soon_threadsafe(handle_signal))
+"""
+
+
+def patch_windows_rosbridge_signals(project_root: Path | str, log: Log = print) -> list[str]:
+    """Stop rosbridge crashing on startup under Windows.
+
+    rosbridge_suite 2.6.0 calls loop.add_signal_handler(), which raises
+    NotImplementedError on Windows. It happens just after the listening socket is
+    bound, so the port looks open while nothing ever answers the WebSocket
+    handshake, and respawn hides the crash. Guard the call in place.
+
+    Workaround for an upstream bug; drop once rosbridge_suite ships a fix.
+    """
+    if sys.platform != "win32":
+        return []
+
+    patched = []
+    for env_dir in sorted((Path(project_root) / ".pixi" / "envs").glob("*")):
+        script = env_dir / "Library" / "lib" / "rosbridge_server" / "rosbridge_websocket"
+        if not script.is_file():
+            continue
+        source = script.read_text(encoding="utf-8")
+        if ROSBRIDGE_SIGNAL_ORIGINAL not in source:
+            continue
+        script.write_text(
+            source.replace(ROSBRIDGE_SIGNAL_ORIGINAL, ROSBRIDGE_SIGNAL_PATCHED), encoding="utf-8"
+        )
+        patched.append(str(script))
+
+    if patched:
+        log("Windows: guarded rosbridge's asyncio signal handlers "
+            "(upstream rosbridge_suite crashes on Windows without this)")
+    return patched
+
+
 def pixi_install(
     project_root: Path | str, run_command: Callable = default_run_command, log: Log = print
 ) -> None:
@@ -656,6 +701,7 @@ def pixi_install(
     log("Pixi install (RoboStack Jazzy, all workspace platforms) ...")
     pixi_run(project_root, ["install"], run_command)
     ensure_windows_libexec_shims(project_root, log)
+    patch_windows_rosbridge_signals(project_root, log)
 
 
 def build_local_realsense_optional(
