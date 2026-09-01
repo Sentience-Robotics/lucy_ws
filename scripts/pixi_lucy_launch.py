@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 
@@ -14,15 +15,14 @@ JOINT_COMMAND_TOPIC = "/lucy/commanded_joint_states"
 JOINT_STATES_TOPIC = "/joint_states"
 # Long enough for a working ros2_control to have spawned its broadcaster.
 FALLBACK_DELAY_S = 25.0
+DISCOVERY_SETTLE_S = 3.0
 WINDOWS_EXEC_SUFFIXES = (".exe", ".bat", ".cmd")
 
 
 def node_argv(package: str, executable: str) -> list[str]:
     """Absolute argv for a node, bypassing the ``ros2 run`` wrapper.
 
-    ``ros2 run`` runs the node as a child of itself, so terminating the wrapper
-    leaves the node publishing. Repeated runs then pile up stand-ins that all
-    write /joint_states with stale poses.
+    That wrapper survives its own node, so stopping it leaves the node publishing.
     """
     from ament_index_python.packages import get_package_prefix
 
@@ -40,18 +40,28 @@ def node_argv(package: str, executable: str) -> list[str]:
 
 
 def joint_states_publisher_count() -> int:
-    """How many nodes already publish /joint_states (0 if it cannot be read)."""
+    """How many nodes already publish /joint_states (0 if it cannot be read).
+
+    Not via `ros2 topic info`: its daemon inherits the pipe and capturing the
+    output then blocks forever, even after the timeout kills the CLI.
+    """
+    import rclpy
+
     try:
-        out = subprocess.run(
-            ["ros2", "topic", "info", JOINT_STATES_TOPIC],
-            capture_output=True, text=True, timeout=30,
-        ).stdout
-    except (OSError, subprocess.SubprocessError):
+        rclpy.init(args=[])
+    except Exception:
         return 0
-    for line in out.splitlines():
-        if line.lower().startswith("publisher count:"):
-            return int(line.split(":", 1)[1].strip() or 0)
-    return 0
+    try:
+        node = rclpy.create_node("lucy_joint_state_probe")
+        try:
+            time.sleep(DISCOVERY_SETTLE_S)
+            return node.count_publishers(JOINT_STATES_TOPIC)
+        finally:
+            node.destroy_node()
+    except Exception:
+        return 0
+    finally:
+        rclpy.try_shutdown()
 
 
 def configure_windows_dll_search_path() -> None:
@@ -157,11 +167,9 @@ def _start_joint_state_fallback():
 
 
 def _start_joint_state_fallback_when_needed(started: list) -> threading.Thread:
-    """Start the stand-in only once it is clear nothing else drives /joint_states.
+    """Start the stand-in only once nothing else drives /joint_states.
 
-    A second publisher makes the panel alternate between the two poses, so wait
-    for the real stack to settle and check the graph before joining it. Also
-    catches publishers left over from an earlier run.
+    A second publisher makes the panel alternate between the two poses.
     """
     def wait_then_start() -> None:
         cancelled.wait(FALLBACK_DELAY_S)

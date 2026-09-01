@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Run `ros2 doctor --report` without letting DDS discovery hang the caller.
 
-`ros2 doctor` waits on the middleware, and on hosts where multicast cannot be
-routed the wait never ends: on a macOS CI runner Cyclone picked a virtual
-interface, failed every `ddsi_udp_conn_write` to 239.255.0.1, and the job sat
-there until the 2h limit. Scope discovery to localhost so the report is about
-this machine, and cap the runtime so a stuck middleware fails fast.
+Where multicast cannot be routed the middleware wait never ends; a macOS runner
+burnt its whole 2h limit on it. Scope discovery to localhost and cap the run.
 """
 
 from __future__ import annotations

@@ -10,10 +10,10 @@ When enabled:
 
 | Behavior | Effect |
 |----------|--------|
-| **SSH clones** | `install.sh` uses `url_ssh` from [`config/repos.json`](../config/repos.json) instead of HTTPS |
+| **SSH clones** | `install.py` uses `url_ssh` from [`config/repos.json`](../config/repos.json) instead of HTTPS |
 | **No auto-launch** | Core and Control Panel are not started automatically on Launch |
 
-SSH keys must be configured for GitHub on your host before running `./install.sh` with `DEV=true`.
+SSH keys must be configured for GitHub on your host before running `install.py` with `DEV=true`.
 
 ### Local overrides (gitignored)
 
@@ -44,7 +44,7 @@ For a multi-robot dev setup, copy [`config/launcher_config.json.local.example`](
 
 ### Linux
 
-Standard path: `./install.sh` then `python3 Lucy.py`.
+Standard path: `python3 install.py` then `python3 Lucy.py`.
 
 **Wayland:** RViz/Gazebo may need `xhost +local:` or an X11 session.
 
@@ -66,28 +66,28 @@ Developer CLI equivalents:
 
 | Windows | Linux/macOS |
 |---------|-------------|
-| `Lucy-Setup.exe` → Fresh install | `./install.sh` |
-| `Lucy-Setup.exe` → Update | `./install.sh` |
-| `Lucy-Setup.exe` → Repair | `./install.sh --repair` |
+| `Lucy-Setup.exe` → Fresh install | `python3 install.py` |
+| `Lucy-Setup.exe` → Update | `python3 install.py` |
+| `Lucy-Setup.exe` → Repair | `python3 install.py --repair` |
 | `Lucy.exe` | `./launch_lucy.sh` |
-| `Lucy.exe --cli build-only` | `./install.sh --build-only` |
+| `Lucy.exe --cli build-only` | `python3 install.py --build-only` |
 
 Launch runs via Git Bash (`bash launch_lucy.sh`). Without tmux, the Control Center runs directly (`pixi run -- python -m launcher`).
 
-### Workspace install (`install.sh`)
+### Workspace install (`install.py`)
 
 Pixi installs RoboStack Jazzy; `colcon build --symlink-install` builds `src/`; `yarn install` sets up the control panel.
 
 | Command | What it does |
 |---------|--------------|
-| `./install.sh` | Clone missing repos, pull existing ones, `pixi install`, colcon build |
-| `./install.sh --repair` | Wipe each repo under `src/` then re-clone and rebuild |
-| `./install.sh --build-only` | Skip git; `pixi install` + colcon + panel yarn |
-| `./install.sh --skip-build` | Clone/pull only (CI) |
+| `python3 install.py` | Clone missing repos, pull existing ones, `pixi install`, colcon build |
+| `python3 install.py --repair` | Wipe each repo under `src/` then re-clone and rebuild |
+| `python3 install.py --build-only` | Skip git; `pixi install` + colcon + panel yarn |
+| `python3 install.py --skip-build` | Clone/pull only (CI) |
 
 **Do not use `rosdep`** — it bypasses Pixi/RoboStack. Add deps via `pixi.toml` or clone into `src/`. See [`docs/pixi_setup.md`](pixi_setup.md).
 
-**RealSense** (optional, not in Pixi): after a normal build, run `./scripts/build_local_realsense.sh` or `LUCY_BUILD_REALSENSE=1 ./install.sh`. Primary target is Linux; see script for aarch64 notes.
+**RealSense** (optional, not in Pixi): after a normal build, run `./scripts/build_local_realsense.sh` or `LUCY_BUILD_REALSENSE=1 python3 install.py`. Primary target is Linux; see script for aarch64 notes.
 
 **Packages under `src/`** (from [`config/repos.json`](../config/repos.json)):
 
@@ -174,7 +174,7 @@ ros2 launch lucy_bringup lucy.launch.py gazebo:=true
 
 | Action | Command |
 |--------|---------|
-| Install / update | `./install.sh` |
+| Install / update | `python3 install.py` |
 | Rebuild | `pixi run build` then `pixi run panel-install` |
 | Launch | `./launch_lucy.sh` |
 | Dev shell | `pixi run shell` |
@@ -205,7 +205,7 @@ From **Configuration → ACTIVATE**, enable **SIMULATION ONLY** to run **VALIDAT
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `DEV` | unset | `true` → SSH clones during `install.sh` |
+| `DEV` | unset | `true` → SSH clones during `install.py` |
 | `PORT_CONTROL_PANEL` | auto | Host port for control panel URL |
 | `PORT_CONTROL_PANEL_CONTAINER` | `VITE_PORT` from `src/lucy_control_panel/.env`, else `4004` | Port the Vite dev server listens on inside the container |
 | `PORT_ROSBRIDGE` | `9090` | rosbridge WebSocket |

@@ -202,7 +202,7 @@ def main_tui(stdscr):
                 set_dev_mode(is_dev_mode)
             elif selected_option == "Update":
                 return {
-                    "cmd": ["./install.sh"],
+                    "cmd": [sys.executable, "install.py"],
                     "interactive": False,
                     "name": "Install",
                     "extra_env": INSTALL_ENV,
@@ -249,7 +249,7 @@ if __name__ == "__main__":
             sys.exit(1)
         if not wants_install:
             sys.exit(0)
-        rc = run_command(["./install.sh"], extra_env=INSTALL_ENV)
+        rc = run_command([sys.executable, "install.py"], extra_env=INSTALL_ENV)
         if rc != 0:
             print(f"\n--- Install finished with exit code {rc} ---")
             print("Press Enter to exit.")

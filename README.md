@@ -35,10 +35,10 @@ Run `Lucy.py` and the install scripts **from the repository root** — they read
 ### Linux / macOS
 
 ```bash
-./install.sh          # thin wrapper around install.py
+python3 install.py
 ```
 
-**NixOS:** enable [nix-ld](https://github.com/nix-community/nix-ld) so Pixi/RoboStack conda binaries can load the host dynamic linker (required before `./install.sh`):
+**NixOS:** enable [nix-ld](https://github.com/nix-community/nix-ld) so Pixi/RoboStack conda binaries can load the host dynamic linker (required before `install.py`):
 
 ```nix
 programs.nix-ld.enable = true;
@@ -80,7 +80,7 @@ pixi run control-panel   # http://localhost:4004
 pixi run rviz            # optional viewer
 ```
 
-`pixi run core` also starts a `/joint_states` stand-in, because ros2_control's controller_manager currently crashes on Windows. The robot renders and follows the panel's sliders, but is not driveable. See the [developer guide](docs/developer_lucy_packages.md).
+`pixi run core` also starts a `/joint_states` stand-in, because ros2_control's controller_manager currently crashes on Windows. The model follows the panel's sliders, but nothing reaches the hardware. See the [developer guide](docs/developer_lucy_packages.md).
 
 ## Using the Lucy launcher
 
@@ -117,5 +117,5 @@ For developer mode, Pixi component tasks (`pixi run core`, `sim-headless`, …),
 
 ## More
 
-- [`docs/developer_lucy_packages.md`](docs/developer_lucy_packages.md) — developer guide: per-repo docs, all `install.sh` / `launch_lucy.sh` flags, dev mode, ports, environment overrides, packages overview.
+- [`docs/developer_lucy_packages.md`](docs/developer_lucy_packages.md) — developer guide: per-repo docs, all `install.py` / `launch_lucy.sh` flags, dev mode, ports, environment overrides, packages overview.
 - [`docs/launcher_packages.md`](docs/launcher_packages.md) — launcher guide: how to add new packages to the launcher UI and understand the configuration fields.

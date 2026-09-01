@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start the Lucy stack (ROS 2 Jazzy + Control Center launcher) via Pixi.
 #
-# Prerequisite: ./install.sh
+# Prerequisite: python3 install.py
 #
 # Usage:
 #   ./launch_lucy.sh                tmux + Control Center launcher (default)
@@ -14,8 +14,6 @@
 # Ports published on the host: rosbridge 9090, control panel PORT_CONTROL_PANEL (defaults to
 # VITE_PORT from src/lucy_control_panel/.env, else 4004). Vite proxies /rosbridge to the bridge.
 #
-# Docker platform follows the last ./install.sh run (.lucy-docker-platform; override with LUCY_DOCKER_PLATFORM).
-# GPU mode is auto-detected via docker/gpu_detect.sh (jetson / nvidia / dri / software).
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -99,7 +97,7 @@ vite_scheme_from_envfile() {
 check_cmd pixi
 
 if [[ ! -f "$SCRIPT_DIR/install/setup.bash" && ! -f "$SCRIPT_DIR/install/setup.bat" ]]; then
-  echo "Workspace not built. Run ./install.sh or Install in Lucy.py" >&2
+  echo "Workspace not built. Run python3 install.py or Install in Lucy.py" >&2
   exit 1
 fi
 
