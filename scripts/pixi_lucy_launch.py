@@ -76,6 +76,40 @@ def validate_windows_ros_runtime() -> None:
         ) from exc
 
 
+def _joint_state_fallback_enabled() -> bool:
+    """Whether to stand in for joint_state_broadcaster.
+
+    controller_manager crashes on startup on win-64, so no controller spawns and
+    nothing publishes /joint_states, leaving the control panel with no pose to
+    draw. Set LUCY_JOINT_STATE_FALLBACK=0 once ros2_control works on Windows,
+    otherwise this would publish alongside joint_state_broadcaster.
+    """
+    if os.name != "nt":
+        return False
+    value = os.environ.get("LUCY_JOINT_STATE_FALLBACK", "1").strip().lower()
+    return value not in ("0", "false", "no", "off")
+
+
+def _start_joint_state_publisher():
+    try:
+        return subprocess.Popen(
+            ["ros2", "run", "joint_state_publisher", "joint_state_publisher"], cwd=ROOT
+        )
+    except OSError as exc:
+        print(f"warning: could not start joint_state_publisher: {exc}", file=sys.stderr)
+        return None
+
+
+def _stop(proc) -> None:
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
 def main() -> int:
     configure_windows_dll_search_path()
     validate_windows_ros_runtime()
@@ -91,7 +125,11 @@ def main() -> int:
         *sys.argv[1:],
     ]
 
-    return subprocess.call(command, cwd=ROOT)
+    joint_states = _start_joint_state_publisher() if _joint_state_fallback_enabled() else None
+    try:
+        return subprocess.call(command, cwd=ROOT)
+    finally:
+        _stop(joint_states)
 
 
 if __name__ == "__main__":

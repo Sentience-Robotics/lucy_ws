@@ -127,7 +127,7 @@ sim = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true" }
 sim-headless = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless:=true" }
 sim-rviz = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless:=true rviz:=true" }
 rviz = { cmd = "python scripts/pixi_lucy_launch.py rviz:=true" }
-# Stand-in for joint_state_broadcaster; run alongside `core`.
+# core starts this automatically; here for running it standalone.
 joint-states = "ros2 run joint_state_publisher joint_state_publisher"
 
 [feature.launcher.tasks]
