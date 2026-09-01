@@ -1,14 +1,15 @@
 # Lucy ROS 2 workspace (Jazzy)
 
-Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Jazzy, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host (plus **`xhost`** on Linux for GUI forwarding; on macOS the GUI is viewed over VNC with no extra software — see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo)).
+Workspace bringup for the Lucy / InMoov humanoid. Everything (ROS 2 Jazzy, Gazebo, RViz, the web control panel) runs inside a single Docker container — you only need **Docker**, **Git** and **Python 3** on the host, plus **`xhost`** for GUI forwarding (preinstalled on Linux, provided by **XQuartz** on macOS). On macOS the GUI itself is then viewed over VNC, with no further setup — see [GUI: RViz and Gazebo](#gui-rviz-and-gazebo).
 
 ## Requirements
 
 - [Python3](https://www.python.org/downloads/)
 - [Docker](https://docs.docker.com/engine/install/)
 - [Git](https://git-scm.com/downloads)
+- **macOS only:** [XQuartz](https://www.xquartz.org/) — provides `xhost`, which `install.sh` requires
 
-<sub>Linux GUI forwarding uses `xhost` (preinstalled). On Wayland run `xhost +local:docker` if windows don't open — see [GUI](#gui-rviz-and-gazebo).</sub>
+<sub>`xhost` gates the install on every platform. Linux ships it preinstalled (on Wayland run `xhost +local:docker` if windows don't open); on macOS it comes with XQuartz.` — see [GUI](#gui-rviz-and-gazebo).</sub>
 
 > **Windows users:** see the [Windows README](windows/README.md) — **`Lucy-Setup.exe`** to install/update, **`Lucy.exe`** to launch.
 
@@ -152,8 +153,10 @@ the address it shows. Defaults:
 
 ### macOS notes
 
+- **XQuartz is required to install**, not to display: `install.sh` checks for `xhost`, which
+  ships with XQuartz. You install it to get past that check even though the GUI never uses it.
 - On Apple Silicon, XQuartz can't give the container an OpenGL context, so the VNC desktop is
-  used by default — no setup required.
+  used by default — nothing further to configure for the GUI.
 
 ## More
 
