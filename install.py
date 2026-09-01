@@ -313,7 +313,9 @@ def msvc_environment() -> Optional[dict]:
     vcvars = find_vcvars()
     if vcvars is None:
         return None
-    result = run_quiet(["cmd", "/c", f'"{vcvars}" >nul 2>&1 && set'], timeout=120)
+    # vcvars must be its own argument: folded into one string, list2cmdline re-quotes
+    # the spaces in its path and cmd cannot find it.
+    result = run_quiet(["cmd", "/c", str(vcvars), "&&", "set"], timeout=120)
     if result.returncode != 0:
         return None
     env = dict(
