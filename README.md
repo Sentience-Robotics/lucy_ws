@@ -110,7 +110,7 @@ Or Git Bash: `./launch_lucy.sh`
 
 > **Recommended starting point:** **Core + Control Panel** — the web 3D viewer is enough for most work without heavy GUI apps.
 
-**Control panel:** after Launch, enable **Core + Control Panel**. Open [http://localhost:5000](http://localhost:5000) (or the URL shown in the launcher if another port was chosen).
+**Control panel:** after Launch, enable **Core + Control Panel**. Open [http://localhost:4004](http://localhost:4004) (or the URL shown in the launcher if another port was chosen).
 
 **tmux windows** (Linux/macOS):
 
