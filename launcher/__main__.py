@@ -18,6 +18,20 @@ from .tui import main
 
 
 def run():
+    if sys.platform == "win32":
+        # The TUI starts, stops and polls every package through tmux, and Windows
+        # has no equivalent, so run the workspace through Pixi directly instead.
+        print(
+            "The launcher TUI is not supported on Windows yet.\n"
+            "\n"
+            "Run the workspace with Pixi instead:\n"
+            "  pixi run core            robot stack (rosbridge on port 9090)\n"
+            "  pixi run control-panel   web UI on http://localhost:4004\n"
+            "  pixi run sim             stack with Gazebo\n"
+            "  pixi run rviz            stack with RViz\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     if curses is None:
         print(
             "Error: launcher TUI requires curses (not available on this platform).",

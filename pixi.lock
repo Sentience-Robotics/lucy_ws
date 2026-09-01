@@ -31,8 +31,6 @@ environments:
     channels:
     - url: https://prefix.dev/robostack-jazzy/
     - url: https://prefix.dev/conda-forge/
-    indexes:
-    - https://pypi.org/simple
     packages:
       linux-64:
       - conda: https://prefix.dev/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
@@ -4742,7 +4740,6 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-zstd-image-transport-4.0.7-np2py312hf80f32c_18.conda
       - conda: https://prefix.dev/robostack-jazzy/win-64/ros-jazzy-zstd-vendor-0.26.10-np2py312hf80f32c_18.conda
       - conda: https://prefix.dev/robostack-jazzy/win-64/ros2-distro-mutex-0.15.0-jazzy_18.conda
-      - pypi: https://files.pythonhosted.org/packages/8b/ee/8c5da36191524856fb2c675f8cae99211ccf77bcd4e4a9010477e08000ac/windows_curses-2.4.2-cp312-cp312-win_amd64.whl
 packages:
 - conda: https://prefix.dev/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
   build_number: 20
@@ -90352,7 +90349,3 @@ packages:
     - ros2-distro-mutex >=0.15.0,<0.16.0a0
   size: 2369
   timestamp: 1782298925944
-- pypi: https://files.pythonhosted.org/packages/8b/ee/8c5da36191524856fb2c675f8cae99211ccf77bcd4e4a9010477e08000ac/windows_curses-2.4.2-cp312-cp312-win_amd64.whl
-  name: windows-curses
-  version: 2.4.2
-  sha256: df782859176f9e8142618e4966d6cee7a53a8b1c819faeb6e606a60fa4f8972a
