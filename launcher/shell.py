@@ -6,6 +6,7 @@ import subprocess
 import threading
 
 from .constants import (
+    DDS_ENV_SCRIPT,
     GUI_ENV_KEYS,
     NIX_GL_ENV_SCRIPT,
     TMUX_SESSION,
@@ -32,16 +33,44 @@ def _nix_gl_source() -> str:
     return f"source {shlex.quote(str(NIX_GL_ENV_SCRIPT))}; "
 
 
+def _dds_source() -> str:
+    """Source hook for DDS discovery: localhost-only unicast where multicast is
+    blocked (macOS Local Network permission), configurable via .env."""
+    if not DDS_ENV_SCRIPT.is_file():
+        return ""
+    return f"source {shlex.quote(str(DDS_ENV_SCRIPT))}; "
+
+
+def _env_prelude() -> str:
+    """Env fixups sourced inside `pixi run`, immediately before the command.
+
+    Sourced in the innermost shell so the exports reach the launched process."""
+    return _dds_source() + _nix_gl_source()
+
+
 def _pixi_workspace_script(user_cmd: str) -> str:
-    """Shell script body: workspace root + Pixi env (RoboStack + colcon overlay)."""
+    """Shell script body: workspace root + Pixi env (RoboStack + colcon overlay).
+
+    The inner shell is deliberately NOT a login shell. On macOS /etc/profile runs
+    path_helper, which rebuilds PATH with /usr/local/bin and friends in front, so
+    a login shell demotes the Pixi env below whatever Python is installed system
+    wide. Anything with a `#!/usr/bin/env python3` shebang — rosbridge_websocket
+    among them — then runs under that interpreter instead of Pixi's, and rclpy's
+    compiled extension is built for exactly one CPython minor version:
+
+        _rclpy_pybind11.cpython-312-darwin.so
+
+    Under any other version the import fails with "No module named
+    'rclpy._rclpy_pybind11'". It only appears to work when the system Python
+    happens to match Pixi's. `bash -c` keeps Pixi's PATH ordering intact."""
     user_cmd = user_cmd.strip()
-    nix_gl = _nix_gl_source()
+    prelude = _env_prelude()
     if user_cmd.startswith("pixi "):
         pixi_part = user_cmd
-    elif nix_gl or any(op in user_cmd for op in (";", "&&", "||", "|", "&")):
-        pixi_part = f"pixi run -- bash -lc {shlex.quote(nix_gl + user_cmd)}"
+    elif prelude or any(op in user_cmd for op in (";", "&&", "||", "|", "&")):
+        pixi_part = f"pixi run -- bash -c {shlex.quote(prelude + user_cmd)}"
     elif user_cmd.startswith("ros2 "):
-        pixi_part = f"pixi run -- bash -lc {shlex.quote(nix_gl + user_cmd)}"
+        pixi_part = f"pixi run -- bash -c {shlex.quote(prelude + user_cmd)}"
     else:
         pixi_part = f"pixi run -- {user_cmd}"
     body = f"cd {WORKSPACE_ROOT} && {pixi_part}"

@@ -27,6 +27,7 @@ CONTROL_PANEL_DIR = f"{_norm_path(LUCY_WS_MARKER)}/src/lucy_control_panel"
 ORPHAN_CLEANUP_DEBOUNCE = 1.5
 
 NIX_GL_ENV_SCRIPT = WORKSPACE_ROOT / "scripts" / "nix_gl_env.sh"
+DDS_ENV_SCRIPT = WORKSPACE_ROOT / "scripts" / "dds_env.sh"
 
 # Forward into tmux panes — GUI processes do not inherit the launcher session env.
 GUI_ENV_KEYS = (

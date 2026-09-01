@@ -1,106 +1,70 @@
-"""Tests for install.sh optional-repo colcon skip (COLCON_IGNORE)."""
+"""Tests for the optional-repo colcon skip (COLCON_IGNORE) in install.py."""
 
 import json
-import os
-import subprocess
+import sys
 from pathlib import Path
 
-def _run_mark_optional(workspace: Path, build_optional: str | None = None) -> None:
-    env = os.environ.copy()
-    if build_optional is not None:
-        env["LUCY_BUILD_OPTIONAL"] = build_optional
-    root = str(workspace)
-    bash_script = f"""
-set -euo pipefail
-cd {root!r}
-CONFIG_FILE="{root}/config/repos.json"
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-parse_repos() {{
-  python3 -c "
-import json, sys
-with open(sys.argv[1]) as f:
-    data = json.load(f)
-for r in data.get('repos', []):
-    name = str(r.get('name', '')).strip().strip('\\r\\n')
-    optional = 1 if r.get('optional') else 0
-    if name:
-        print(name, optional, sep='\\t')
-" "$CONFIG_FILE"
-}}
-
-mark_optional_colcon_ignore() {{
-  case "$(echo "${{LUCY_BUILD_OPTIONAL:-}}" | tr '[:upper:]' '[:lower:]')" in
-    1|true|yes) return 0 ;;
-  esac
-  while IFS=$'\\t' read -r name optional; do
-    name="${{name//$'\\r'/}}"
-    optional="${{optional//$'\\r'/}}"
-    if [ "$optional" = "1" ] && [ -d "src/${{name}}" ]; then
-      touch "src/${{name}}/COLCON_IGNORE"
-    fi
-  done < <(parse_repos)
-}}
-
-mark_optional_colcon_ignore
-"""
-    subprocess.run(
-        ["bash", "-c", bash_script],
-        env=env,
-        check=True,
-        cwd=workspace,
-    )
+import install  # noqa: E402
 
 
-def test_mark_optional_colcon_ignore_skips_optional_repos(tmp_path):
+def _workspace(tmp_path: Path, repos: list[dict], with_src: bool = True) -> Path:
     cfg_dir = tmp_path / "config"
-    cfg_dir.mkdir()
-    (cfg_dir / "repos.json").write_text(
-        json.dumps(
-            {
-                "repos": [
-                    {
-                        "name": "required_pkg",
-                        "branch": "main",
-                        "url_https": "https://example.com/required.git",
-                    },
-                    {
-                        "name": "opt_pkg",
-                        "branch": "main",
-                        "optional": True,
-                        "url_https": "https://example.com/opt.git",
-                    },
-                ]
-            }
-        )
-    )
-    (tmp_path / "src" / "required_pkg").mkdir(parents=True)
-    (tmp_path / "src" / "opt_pkg").mkdir(parents=True)
-
-    _run_mark_optional(tmp_path)
-
-    assert (tmp_path / "src" / "opt_pkg" / "COLCON_IGNORE").is_file()
-    assert not (tmp_path / "src" / "required_pkg" / "COLCON_IGNORE").exists()
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    (cfg_dir / "repos.json").write_text(json.dumps({"repos": repos}), encoding="utf-8")
+    if with_src:
+        for repo in repos:
+            (tmp_path / "src" / repo["name"]).mkdir(parents=True, exist_ok=True)
+    return tmp_path
 
 
-def test_mark_optional_colcon_ignore_respects_build_optional_flag(tmp_path):
-    cfg_dir = tmp_path / "config"
-    cfg_dir.mkdir()
-    (cfg_dir / "repos.json").write_text(
-        json.dumps(
-            {
-                "repos": [
-                    {
-                        "name": "opt_pkg",
-                        "branch": "main",
-                        "optional": True,
-                        "url_https": "https://example.com/opt.git",
-                    }
-                ]
-            }
-        )
-    )
-    (tmp_path / "src" / "opt_pkg").mkdir(parents=True)
+REQUIRED = {
+    "name": "required_pkg",
+    "branch": "main",
+    "url_https": "https://example.com/required.git",
+}
+OPTIONAL = {
+    "name": "opt_pkg",
+    "branch": "main",
+    "optional": True,
+    "url_https": "https://example.com/opt.git",
+}
 
-    _run_mark_optional(tmp_path, build_optional="1")
 
-    assert not (tmp_path / "src" / "opt_pkg" / "COLCON_IGNORE").exists()
+def test_mark_optional_colcon_ignore_skips_optional_repos(tmp_path, monkeypatch):
+    monkeypatch.delenv("LUCY_BUILD_OPTIONAL", raising=False)
+    ws = _workspace(tmp_path, [REQUIRED, OPTIONAL])
+
+    ignored = install.mark_optional_colcon_ignore(ws)
+
+    assert ignored == ["opt_pkg"]
+    assert (ws / "src" / "opt_pkg" / "COLCON_IGNORE").is_file()
+    assert not (ws / "src" / "required_pkg" / "COLCON_IGNORE").exists()
+
+
+def test_mark_optional_colcon_ignore_respects_build_optional_flag(tmp_path, monkeypatch):
+    monkeypatch.setenv("LUCY_BUILD_OPTIONAL", "1")
+    ws = _workspace(tmp_path, [OPTIONAL])
+
+    assert install.mark_optional_colcon_ignore(ws) == []
+    assert not (ws / "src" / "opt_pkg" / "COLCON_IGNORE").exists()
+
+
+def test_mark_optional_colcon_ignore_skips_repos_not_cloned(tmp_path, monkeypatch):
+    monkeypatch.delenv("LUCY_BUILD_OPTIONAL", raising=False)
+    ws = _workspace(tmp_path, [OPTIONAL], with_src=False)
+
+    assert install.mark_optional_colcon_ignore(ws) == []
+
+
+def test_parse_repos_keeps_optional_flag(tmp_path, monkeypatch):
+    monkeypatch.delenv("DEV", raising=False)
+    ws = _workspace(tmp_path, [REQUIRED, OPTIONAL], with_src=False)
+
+    rows = {r["name"]: r for r in install.parse_repos(ws)}
+
+    assert rows["opt_pkg"]["optional"] is True
+    assert rows["required_pkg"]["optional"] is False

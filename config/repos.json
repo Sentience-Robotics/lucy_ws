@@ -2,28 +2,21 @@
   "repos": [
     {
       "name": "inmoov_urdf",
-      "branch": "cma/feat-pixi-gpu-support",
+      "branch": "feat-pixi",
       "url_https": "https://github.com/Sentience-Robotics/inmoov_urdf.git",
       "url_ssh": "git@github.com:Sentience-Robotics/inmoov_urdf.git"
     },
     {
       "name": "lucy_ros_packages",
-      "branch": "cma/fix-skip-backward-ros-on-macOS",
+      "branch": "feat-pixi",
       "url_https": "https://github.com/Sentience-Robotics/lucy_ros_packages.git",
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_ros_packages.git"
     },
     {
       "name": "lucy_control_panel",
-      "branch": "cma/fix-commit-lock-file",
+      "branch": "feat-pixi",
       "url_https": "https://github.com/Sentience-Robotics/lucy_control_panel.git",
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_control_panel.git"
-    },
-    {
-      "name": "micro_ros_agent",
-      "branch": "jazzy",
-      "optional": true,
-      "url_https": "https://github.com/micro-ROS/micro-ROS-Agent.git",
-      "url_ssh": "git@github.com:micro-ROS/micro-ROS-Agent.git"
     }
   ]
 }

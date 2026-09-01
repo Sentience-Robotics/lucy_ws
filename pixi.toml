@@ -2,8 +2,8 @@
 name = "lucy_ws"
 description = "Lucy / InMoov ROS 2 Jazzy workspace (RoboStack + Pixi)"
 channels = [
-  "https://prefix.dev/conda-forge",
   "https://prefix.dev/robostack-jazzy",
+  "https://prefix.dev/conda-forge",
 ]
 platforms = ["linux-64", "linux-aarch64", "osx-arm64", "osx-64", "win-64"]
 
@@ -24,15 +24,20 @@ yarn = "*"
 pytest = "*"
 pytest-cov = "*"
 pytest-mock = "*"
+ros-jazzy-rclpy = ">=7.1.11,<8"
+
 
 # --- ROS Jazzy stack (RoboStack channel) ---
 [feature.ros]
-channels = ["https://prefix.dev/robostack-jazzy"]
+channels = [
+  "https://prefix.dev/robostack-jazzy",
+  "https://prefix.dev/conda-forge",
+]
 
 [feature.ros.dependencies]
 # Pin distro mutex so all RoboStack packages come from the same rebuild cycle.
 # See: https://github.com/RoboStack/ros-jazzy/issues/125
-ros2-distro-mutex = "0.15.*"
+ros2-distro-mutex = ">=0.15,<0.16"
 ros-jazzy-desktop = "*"
 ros-jazzy-ros-gz = "*"
 ros-jazzy-rosbridge-suite = "*"
@@ -59,20 +64,43 @@ env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 [feature.ros.target.osx-64.activation]
 env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 
+[feature.ros.target.win-64.dependencies]
+# controller_manager crashes on win-64, so nothing publishes /joint_states.
+# joint_state_publisher supplies it from the URDF (viewer only, not driveable).
+ros-jazzy-joint-state-publisher = "*"
+# 0.17.x imports em.OVERRIDE_OPT and cannot load extensions against empy 4.
+colcon-core = ">=0.19"
+colcon-defaults = ">=0.2.8,<0.3"
+colcon-library-path = ">=0.2.1,<0.3"
+colcon-metadata = ">=0.2.5,<0.3"
+colcon-mixin = ">=0.2.3,<0.3"
+colcon-output = ">=0.2.13,<0.3"
+colcon-package-information = ">=0.4.0,<0.5"
+colcon-package-selection = ">=0.2.10,<0.3"
+colcon-parallel-executor = ">=0.2.4,<0.3"
+colcon-pkg-config = ">=0.1.0,<0.2"
+colcon-powershell = ">=0.4.0,<0.5"
+colcon-python-setup-py = ">=0.2.7,<0.3"
+colcon-recursive-crawl = ">=0.2.3,<0.3"
+colcon-ros = ">=0.5.0,<0.6"
+colcon-ros-domain-id-coordinator = ">=0.2.1,<0.3"
+colcon-test-result = ">=0.3.8,<0.4"
+
+
 # --- colcon build tasks (RoboStack Getting Started pattern) ---
 [feature.build.target.unix.tasks]
-build = { cmd = "rm -rf build/camera_ros && colcon build --symlink-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev", inputs = ["src"] }
-build-release = "colcon build --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
-clean = "rm -rf build install log"
+build = { cmd = "rm -rf build/camera_ros && colcon build --symlink-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev && bash scripts/macos_link_workspace_libs.sh", inputs = ["src"] }
+build-release = "colcon build --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev && bash scripts/macos_link_workspace_libs.sh"
+clean = "python scripts/clean.py"
 test = { cmd = "bash scripts/ci_colcon_test.sh", depends-on = ["build"] }
 test-only = "bash scripts/ci_colcon_test.sh"
 
 [feature.build.target.win-64.tasks]
-build = { cmd = "rm -rf build/camera_ros && colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev", inputs = ["src"] }
+build = { cmd = "python scripts/pixi_colcon_build.py", inputs = ["src"] }
 build-release = "colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
-clean = "rm -rf build install log"
-test = { cmd = "bash scripts/ci_colcon_test.sh --merge-install", depends-on = ["build"] }
-test-only = { cmd = "bash scripts/ci_colcon_test.sh --merge-install" }
+clean = "python scripts/clean.py"
+test = { cmd = "python scripts/ci_colcon_test.py --merge-install", depends-on = ["build"] }
+test-only = "python scripts/ci_colcon_test.py --merge-install"
 
 [feature.panel.tasks]
 panel-install = { cmd = "yarn install", cwd = "src/lucy_control_panel" }
@@ -84,6 +112,7 @@ doctor = "ros2 doctor --report"
 workspace-test = { cmd = "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests -q -p pytester -p python -p terminal" }
 shell = "bash scripts/pixi_dev_shell.sh"
 
+[feature.launcher.target.unix.tasks]
 # lucy_bringup stacks (scripts/pixi_lucy_launch.sh — NixOS GL via scripts/nix_gl_env.sh)
 core = { cmd = "bash scripts/pixi_lucy_launch.sh" }
 sim = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true" }
@@ -91,6 +120,17 @@ sim-headless = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true headless:=
 sim-rviz = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true headless:=true rviz:=true" }
 rviz = { cmd = "bash scripts/pixi_lucy_launch.sh rviz:=true" }
 
+[feature.launcher.target.win-64.tasks]
+rcl = { cmd = "python -c 'import rclpy; print(rclpy.__file__)'" } # TMP task for testing
+core = { cmd = "python scripts/pixi_lucy_launch.py" }
+sim = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true" }
+sim-headless = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless:=true" }
+sim-rviz = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless:=true rviz:=true" }
+rviz = { cmd = "python scripts/pixi_lucy_launch.py rviz:=true" }
+# core starts this automatically; here for running it standalone.
+joint-states = "ros2 run joint_state_publisher joint_state_publisher"
+
+[feature.launcher.tasks]
 # Standalone components (run in separate terminals alongside core / sim-*)
 control-panel = { cmd = "yarn dev", cwd = "src/lucy_control_panel" }
 rqt = { cmd = "bash scripts/pixi_gui_launch.sh rqt" }
@@ -118,4 +158,4 @@ scripts = ["install/setup.bat"]
 env = { GZ_SIM_SYSTEM_PLUGIN_PATH = "$CONDA_PREFIX/Library/bin" }
 
 [environments]
-default = { features = ["ros", "build", "panel", "dev"] }
+default = { features = ["ros", "build", "panel", "dev", "launcher"] }

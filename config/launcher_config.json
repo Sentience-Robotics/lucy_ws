@@ -8,8 +8,8 @@
       "dependencies": [],
       "conflicts": [],
       "command": "ros2 launch lucy_bringup lucy.launch.py",
-      "readiness_check": "pgrep -f '[r]osbridge_websocket' >/dev/null 2>&1",
-      "readiness_timeout": 60,
+      "readiness_check": "bash scripts/port_open.sh ${PORT_ROSBRIDGE:-9090} && pgrep -f '[c]onfig_pipeline_node' >/dev/null 2>&1 && bash scripts/controllers_active.sh",
+      "readiness_timeout": 150,
       "default_on": false
     },
     {
@@ -77,7 +77,7 @@
       "dependencies": [],
       "conflicts": [],
       "command": "pixi run panel-dev",
-      "readiness_check": "pgrep -f '[v]ite' >/dev/null 2>&1",
+      "readiness_check": "bash scripts/port_open.sh ${LUCY_LCP_PUBLISHED_HOST_PORT:-4004}",
       "readiness_timeout": 120,
       "default_on": false
     },

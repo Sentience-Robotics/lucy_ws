@@ -26,6 +26,15 @@ def _window_teardown_shell(window: str) -> str:
 
 def _core_teardown_shell() -> str:
     return (
+        # rviz2 has to go before the SIGINT below. Its rclcpp signal handler throws
+        # std::system_error("mutex lock failed") while shutting down on macOS; the
+        # exception escapes, so std::terminate calls abort() and the process dies on
+        # SIGABRT. macOS files that as a crash and shows "rviz2 quit unexpectedly"
+        # on every single stop. Measured on this machine: SIGINT and SIGTERM both
+        # produce a crash report, SIGKILL produces none. RViz is a viewer with no
+        # state to persist, so killing it outright costs nothing and is the only way
+        # to stop the dialog without patching rviz2 itself.
+        "pkill -9 -x rviz2 2>/dev/null; "
         f"tmux send-keys -t {TMUX_SESSION}:core C-c 2>/dev/null; "
         "for _ in $(seq 1 20); do "
         "pgrep -f '[g]z sim' >/dev/null 2>&1 || pgrep -x rviz2 >/dev/null 2>&1 || break; "

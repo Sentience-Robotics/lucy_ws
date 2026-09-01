@@ -30,12 +30,12 @@ Run `Lucy.py` and the install scripts **from the repository root** — they read
 
 ## Install
 
+`install.py` does the whole job: clone the sub-repos into `src/`, `pixi install`, colcon build, and the panel's yarn install. It offers to install Pixi if it is missing.
+
 ### Linux / macOS
 
 ```bash
-curl -fsSL https://pixi.sh/install.sh | bash   # if Pixi is not installed
-export PATH="$HOME/.pixi/bin:$PATH"            # if needed
-./install.sh
+./install.sh          # thin wrapper around install.py
 ```
 
 **NixOS:** enable [nix-ld](https://github.com/nix-community/nix-ld) so Pixi/RoboStack conda binaries can load the host dynamic linker (required before `./install.sh`):
@@ -48,25 +48,17 @@ For Gazebo/RViz GL, also see the [NixOS notes](docs/developer_lucy_packages.md#p
 
 ### Windows
 
-Install [Pixi](https://pixi.prefix.dev/latest/installation/) **≥ 0.78** first, then close and reopen your terminal so `PATH` is updated.
-
-**PowerShell (recommended):**
+Install **Git**, **Python 3** and the **Visual Studio Build Tools** with the *Desktop development with C++* workload — ROS 2 C++ packages need the MSVC compiler:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm -useb https://pixi.sh/install.ps1 | iex"
+winget install Microsoft.VisualStudio.2022.BuildTools --override `
+  "--quiet --wait --norestart --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+python install.py
 ```
 
-Alternatives from the [Pixi installation guide](https://pixi.prefix.dev/latest/installation/): `winget install prefix-dev.pixi`, Scoop, or the MSI from GitHub Releases.
+Keep the workspace in a path **without spaces**. Pixi console scripts (colcon, pytest, ROS 2 nodes) embed the interpreter path unquoted and cannot start from one; `%LOCALAPPDATA%\Programs\Lucy` is the installer's default.
 
-**End users:** download **`Lucy-Setup.exe`** from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases). It installs Lucy, clones sub-repos, runs `pixi install`, and builds the workspace. See the [Windows README](windows/README.md).
-
-**Developers (from source):**
-
-```powershell
-python windows\Lucy.py --cli install --repos-branch master
-```
-
-Or from Git Bash: `./install.sh`
+**End users:** download **`Lucy-Setup.exe`** from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases). See the [Windows README](windows/README.md).
 
 ## Quick start
 
@@ -80,15 +72,15 @@ python3 Lucy.py
 
 ### Windows
 
-**End users:** open **Lucy** from the Start Menu (runs `Lucy.exe` → Control Center).
-
-**Developers:**
+The launcher TUI drives every package through tmux, so it does not run on Windows yet. Start the components with Pixi instead, one per terminal:
 
 ```powershell
-python windows\Lucy.py
+pixi run core            # robot stack, rosbridge on port 9090
+pixi run control-panel   # http://localhost:4004
+pixi run rviz            # optional viewer
 ```
 
-Or Git Bash: `./launch_lucy.sh`
+`pixi run core` also starts a `/joint_states` stand-in, because ros2_control's controller_manager currently crashes on Windows. The robot renders and follows the panel's sliders, but is not driveable. See the [developer guide](docs/developer_lucy_packages.md).
 
 ## Using the Lucy launcher
 
@@ -110,7 +102,7 @@ Or Git Bash: `./launch_lucy.sh`
 
 > **Recommended starting point:** **Core + Control Panel** — the web 3D viewer is enough for most work without heavy GUI apps.
 
-**Control panel:** after Launch, enable **Core + Control Panel**. Open [http://localhost:5000](http://localhost:5000) (or the URL shown in the launcher if another port was chosen).
+**Control panel:** after Launch, enable **Core + Control Panel**. Open [http://localhost:4004](http://localhost:4004) (or the URL shown in the launcher if another port was chosen).
 
 **tmux windows** (Linux/macOS):
 

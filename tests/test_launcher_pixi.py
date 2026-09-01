@@ -28,7 +28,7 @@ def test_state_file_is_workspace_scoped():
 def test_pixi_workspace_script_wraps_ros2():
     body = _pixi_workspace_script("ros2 doctor --report")
     assert f"cd {WORKSPACE_ROOT}" in body
-    assert "pixi run -- bash -lc" in body
+    assert "pixi run -- bash -c" in body
     assert "nix_gl_env.sh" in body
     assert "ros2 doctor --report" in body
 
@@ -39,9 +39,19 @@ def test_pixi_workspace_script_preserves_pixi_command():
     assert "pixi run -- pixi" not in body
 
 
-def test_pixi_workspace_script_complex_shell_uses_bash_lc():
+def test_pixi_workspace_script_complex_shell_uses_bash_c():
     body = _pixi_workspace_script("echo hi && ros2 doctor")
-    assert "pixi run -- bash -lc" in body
+    assert "pixi run -- bash -c" in body
+
+
+def test_pixi_workspace_script_inner_shell_is_not_a_login_shell():
+    """A login shell runs /etc/profile -> path_helper on macOS, which puts
+    /usr/local/bin ahead of the Pixi env. Anything with a `#!/usr/bin/env python3`
+    shebang then runs under the system Python, and rclpy's compiled extension is
+    built for one CPython minor version only, so the import fails with
+    "No module named 'rclpy._rclpy_pybind11'" whenever the two disagree."""
+    for cmd in ("ros2 doctor --report", "echo hi && ros2 doctor"):
+        assert "bash -lc" not in _pixi_workspace_script(cmd)
 
 
 def test_gui_env_exports_forwards_display():
@@ -129,6 +139,9 @@ def test_is_lucy_orphan_skips_unrelated_processes(monkeypatch):
 def test_is_lucy_orphan_vite_short_cmdline_via_cwd(monkeypatch):
     cp = f"{WORKSPACE_ROOT}/src/lucy_control_panel"
     monkeypatch.setattr(launcher, "_read_proc_cwd", lambda _pid: cp)
+    # Workspace membership is probed per platform (/proc on Linux, PowerShell on
+    # Windows), so pin it and let this test cover only the vite cwd fallback.
+    monkeypatch.setattr(launcher, "_process_workspace_markers", lambda _pid: True)
     assert is_lucy_orphan(123, "node node_modules/vite/bin/vite.js")
 
 
@@ -148,6 +161,7 @@ def test_is_lucy_orphan_cmdline_vite_scoped_to_control_panel():
 def test_find_lucy_orphan_pids_preserves_control_panel_vite(monkeypatch):
     cp = f"{WORKSPACE_ROOT}/src/lucy_control_panel"
     monkeypatch.setattr(launcher, "_read_proc_cwd", lambda _pid: cp)
+    monkeypatch.setattr(launcher, "_process_workspace_markers", lambda _pid: True)
     vite_pid = 999999
     vite_cmd = "node node_modules/vite/bin/vite.js"
 
@@ -481,3 +495,43 @@ def test_finish_teardown_clears_pending_preserve(monkeypatch):
     launcher._finish_teardown()
     assert launcher.process._pending_preserve_windows == frozenset()
     assert launcher.process._pending_protect_vite is False
+
+
+def test_orphan_signature_covers_latching_and_locking_nodes():
+    """robot_state_publisher and the controller spawner must be reaped.
+
+    Left parented to init by a hard session kill, neither is merely idle: the
+    publisher keeps a latched /robot_description alive, so the next Gazebo run can
+    spawn from a stale description and gz_ros2_control fails to load its hardware
+    plugins; a surviving spawner holds the ros2-control spawner lock, so every
+    later spawner gives up and no controller is ever activated."""
+    from launcher.process import _matches_orphan_signature
+
+    ws = str(WORKSPACE_ROOT)
+    assert _matches_orphan_signature(
+        f"{ws}/.pixi/envs/default/lib/robot_state_publisher/robot_state_publisher --ros-args"
+    )
+    assert _matches_orphan_signature(
+        f"{ws}/.pixi/envs/default/lib/controller_manager/spawner joint_state_broadcaster"
+    )
+    assert _matches_orphan_signature(f"{ws}/install/lucy_config_pipeline/lib/config_pipeline_node")
+    # The launcher itself must never match, or it would reap its own process.
+    assert not _matches_orphan_signature(f"python -m launcher")
+    assert not _matches_orphan_signature(f"{ws}/Lucy.py")
+    # An unrelated spawner outside ros2_control should not match on the word alone.
+    assert not _matches_orphan_signature("/usr/bin/some_random_spawner --foo")
+
+
+def test_core_teardown_kills_rviz_before_sigint():
+    """rviz2 must be killed before the teardown SIGINT reaches it.
+
+    Its rclcpp signal handler throws std::system_error("mutex lock failed") during
+    shutdown on macOS; the exception escapes, std::terminate calls abort(), and the
+    process dies on SIGABRT. macOS files that as a crash and shows "rviz2 quit
+    unexpectedly" on every stop. Measured: SIGINT and SIGTERM each produce a crash
+    report, SIGKILL produces none."""
+    from launcher.tmux import _core_teardown_shell
+
+    teardown = _core_teardown_shell()
+    assert "pkill -9 -x rviz2" in teardown
+    assert teardown.index("pkill -9 -x rviz2") < teardown.index("C-c")
