@@ -42,7 +42,12 @@ GUI_ENV_KEYS = (
     "LD_LIBRARY_PATH",
     "LD_PRELOAD",
     "__EGL_VENDOR_LIBRARY_FILENAMES",
+    "__GLX_VENDOR_LIBRARY_NAME",
     "GZ_IP",
+    "LUCY_GPU_MODE",
+    "LUCY_HEADLESS_RUNTIME_DIR",
+    "GZ_RENDERING_PLUGIN_PATH",
+    "GZ_RENDERING_RESOURCE_PATH",
 )
 
 # Back-compat aliases used by tests and internal modules.

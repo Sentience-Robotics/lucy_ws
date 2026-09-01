@@ -29,6 +29,7 @@ def test_pixi_workspace_script_wraps_ros2():
     body = _pixi_workspace_script("ros2 doctor --report")
     assert f"cd {WORKSPACE_ROOT}" in body
     assert "pixi run -- bash -lc" in body
+    assert "nix_gl_env.sh" in body
     assert "ros2 doctor --report" in body
 
 

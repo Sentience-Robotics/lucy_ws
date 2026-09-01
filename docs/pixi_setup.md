@@ -73,7 +73,9 @@ See [`docs/developer_lucy_packages.md`](developer_lucy_packages.md#launch) for C
 
 Colcon uses `--symlink-install` on Linux/macOS and `--merge-install` on Windows (`pixi.toml` `[feature.build]` tasks).
 
-Activation scripts (`install/setup.bash` or `install/setup.bat`) are wired via `[target.unix.activation]` / `[target.win.activation]` in `pixi.toml`, so `pixi run` and `pixi shell` automatically overlay the workspace. `GZ_SIM_SYSTEM_PLUGIN_PATH` points at conda Gazebo plugins (`lib` on Unix, `Library/bin` on Windows).
+Activation scripts (`install/setup.bash` or `install/setup.bat`) are wired via `[target.unix.activation]` / `[target.win.activation]` in `pixi.toml`, so `pixi run` and `pixi shell` automatically overlay the workspace. `GZ_SIM_SYSTEM_PLUGIN_PATH` points at conda Gazebo plugins. On **Linux**, `scripts/gz_rendering_env.sh` discovers ogre2 plugin/resource paths (version-agnostic).
+
+On **Jetson**, also source [`scripts/nix_gl_env.sh`](../scripts/nix_gl_env.sh) (automatic for `pixi run sim*`, `rqt`, `lucy-cli`, and the launcher) so Tegra/NVIDIA GL libraries precede conda Mesa. Jetson detection is implemented in [`launcher/platform.py`](../launcher/platform.py); bash scripts source [`scripts/detect_jetson.sh`](../scripts/detect_jetson.sh).
 
 ## Lock refresh checklist
 
