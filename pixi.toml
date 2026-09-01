@@ -92,18 +92,11 @@ test = { cmd = "bash scripts/ci_colcon_test.sh", depends-on = ["build"] }
 test-only = "bash scripts/ci_colcon_test.sh"
 
 [feature.build.target.win-64.tasks]
-build = {
-    cmd = "python scripts/pixi_colcon_build.py",
-    inputs = ["src"]
-}
+build = { cmd = "python scripts/pixi_colcon_build.py", inputs = ["src"] }
 build-release = "colcon build --merge-install --cmake-args -GNinja -DCMAKE_BUILD_TYPE=Release -Wno-dev"
 clean = "python scripts/clean.py"
-test = {
-    cmd = "python scripts/ci_colcon_test.py --merge-install",
-    depends-on = ["build"]
-}
+test = { cmd = "python scripts/ci_colcon_test.py --merge-install", depends-on = ["build"] }
 test-only = "python scripts/ci_colcon_test.py --merge-install"
-
 
 [feature.panel.tasks]
 panel-install = { cmd = "yarn install", cwd = "src/lucy_control_panel" }
@@ -131,6 +124,7 @@ sim-headless = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless
 sim-rviz = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless:=true rviz:=true" }
 rviz = { cmd = "python scripts/pixi_lucy_launch.py rviz:=true" }
 
+[feature.launcher.tasks]
 # Standalone components (run in separate terminals alongside core / sim-*)
 control-panel = { cmd = "yarn dev", cwd = "src/lucy_control_panel" }
 rqt = { cmd = "bash scripts/pixi_gui_launch.sh rqt" }
