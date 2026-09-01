@@ -142,11 +142,16 @@ def test_tracked_repos_json_parses():
     rows = _parse_repos(cfg)
     names = {r[0] for r in rows}
     assert "lucy_ros_packages" in names
-    assert "micro_ros_agent" in names
+    # Every shipped entry must yield a usable name/branch/url triple.
+    for name, branch, url, _ in rows:
+        assert name and branch and url
 
 
 def test_optional_flag_preserved_in_json():
+    # Which repos are optional is a manifest decision that changes over time, so
+    # assert the flag round-trips through the parser rather than naming entries.
     cfg = ROOT / "config" / "repos.json"
     data = json.loads(cfg.read_text())
-    optional = [r["name"] for r in data["repos"] if r.get("optional")]
-    assert "micro_ros_agent" in optional
+    expected = {r["name"] for r in data["repos"] if r.get("optional")}
+    parsed = {name for name, _, _, optional in _parse_repos(cfg) if optional == "1"}
+    assert parsed == expected

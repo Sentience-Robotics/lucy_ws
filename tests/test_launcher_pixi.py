@@ -139,6 +139,9 @@ def test_is_lucy_orphan_skips_unrelated_processes(monkeypatch):
 def test_is_lucy_orphan_vite_short_cmdline_via_cwd(monkeypatch):
     cp = f"{WORKSPACE_ROOT}/src/lucy_control_panel"
     monkeypatch.setattr(launcher, "_read_proc_cwd", lambda _pid: cp)
+    # Workspace membership is probed per platform (/proc on Linux, PowerShell on
+    # Windows), so pin it and let this test cover only the vite cwd fallback.
+    monkeypatch.setattr(launcher, "_process_workspace_markers", lambda _pid: True)
     assert is_lucy_orphan(123, "node node_modules/vite/bin/vite.js")
 
 
@@ -158,6 +161,7 @@ def test_is_lucy_orphan_cmdline_vite_scoped_to_control_panel():
 def test_find_lucy_orphan_pids_preserves_control_panel_vite(monkeypatch):
     cp = f"{WORKSPACE_ROOT}/src/lucy_control_panel"
     monkeypatch.setattr(launcher, "_read_proc_cwd", lambda _pid: cp)
+    monkeypatch.setattr(launcher, "_process_workspace_markers", lambda _pid: True)
     vite_pid = 999999
     vite_cmd = "node node_modules/vite/bin/vite.js"
 
