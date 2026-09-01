@@ -14,7 +14,7 @@
     },
     {
       "name": "lucy_control_panel",
-      "branch": "feat-pixi",
+      "branch": "dev",
       "url_https": "https://github.com/Sentience-Robotics/lucy_control_panel.git",
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_control_panel.git"
     }
