@@ -1,6 +1,7 @@
 """Launcher state, package status tracking, and UI helpers."""
 
 import os
+import threading
 import time
 
 from .constants import LOADING_TIMEOUT, STOPPING_TIMEOUT
@@ -26,11 +27,27 @@ class LauncherState:
     def get_by_id(self, pkg_id):
         return self.package_map.get(pkg_id)
 
-    def refresh_status(self):
-        """Re-probe running/ready state for all packages without touching selected."""
-        running_state = load_state()
+    def probe_snapshot(self):
+        """Probe every package's status and return {pkg_id: status}, mutating nothing.
+
+        Runs the shell probes without touching the packages, so StatusPoller can
+        call it off the UI thread."""
+        running_modifiers = load_state()["modifiers"]
+        return {pkg.id: pkg.probe_status(running_modifiers) for pkg in self.packages}
+
+    def apply_snapshot(self, snapshot):
+        """Write a probe_snapshot() result onto the packages. UI thread only."""
         for pkg in self.packages:
-            pkg.update_running_status(running_state["modifiers"])
+            status = snapshot.get(pkg.id)
+            if status is not None:
+                pkg.apply_status(status)
+
+    def refresh_status(self):
+        """Re-probe running/ready state for all packages without touching selected.
+
+        Blocks for as long as the slowest readiness check; use StatusPoller from
+        anywhere that must stay responsive."""
+        self.apply_snapshot(self.probe_snapshot())
 
     def _enable(self, pkg):
         """Tick a package, clearing anything it conflicts with first."""
@@ -66,6 +83,73 @@ class LauncherState:
         else:
             self._disable_with_dependents(pkg)
         return None
+
+
+
+class StatusPoller:
+    """Runs the package status probes on a background thread.
+
+    Readiness checks are arbitrary shell out of launcher_config.json, and core's
+    ends in `ros2 control list_controllers` behind a Pixi activation — seconds
+    when the stack is healthy, up to the probe's own timeout when
+    controller_manager is down. Driving them from the curses loop freezes it for
+    that long, so a keystroke lands only once the slowest probe has returned.
+    The thread here only ever produces snapshots and the UI thread applies them,
+    which also keeps Package fields single-writer.
+    """
+
+    def __init__(self, state, interval=5.0):
+        self._state = state
+        self._interval = interval
+        self._snapshot = None
+        self._generation = 0
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        self._stopped = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def set_interval(self, seconds):
+        """Seconds to wait between probe passes, or None to idle until asked."""
+        self._interval = seconds
+
+    def request_refresh(self):
+        """Probe again now, discarding any pass already in flight.
+
+        Called after applying changes: a snapshot taken before the change
+        describes the old world and would undo the optimistic state
+        apply_changes() just set."""
+        with self._lock:
+            self._generation += 1
+            self._snapshot = None
+        self._wake.set()
+
+    def take(self):
+        """Pop the newest snapshot, or None if none has landed since the last take."""
+        with self._lock:
+            snapshot, self._snapshot = self._snapshot, None
+        return snapshot
+
+    def stop(self):
+        self._stopped.set()
+        self._wake.set()
+
+    def _run(self):
+        while not self._stopped.is_set():
+            with self._lock:
+                generation = self._generation
+            try:
+                snapshot = self._state.probe_snapshot()
+            except Exception:
+                snapshot = None
+            if snapshot is not None:
+                with self._lock:
+                    if generation == self._generation:
+                        self._snapshot = snapshot
+            # Wait after a pass, never during one: a probe that outruns the
+            # interval spaces itself out instead of stacking up another pass.
+            self._wake.wait(self._interval)
+            self._wake.clear()
 
 
 def get_pkg_status(pkg):
