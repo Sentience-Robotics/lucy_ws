@@ -31,7 +31,7 @@ if _PROJECT_ROOT not in sys.path:
 import install as _install  # noqa: E402
 
 # --- re-exported cross-platform API (implemented in install.py) --------------
-# Only what install_runner.py, windows/Lucy.py and CI actually reach for.
+# Only what install_runner.py and CI reach for, plus what this module uses.
 PrerequisiteError = _install.PrerequisiteError
 DEFAULT_REPOS_BRANCH = _install.DEFAULT_REPOS_BRANCH
 InstallMode = _install.InstallMode
