@@ -60,6 +60,7 @@ from .process import (
     find_lucy_orphan_pids,
     is_lucy_orphan,
     is_lucy_orphan_cmdline,
+    prune_ros_logs,
     set_orphan_preserve_windows,
     wait_for_orphans_gone,
 )
@@ -129,6 +130,7 @@ __all__ = [
     "Package",
     "path_in_text",
     "process_workspace_markers",
+    "prune_ros_logs",
     "read_proc_cwd",
     "read_proc_environ",
     "read_proc_exe",
