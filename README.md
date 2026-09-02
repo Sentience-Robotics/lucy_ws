@@ -44,9 +44,10 @@ For Gazebo/RViz GL, also see the [NixOS notes](docs/developer_lucy_packages.md#p
 
 ### Windows
 
-**End users:** `Lucy-Setup.exe` is built from [Lucy-Windows-Installer](https://github.com/Sentience-Robotics/Lucy-Windows-Installer).
+`Lucy-Setup.exe` is built from [Lucy-Windows-Installer](https://github.com/Sentience-Robotics/Lucy-Windows-Installer).
 
-Keep the workspace in a path **without spaces** — Pixi console scripts (colcon, pytest, ROS 2 nodes) embed the interpreter path unquoted and cannot start from one. Pixi resolves **`win-64`** on Windows-on-ARM too; `pixi.lock` has no `win-arm64`.
+Keep the workspace in a path **without spaces**. Pixi console scripts (colcon, pytest, ROS 2 nodes) embed the interpreter path unquoted and cannot start from one.
+Pixi resolves **`win-64`** on Windows-on-ARM too. `pixi.lock` has no `win-arm64`.
 
 **Note:** The Lucy launcher is not available on Windows. Instead, use the following commands to start the components with Pixi, one per terminal:
 
