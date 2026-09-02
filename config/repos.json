@@ -8,13 +8,13 @@
     },
     {
       "name": "lucy_ros_packages",
-      "branch": "aes/fix-supervisor-orphaned-children",
+      "branch": "feat-pixi",
       "url_https": "https://github.com/Sentience-Robotics/lucy_ros_packages.git",
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_ros_packages.git"
     },
     {
       "name": "lucy_control_panel",
-      "branch": "aes/shorten-service-comment",
+      "branch": "dev",
       "url_https": "https://github.com/Sentience-Robotics/lucy_control_panel.git",
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_control_panel.git"
     }
