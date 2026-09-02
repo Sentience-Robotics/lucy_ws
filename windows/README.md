@@ -88,10 +88,16 @@ Lucy.exe --cli install --developer --refresh-workspace --lucy-ws-ref v1.0.0 --lu
 Requires [NSIS](https://nsis.sourceforge.io/Download) and PyInstaller:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File windows/build_installer.ps1
+python windows/generate_releases.py
+python -m PyInstaller --noconfirm --onefile --name Lucy `
+  --icon windows/assets/lucy-icon.ico `
+  --hidden-import install_ops --hidden-import install_runner `
+  --paths windows windows/Lucy.py
+& "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DMyAppVersion=0.0.0-dev" windows/installer/Lucy.nsi
 ```
 
-Outputs `dist\Lucy.exe` and `dist\Lucy-Setup-<version>.exe`.
+Outputs `dist\Lucy.exe` and `dist\Lucy-Setup-<version>.exe`. These are the steps
+CI runs, so there is no wrapper script to drift out of sync with it.
 
 ### Application icon
 
