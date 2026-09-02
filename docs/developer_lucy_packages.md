@@ -21,7 +21,7 @@ SSH keys must be configured for GitHub on your host before running `install.py` 
 |------|---------|
 | [`config/repos.json.local`](../config/repos.json.local) | Forks, feature branches, skip optional repos |
 | [`config/launcher_config.json.local`](../config/launcher_config.json.local) | Custom Control Center package list (e.g. multi-robot) |
-| [`config/install.profile.json`](../config/install.profile.json) | Windows installer choices (written by `Lucy-Setup.exe`) |
+| [`config/install.profile.json`](../config/install.profile.json) | Windows installer choices (written by the installer) |
 
 Example for a fork — same structure as `repos.json`:
 
@@ -60,19 +60,15 @@ Standard path: `python3 install.py` then `python3 Lucy.py`.
 
 ### Windows
 
-End-user install: **`Lucy-Setup.exe`** → **`Lucy.exe`**. Full details: [`windows/README.md`](../windows/README.md).
+End users get `Lucy-Setup.exe` from [Lucy-Windows-Installer](https://github.com/Sentience-Robotics/Lucy-Windows-Installer).
 
-Developer CLI equivalents:
+`python3 install.py` installs, `--repair` re-clones and rebuilds, `--build-only`
+skips git. `python3 Lucy.py` runs install when the workspace is missing and
+otherwise names the pixi tasks; there is no TUI on Windows (no curses, no tmux).
 
-| Windows | Linux/macOS |
-|---------|-------------|
-| `Lucy-Setup.exe` → Fresh install | `python3 install.py` |
-| `Lucy-Setup.exe` → Update | `python3 install.py` |
-| `Lucy-Setup.exe` → Repair | `python3 install.py --repair` |
-| `Lucy.exe` | `./launch_lucy.sh` |
-| `Lucy.exe --cli build-only` | `python3 install.py --build-only` |
-
-Launch runs via Git Bash (`bash launch_lucy.sh`). Without tmux, the Control Center runs directly (`pixi run -- python -m launcher`).
+Pixi resolves `win-64` on Intel/AMD and Windows-on-ARM alike — `pixi.lock` has
+no `win-arm64`. Colcon uses `--merge-install` there, see
+[`docs/pixi_setup.md`](pixi_setup.md).
 
 ### Workspace install (`install.py`)
 
@@ -110,7 +106,7 @@ Day-to-day use: one tmux session (Linux/macOS), toggle components in the TUI.
 |-------|---------|
 | TUI manager | `python3 Lucy.py` → **Launch** |
 | Direct | `./launch_lucy.sh` |
-| Windows | `Lucy.exe` |
+| Windows | `python3 Lucy.py`, then the pixi tasks it lists |
 
 | `launch_lucy.sh` flag | Purpose |
 |-----------------------|---------|
@@ -222,7 +218,6 @@ Vite proxies `/rosbridge` to `ws://127.0.0.1:9090`. Launcher sets `LUCY_LCP_*` v
 | [`docs/launcher_packages.md`](launcher_packages.md) | Adding packages to the Control Center |
 | [`docs/pixi_setup.md`](pixi_setup.md) | Pixi/RoboStack deps, lock workflow, component tasks |
 | [`docs/pixi_release.md`](pixi_release.md) | Release packaging (pixi-build-ros) |
-| [`windows/README.md`](../windows/README.md) | Windows installer and `Lucy.exe` |
 | [`src/lucy_ros_packages/docs/DEVELOPER.md`](../src/lucy_ros_packages/docs/DEVELOPER.md) | bringup, ros2_control, CI |
 | [`src/lucy_ros_packages/doc/ROS2_CONTROL.md`](../src/lucy_ros_packages/doc/ROS2_CONTROL.md) | ros2_control on Lucy |
 | [`src/inmoov_urdf/docs/DEVELOPER.md`](../src/inmoov_urdf/docs/DEVELOPER.md) | URDF, meshes, sim launches |

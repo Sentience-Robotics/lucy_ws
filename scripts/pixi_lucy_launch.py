@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 JOINT_COMMAND_TOPIC = "/lucy/commanded_joint_states"
 JOINT_STATES_TOPIC = "/joint_states"
+GAZEBO_ON_ARGS = ("gazebo:=true", "gazebo:=1", "gazebo:=yes")
 # Long enough for a working ros2_control to have spawned its broadcaster.
 FALLBACK_DELAY_S = 25.0
 DISCOVERY_SETTLE_S = 3.0
@@ -202,7 +203,30 @@ def _stop(proc) -> None:
         proc.kill()
 
 
+def gazebo_requested(args) -> bool:
+    return any(a.strip().lower() in GAZEBO_ON_ARGS for a in args)
+
+
+def refuse_gazebo_on_windows() -> None:
+    """gz_ros2_control hosts a controller_manager inside the gz server, and that
+    crashes on Windows, taking the server with it. Say so instead of hanging."""
+    print(
+        "Gazebo is not supported on Windows yet.\n"
+        "gz_ros2_control runs a controller_manager inside the Gazebo server, and\n"
+        "it dies there with an access violation: "
+        "https://github.com/pal-robotics/pal_statistics/issues/27\n\n"
+        "For the 3D view use, in two terminals:\n"
+        "  pixi run core\n"
+        "  pixi run control-panel",
+        file=sys.stderr,
+    )
+
+
 def main() -> int:
+    if os.name == "nt" and gazebo_requested(sys.argv[1:]):
+        refuse_gazebo_on_windows()
+        return 1
+
     configure_windows_dll_search_path()
     validate_windows_ros_runtime()
 

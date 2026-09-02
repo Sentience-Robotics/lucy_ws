@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
-import curses
 import os
 import subprocess
 import sys
 import shutil
+
+try:
+    import curses
+except ImportError:  # Windows: handled by windows_main
+    curses = None
 
 MIN_TERM_HEIGHT = 15
 MIN_TERM_WIDTH = 65
@@ -12,7 +16,7 @@ INSTALL_ENV = {"LUCY_PIXI_AUTO_UPGRADE": "1"}
 
 def is_installed():
     """True when the workspace has been built (mirrors launch_lucy.sh's check)."""
-    return os.path.isfile("install/setup.bash")
+    return any(os.path.isfile(f) for f in ("install/setup.bash", "install/setup.bat"))
 
 def get_dev_mode():
     if not os.path.exists(".env"):
@@ -39,6 +43,43 @@ def set_dev_mode(is_enabled):
                 f.write(line)
         if not dev_found:
             f.write(f"DEV={str(is_enabled).lower()}\n")
+
+PIXI_TASKS = (
+    ("pixi run core", "robot stack + rosbridge on 9090"),
+    ("pixi run control-panel", "web UI on http://localhost:4004"),
+    ("pixi run rviz", "optional viewer"),
+)
+
+
+def confirm(prompt):
+    """Yes unless explicitly declined; assumes yes when nothing can answer."""
+    if not sys.stdin.isatty():
+        return True
+    try:
+        return input(f"{prompt} [Y/n] ").strip().lower() in ("", "y", "yes")
+    except EOFError:
+        return True
+
+
+def windows_main():
+    """Entry point on Windows, which has neither curses for the TUI nor tmux to drive.
+
+    install.py runs interactively so its pixi and MSVC prompts reach the user.
+    """
+    if not is_installed():
+        print("Lucy is not installed in this workspace.")
+        if not confirm("Install now?"):
+            return 0
+        rc = run_command([sys.executable, "install.py"], interactive=True, extra_env=INSTALL_ENV)
+        if rc != 0:
+            print(f"\nInstall failed with exit code {rc}.", file=sys.stderr)
+            return rc
+
+    print("\nLucy is installed. Start each component in its own terminal:")
+    for command, purpose in PIXI_TASKS:
+        print(f"  {command:<24} {purpose}")
+    return 0
+
 
 def prepend_pixi_to_path():
     """Prefer ~/.pixi/bin over system/nix pixi (official installer is usually newer)."""
@@ -222,6 +263,10 @@ def main_tui(stdscr):
 if __name__ == "__main__":
     # This initial check is done before curses.wrapper to provide a clean error message
     # without the screen flicker of initializing and de-initializing curses.
+    # Windows first: the size check below needs curses, which does not exist there.
+    if sys.platform == "win32":
+        sys.exit(windows_main())
+
     def check_initial_size():
         stdscr = curses.initscr()
         h, w = stdscr.getmaxyx()

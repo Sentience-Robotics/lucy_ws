@@ -44,7 +44,10 @@ For Gazebo/RViz GL, also see the [NixOS notes](docs/developer_lucy_packages.md#p
 
 ### Windows
 
-You can also download **`Lucy.exe`** from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases). See the [Windows README](windows/README.md).
+`Lucy-Setup.exe` is built from [Lucy-Windows-Installer](https://github.com/Sentience-Robotics/Lucy-Windows-Installer).
+
+Keep the workspace in a path **without spaces**. Pixi console scripts (colcon, pytest, ROS 2 nodes) embed the interpreter path unquoted and cannot start from one.
+Pixi resolves **`win-64`** on Windows-on-ARM too. `pixi.lock` has no `win-arm64`.
 
 **Note:** The Lucy launcher is not available on Windows. Instead, use the following commands to start the components with Pixi, one per terminal:
 
@@ -54,7 +57,7 @@ pixi run control-panel   # http://localhost:4004
 pixi run rviz            # optional viewer
 ```
 
-`pixi run core` also starts a `/joint_states` stand-in, because ros2_control currently crashes on Windows. Hardware is hence not supported on Windows for now. See the [developer guide](docs/developer_lucy_packages.md).
+Windows is **visualisation only** for now. `pixi run core` starts a `/joint_states` stand-in so the panel renders and follows the sliders, but nothing reaches hardware, and `pixi run sim*` refuses to start: ros2_control crashes on Windows ([pal_statistics#27](https://github.com/pal-robotics/pal_statistics/issues/27)), and Gazebo runs a `controller_manager` in-process through `gz_ros2_control`, so it goes down with it. See the [developer guide](docs/developer_lucy_packages.md).
 
 ## Using the Lucy launcher
 
