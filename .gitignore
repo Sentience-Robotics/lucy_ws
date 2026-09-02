@@ -39,7 +39,7 @@ config/repos.json.local
 # Local launcher override (package list/toggles; takes precedence over config/launcher_config.json)
 config/launcher_config.json.local
 
-# End-user install profile (written by installer / Lucy.exe)
+# End-user install profile (written by the Windows installer)
 config/install.profile.json
 
 # Windows executable files
@@ -49,6 +49,3 @@ dist/
 *.local
 .local/
 
-# Generated at installer build time by windows/generate_releases.py
-windows/releases.json
-windows/releases.nsh
