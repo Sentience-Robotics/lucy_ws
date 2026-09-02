@@ -1,47 +1,60 @@
 #!/usr/bin/env bash
-# CycloneDDS discovery env for Pixi/RoboStack.
+# DDS discovery scope for Pixi/RoboStack.
 #
-# macOS gates local-network traffic behind the Local Network privacy permission,
-# granted per application. tmux daemonizes to PPID 1, so the tmux server carries
-# its own identity rather than the launching terminal's, and Homebrew's tmux is
-# never granted it. DDS multicast discovery is then dropped silently for every
-# process the tmux server spawns — which is the entire Lucy stack. Nodes come up
-# and advertise normally, but no participant ever discovers another, so rosbridge
-# answers "Service /config/get does not exist" while config_pipeline_node is
-# running and healthy. Nothing logs an error; discovery just never happens.
+# The stack is co-located and the control panel reaches it over a websocket, not
+# DDS, so discovery never needs to leave the host. Subnet discovery is the Jazzy
+# default and merges anyone else's Lucy on the network into this graph: two
+# robot_state_publishers, two controller_managers on the same joints.
 #
-# Loopback is exempt from that permission, so default macOS to localhost-only
-# unicast discovery. Nothing is lost: the whole stack is co-located, the control
-# panel reaches it over the rosbridge websocket, and micro-ROS agents are serial.
+# ROS_AUTOMATIC_DISCOVERY_RANGE is rcl's knob, so it binds every RMW. A
+# CYCLONEDDS_URI would not: RMW_IMPLEMENTATION is pinned to Cyclone on macOS
+# only, and Linux runs rmw_fastrtps_cpp where the URI is inert.
+#
+# ROS_LOCALHOST_ONLY is never set here: it is deprecated and takes precedence,
+# which would make rcl ignore the range below.
 #
 # Override in .env:
-#   LUCY_DDS_LOCALHOST=0             stock DDS (multicast, all interfaces)
-#   LUCY_DDS_INTERFACE=192.168.1.5   pin discovery to one interface address
-#   LUCY_DDS_PEERS=hostA,hostB       unicast peers, to reach other machines
-# A CYCLONEDDS_URI you set yourself always wins and is left untouched.
+#   LUCY_DDS_LOCALHOST=0             stock DDS (subnet discovery, all interfaces)
+#   LUCY_DDS_PEERS=hostA,hostB       also reach ROS nodes on named machines
+#   LUCY_DDS_RANGE=OFF               set the rcl range verbatim
+#   LUCY_DDS_INTERFACE=192.168.1.5   pin CycloneDDS discovery to one address
 #
-# Source this from the innermost shell, before exec'ing ros2 (see
-# scripts/pixi_lucy_launch.sh and launcher.py).
+# Source after Pixi activation, which is where RoboStack's ros_environment hook
+# sets the range to SUBNET.
 
-_lucy_dds_env() {
-  # An explicit CycloneDDS config always wins.
+_lucy_want_localhost() {
+  case "${LUCY_DDS_LOCALHOST:-1}" in
+    0|false|no|off|disable) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+_lucy_dds_range() {
+  if [[ -n "${LUCY_DDS_RANGE:-}" ]]; then
+    export ROS_AUTOMATIC_DISCOVERY_RANGE="${LUCY_DDS_RANGE}"
+  elif _lucy_want_localhost; then
+    export ROS_AUTOMATIC_DISCOVERY_RANGE="LOCALHOST"
+  else
+    export ROS_AUTOMATIC_DISCOVERY_RANGE="SUBNET"
+  fi
+
+  # Additive to localhost, not a replacement for it. rcl splits on ';'.
+  local peers="${LUCY_DDS_PEERS:-}"
+  if [[ -n "${peers}" ]]; then
+    local joined="${peers//,/;}"
+    export ROS_STATIC_PEERS="${joined//[[:space:]]/}"
+  fi
+}
+
+# Interface pinning for CycloneDDS, on top of the range above.
+_lucy_cyclone_uri() {
   [[ -n "${CYCLONEDDS_URI:-}" ]] && return 0
 
   local iface="${LUCY_DDS_INTERFACE:-}"
   local peers="${LUCY_DDS_PEERS:-}"
-  local want_localhost
+  local want_localhost=0
+  _lucy_want_localhost && want_localhost=1
 
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    want_localhost=1
-  else
-    want_localhost=0
-  fi
-  case "${LUCY_DDS_LOCALHOST:-${want_localhost}}" in
-    0|false|no|off|disable) want_localhost=0 ;;
-    *) want_localhost=1 ;;
-  esac
-
-  # Stock behaviour and nothing pinned: leave DDS entirely alone.
   if [[ "${want_localhost}" == "0" && -z "${iface}" && -z "${peers}" ]]; then
     return 0
   fi
@@ -75,4 +88,5 @@ _lucy_dds_env() {
 <Peers>${peer_xml}</Peers></Discovery></Domain></CycloneDDS>"
 }
 
-_lucy_dds_env
+_lucy_dds_range
+_lucy_cyclone_uri
