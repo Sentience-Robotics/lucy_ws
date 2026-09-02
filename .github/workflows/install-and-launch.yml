@@ -1,5 +1,5 @@
-# - DEV=false  -> install.sh uses url_https from config/repos.json.
-# - ./install.sh --skip-build clones sub-repos; colcon build runs via pixi run build.
+# - DEV=false  -> install.py uses url_https from config/repos.json.
+# - python3 install.py --skip-build clones sub-repos; colcon build runs via pixi run build.
 
 name: Install, Launch & Release
 
@@ -58,8 +58,8 @@ jobs:
       - name: Clone sub-repositories (skip colcon)
         shell: bash
         run: |
-          chmod +x install.sh launch_lucy.sh
-          ./install.sh --skip-build
+          chmod +x launch_lucy.sh
+          python3 install.py --skip-build
 
       - name: Build workspace (colcon)
         shell: bash
@@ -79,7 +79,7 @@ jobs:
 
       - name: Launch smoke test (headless)
         shell: bash
-        run: ./launch_lucy.sh --headless ros2 doctor --report
+        run: ./launch_lucy.sh --headless python scripts/ros_doctor.py
 
       - name: Launcher tmux smoke (Linux)
         if: matrix.pixi_platform == 'linux-64'

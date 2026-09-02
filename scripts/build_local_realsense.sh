@@ -11,7 +11,7 @@
 #
 # Run after a normal workspace build (install/setup.bash must exist). Does not
 # replace pixi run build — it adds librealsense + realsense-ros to install/.
-# install.sh runs this when LUCY_BUILD_REALSENSE=1 (after colcon + panel-install).
+# install.py runs this when LUCY_BUILD_REALSENSE=1 (after colcon + panel-install).
 #
 # Uses a portable CPU count for cmake -j (nproc on Linux, sysctl on macOS).
 

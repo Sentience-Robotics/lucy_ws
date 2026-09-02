@@ -25,7 +25,7 @@ When adding or changing workspace packages:
 pixi install          # updates pixi.lock for every platform in pixi.toml
 ```
 
-`install.sh` runs `pixi lock` automatically if `pixi.lock` is missing, then `pixi install`.
+`install.py` runs `pixi lock` automatically if `pixi.lock` is missing, then `pixi install`.
 
 **Pixi ≥ 0.78** is recommended for multi-platform lock resolution (`curl -fsSL https://pixi.sh/install.sh | bash`).
 

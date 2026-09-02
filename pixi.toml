@@ -48,7 +48,7 @@ ros-jazzy-simulation-interfaces = "*"
 ros-jazzy-backward-ros = "*"
 
 # RealSense is not a Pixi dependency — build locally when needed:
-#   ./scripts/build_local_realsense.sh  (or LUCY_BUILD_REALSENSE=1 ./install.sh)
+#   ./scripts/build_local_realsense.sh  (or LUCY_BUILD_REALSENSE=1 python3 install.py)
 
 [feature.ros.target.osx-arm64.dependencies]
 pygraphviz = "*"
@@ -108,7 +108,7 @@ panel-dev = { cmd = "yarn dev", cwd = "src/lucy_control_panel" }
 panel-build = { cmd = "yarn build", cwd = "src/lucy_control_panel" }
 
 [feature.dev.tasks]
-doctor = "ros2 doctor --report"
+doctor = "python scripts/ros_doctor.py"
 workspace-test = { cmd = "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests -q -p pytester -p python -p terminal" }
 shell = "bash scripts/pixi_dev_shell.sh"
 

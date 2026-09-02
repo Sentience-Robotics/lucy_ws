@@ -1,4 +1,4 @@
-"""Tests for install.sh repos.json parsing (HTTPS vs SSH, optional entries)."""
+"""Tests for install.py repos.json parsing (HTTPS vs SSH, optional entries)."""
 
 import json
 import os

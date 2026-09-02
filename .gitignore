@@ -1,7 +1,7 @@
 # Pixi
 .pixi/
 
-# Workspace (filled by install.sh)
+# Workspace (filled by install.py)
 src/
 
 # Colcon

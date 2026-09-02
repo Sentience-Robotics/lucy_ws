@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Lucy workspace setup: clone sub-repos, install RoboStack deps via Pixi, colcon build.
 
-Single cross-platform implementation behind ./install.sh (Linux, macOS) and the
+Single cross-platform implementation behind the Windows launcher and the
 Windows flows in windows/install_ops.py. Keep behaviour changes here so no
 platform drifts from the others.
 
@@ -443,7 +443,7 @@ def confirm_install(req_id: str, prompt: str, auto_env: str) -> None:
         fail(req_id, f"{prompt} needs confirmation in non-interactive mode. "
                      f"Set {auto_env}=1 or run from an interactive terminal.")
     if input(f"{prompt} [y/N] ").strip().lower() not in ("y", "yes"):
-        fail(req_id, f"Aborted — install it manually or set {auto_env}=1.")
+        fail(req_id, f"Aborted - install it manually or set {auto_env}=1.")
 
 
 def confirm_pixi_install() -> None:
@@ -461,8 +461,8 @@ def ensure_pixi(run_command: Callable = default_run_command, log: Log = print) -
     if env_flag("LUCY_SKIP_PIXI_UPGRADE"):
         fail("pixi", f"pixi {current} is older than required {minimum}" if current else "pixi not found")
 
-    log(f"install: pixi {current} is older than {minimum} — installing latest ..." if current
-        else "install: pixi not found — installing via pixi.sh ...")
+    log(f"install: pixi {current} is older than {minimum} - installing latest ..." if current
+        else "install: pixi not found - installing via pixi.sh ...")
     log("install: (LUCY_SKIP_PIXI_UPGRADE=1 to abort; LUCY_PIXI_AUTO_UPGRADE=1 to skip prompt)")
 
     confirm_pixi_install()
@@ -502,7 +502,7 @@ def ensure_msvc(run_command: Callable = default_run_command, log: Log = print) -
     if shutil.which("winget") is None:
         fail("msvc", "winget not found, so the build tools cannot be installed automatically.")
 
-    log("install: MSVC build tools not found — installing via winget (roughly 1.5 GB) ...")
+    log("install: MSVC build tools not found - installing via winget (roughly 1.5 GB) ...")
     log("install: (LUCY_SKIP_MSVC_INSTALL=1 to abort; LUCY_MSVC_AUTO_INSTALL=1 to skip prompt)")
     confirm_install("msvc", "Install the Visual Studio Build Tools C++ compiler?", "LUCY_MSVC_AUTO_INSTALL")
     run_command(msvc_install_command())
@@ -645,7 +645,7 @@ def install_repos(
             effective = "zip"
 
     if effective == "zip" and mode == "update":
-        log("NOTE: ZIP-based install — local changes under src/ were replaced.")
+        log("NOTE: ZIP-based install - local changes under src/ were replaced.")
 
     mark_optional_colcon_ignore(root, repos, log)
     return effective
@@ -739,7 +739,7 @@ def pixi_install(
     project_root: Path | str, run_command: Callable = default_run_command, log: Log = print
 ) -> None:
     if not (Path(project_root) / "pixi.lock").is_file():
-        log("No pixi.lock — running pixi lock (solves every platform in pixi.toml) ...")
+        log("No pixi.lock - running pixi lock (solves every platform in pixi.toml) ...")
         pixi_run(project_root, ["lock"], run_command)
     log("Pixi install (RoboStack Jazzy, all workspace platforms) ...")
     pixi_run(project_root, ["install"], run_command)
@@ -752,12 +752,12 @@ def build_local_realsense_optional(
 ) -> None:
     """Optional local librealsense build (Linux-targeted shell script)."""
     if not env_flag("LUCY_BUILD_REALSENSE"):
-        log("RealSense: local build when needed — scripts/build_local_realsense.sh")
+        log("RealSense: local build when needed: scripts/build_local_realsense.sh")
         return
     if sys.platform == "win32":
         log("RealSense: LUCY_BUILD_REALSENSE set but the local build is Linux-only; skipping.")
         return
-    log("LUCY_BUILD_REALSENSE enabled — building librealsense locally ...")
+    log("LUCY_BUILD_REALSENSE enabled - building librealsense locally ...")
     script = Path(project_root) / "scripts" / "build_local_realsense.sh"
     run_command(["bash", str(script)], cwd=str(project_root))
 
@@ -870,8 +870,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"Install failed: {exc}", file=sys.stderr)
         return 1
 
-    print("Repos ready. Run 'pixi run build' or re-run without --skip-build." if args.skip_build
-          else "Install complete. Run './launch_lucy.sh' or Launch in Lucy.py")
+    if args.skip_build:
+        print("Repos ready. Run 'pixi run build' or re-run without --skip-build.")
+    elif sys.platform == "win32":
+        print("Install complete. Run 'pixi run core', then 'pixi run control-panel'.")
+    else:
+        print("Install complete. Run './launch_lucy.sh' or Launch in Lucy.py")
     return 0
 
 

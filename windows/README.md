@@ -58,7 +58,7 @@ python windows\Lucy.py --cli install --repos-branch master
 Or use Pixi directly from Git Bash / WSL:
 
 ```bash
-./install.sh
+python3 install.py
 pixi run build
 pixi run panel-install
 ```
@@ -105,4 +105,4 @@ python -c "from PIL import Image; Image.open('path\to\lucy-logo.jpg').save('wind
 ## Terminal choice
 
 - **Native Windows:** `Lucy.exe` (installed) or `python windows/Lucy.py` (from a clone) — uses Git Bash for launch.
-- **Git Bash / WSL:** root `Lucy.py`, `install.sh`, and `launch_lucy.sh` (recommended for developers).
+- **Git Bash / WSL:** root `Lucy.py`, `install.py`, and `launch_lucy.sh` (recommended for developers).
