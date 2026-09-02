@@ -13,6 +13,7 @@ from pathlib import Path
 # ============================================================
 
 REPO_URL = "https://github.com/Sentience-Robotics/lucy_ws.git"
+REPO_NAME = "lucy_ws"          # Name of the folder the repo is cloned into.
 INSTALL_SCRIPT = "install.py"
 DEFAULT_BRANCH = "master"
 
@@ -436,226 +437,11 @@ def install(branch):
     clear_screen()
     print_header()
 
-    # The project is installed where the installer was launched.
-    install_dir = Path.cwd().resolve()
-
-    print(
-        color(
-            "  Installation",
-            BOLD + WHITE
-        )
-    )
-
-    print()
-
-    print(
-        color("  Repository  ", BRIGHT_BLACK),
-        REPO_URL
-    )
-
-    print(
-        color("  Branch      ", BRIGHT_BLACK),
-        color(branch, BRIGHT_GREEN)
-    )
-
-    print(
-        color("  Location    ", BRIGHT_BLACK),
-        str(install_dir)
-    )
-
-    print()
-
-    print(
-        color(
-            "  " + "─" * 42,
-            BRIGHT_BLACK
-        )
-    )
-
-    print()
-
-    # --------------------------------------------------------
-    # Temporary clone
-    # --------------------------------------------------------
-
-    with tempfile.TemporaryDirectory(
-        prefix="lucy-install-"
-    ) as tmp:
-
-        tmp_dir = Path(tmp) / "lucy_ws"
-
-        print(
-            color("  [1/3]", BRIGHT_CYAN),
-            "Cloning repository..."
-        )
-
-        result = subprocess.run(
-            [
-                "git",
-                "clone",
-                "--branch",
-                branch,
-                "--single-branch",
-                REPO_URL,
-                str(tmp_dir),
-            ]
-        )
-
-        if result.returncode != 0:
-            die("Git clone failed.")
-
-        print()
-
-        print(
-            color("  [ OK ]", BRIGHT_GREEN),
-            "Repository cloned."
-        )
-
-        # ----------------------------------------------------
-        # Locate install.py
-        # ----------------------------------------------------
-
-        source_install_script = tmp_dir / INSTALL_SCRIPT
-
-        if not source_install_script.exists():
-            die(
-                f"'{INSTALL_SCRIPT}' was not found "
-                f"in branch '{branch}'."
-            )
-
-        # ----------------------------------------------------
-        # Copy repository into current directory
-        # ----------------------------------------------------
-
-        print()
-
-        print(
-            color("  [2/3]", BRIGHT_CYAN),
-            "Installing workspace files..."
-        )
-
-        try:
-            for source in tmp_dir.iterdir():
-
-                destination = install_dir / source.name
-
-                # Never overwrite this installer.
-                if source.name == Path(__file__).name:
-                    continue
-
-                if source.is_dir():
-
-                    if destination.exists():
-                        shutil.copytree(
-                            source,
-                            destination,
-                            dirs_exist_ok=True,
-                        )
-                    else:
-                        shutil.copytree(
-                            source,
-                            destination,
-                        )
-
-                else:
-                    shutil.copy2(
-                        source,
-                        destination,
-                    )
-
-        except OSError as exc:
-            die(
-                "Failed to copy repository files:\n"
-                f"{exc}"
-            )
-
-        print()
-
-        print(
-            color("  [ OK ]", BRIGHT_GREEN),
-            "Workspace files installed."
-        )
-
-        # ----------------------------------------------------
-        # Run install.py from the installed workspace
-        # ----------------------------------------------------
-
-        install_script = install_dir / INSTALL_SCRIPT
-
-        if not install_script.exists():
-            die(
-                f"'{INSTALL_SCRIPT}' could not be installed."
-            )
-
-        print()
-
-        print(
-            color("  [3/3]", BRIGHT_CYAN),
-            "Running installation script..."
-        )
-
-        print()
-
-        print(
-            color(
-                "  " + "─" * 42,
-                BRIGHT_BLACK
-            )
-        )
-
-        print()
-
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(install_script),
-            ],
-            cwd=str(install_dir),
-        )
-
-        print()
-
-        if result.returncode != 0:
-            die(
-                "Installation script failed "
-                f"with exit code {result.returncode}."
-            )
-
-    # --------------------------------------------------------
-    # Done
-    # --------------------------------------------------------
-
-    print(
-        color(
-            "  " + "─" * 42,
-            BRIGHT_BLACK
-        )
-    )
-
-    print()
-
-    print(
-        color("  [ OK ]", BRIGHT_GREEN),
-        color(
-            "Installation complete.",
-            BOLD + GREEN
-        )
-    )
-
-    print()
-
-    print(
-        color("  Installed to ", BRIGHT_BLACK),
-        str(install_dir)
-    )
-
-    print()
-
-    clear_screen()
-    print_header()
-
-    # Install into the directory where the installer was launched.
-    install_dir = Path.cwd().resolve()
+    # The repo is cloned into a subfolder (REPO_NAME) of the
+    # directory where the installer was launched, rather than
+    # directly into that directory.
+    base_dir = Path.cwd().resolve()
+    install_dir = base_dir / REPO_NAME
 
     print(
         color(
@@ -696,23 +482,24 @@ def install(branch):
     # Safety check
     # --------------------------------------------------------
 
-    # git clone requires the destination directory to be empty
-    # (or, depending on Git version, only contain specific
-    # ignorable files). We explicitly require an empty directory
-    # to avoid accidentally overwriting an existing project.
-    try:
-        existing_entries = list(install_dir.iterdir())
-    except OSError as exc:
-        die(
-            f"Unable to access installation directory:\n{exc}"
-        )
-
-    if existing_entries:
-        die(
-            "The installation directory is not empty:\n"
-            f"  {install_dir}\n\n"
-            "Please run the installer from an empty directory."
-        )
+    # git clone requires the destination directory to not
+    # already exist (or to be empty). We explicitly check this
+    # up front to avoid accidentally clashing with an existing
+    # project and to give a clear error message.
+    if install_dir.exists():
+        if any(install_dir.iterdir()):
+            die(
+                "The installation directory is not empty:\n"
+                f"  {install_dir}\n\n"
+                "Please remove it or choose a different location."
+            )
+    else:
+        try:
+            install_dir.mkdir(parents=True)
+        except OSError as exc:
+            die(
+                f"Unable to create installation directory:\n{exc}"
+            )
 
     # --------------------------------------------------------
     # Clone
@@ -746,7 +533,7 @@ def install(branch):
     )
 
     # --------------------------------------------------------
-    # Run install.py
+    # Run install.py from the cloned workspace
     # --------------------------------------------------------
 
     install_script = install_dir / INSTALL_SCRIPT
@@ -791,6 +578,10 @@ def install(branch):
             f"with exit code {result.returncode}."
         )
 
+    # --------------------------------------------------------
+    # Done
+    # --------------------------------------------------------
+
     print(
         color(
             "  " + "─" * 42,
@@ -813,132 +604,6 @@ def install(branch):
     print(
         color("  Installed to ", BRIGHT_BLACK),
         str(install_dir)
-    )
-
-    print()
-    clear_screen()
-    print_header()
-
-    print(
-        color(
-            "  Installation",
-            BOLD + WHITE
-        )
-    )
-
-    print()
-
-    print(
-        color("  Repository  ", BRIGHT_BLACK),
-        REPO_URL
-    )
-
-    print(
-        color("  Branch      ", BRIGHT_BLACK),
-        color(branch, BRIGHT_GREEN)
-    )
-
-    print()
-
-    print(
-        color(
-            "  " + "─" * 42,
-            BRIGHT_BLACK
-        )
-    )
-
-    print()
-
-    with tempfile.TemporaryDirectory(
-        prefix="lucy-install-"
-    ) as tmp:
-
-        repo_dir = Path(tmp) / "lucy_ws"
-
-        print(
-            color("  [1/2]", BRIGHT_CYAN),
-            "Cloning repository..."
-        )
-
-        result = subprocess.run(
-            [
-                "git",
-                "clone",
-                "--branch",
-                branch,
-                "--single-branch",
-                REPO_URL,
-                str(repo_dir),
-            ]
-        )
-
-        if result.returncode != 0:
-            die("Git clone failed.")
-
-        print()
-
-        print(
-            color("  [ OK ]", BRIGHT_GREEN),
-            "Repository cloned."
-        )
-
-        install_script = repo_dir / INSTALL_SCRIPT
-
-        if not install_script.exists():
-            die(
-                f"'{INSTALL_SCRIPT}' was not found "
-                f"in branch '{branch}'."
-            )
-
-        print()
-
-        print(
-            color("  [2/2]", BRIGHT_CYAN),
-            "Running installation script..."
-        )
-
-        print()
-
-        print(
-            color(
-                "  " + "─" * 42,
-                BRIGHT_BLACK
-            )
-        )
-
-        print()
-
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(install_script),
-            ],
-            cwd=repo_dir,
-        )
-
-        print()
-
-        if result.returncode != 0:
-            die(
-                "Installation script failed "
-                f"with exit code {result.returncode}."
-            )
-
-    print(
-        color(
-            "  " + "─" * 42,
-            BRIGHT_BLACK
-        )
-    )
-
-    print()
-
-    print(
-        color("  [ OK ]", BRIGHT_GREEN),
-        color(
-            "Installation complete.",
-            BOLD + GREEN
-        )
     )
 
     print()
@@ -1035,4 +700,3 @@ if __name__ == "__main__":
 
     finally:
         show_cursor()
-
