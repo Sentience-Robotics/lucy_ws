@@ -57,7 +57,7 @@ pixi run control-panel   # http://localhost:4004
 pixi run rviz            # optional viewer
 ```
 
-`pixi run core` also starts a `/joint_states` stand-in, because ros2_control currently crashes on Windows. Hardware is hence not supported on Windows for now. See the [developer guide](docs/developer_lucy_packages.md).
+Windows is **visualisation only** for now. `pixi run core` starts a `/joint_states` stand-in so the panel renders and follows the sliders, but nothing reaches hardware, and `pixi run sim*` refuses to start: ros2_control crashes on Windows ([pal_statistics#27](https://github.com/pal-robotics/pal_statistics/issues/27)), and Gazebo runs a `controller_manager` in-process through `gz_ros2_control`, so it goes down with it. See the [developer guide](docs/developer_lucy_packages.md).
 
 ## Using the Lucy launcher
 
