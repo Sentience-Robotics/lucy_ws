@@ -138,15 +138,17 @@ case "$(uname -s)" in
     if command -v tmux >/dev/null 2>&1; then
       LAUNCH_CMD="cd \"${SCRIPT_DIR}\" && pixi run -- python -m launcher"
       export LUCY_TMUX_SESSION="$TMUX_SESSION"
+      # Package windows keep the session alive after the Control Center exits, so
+      # "session exists" does not imply "Lucy window exists".
       exec bash -c "
         set -e
         tmux start-server
         if ! tmux has-session -t ${TMUX_SESSION} 2>/dev/null; then
           tmux new-session -d -s ${TMUX_SESSION} -n Lucy \"${LAUNCH_CMD}\"
-        else
-          tmux send-keys -t ${TMUX_SESSION}:Lucy C-c 2>/dev/null || true
-          tmux send-keys -t ${TMUX_SESSION}:Lucy \"${LAUNCH_CMD}\" C-m
+        elif ! tmux list-windows -t ${TMUX_SESSION} -F '#{window_name}' | grep -qx Lucy; then
+          tmux new-window -t ${TMUX_SESSION} -n Lucy \"${LAUNCH_CMD}\"
         fi
+        tmux select-window -t ${TMUX_SESSION}:Lucy 2>/dev/null || true
         tmux attach-session -t ${TMUX_SESSION}
       "
     fi

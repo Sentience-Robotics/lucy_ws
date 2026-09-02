@@ -45,6 +45,13 @@ from .platform import (
     read_proc_environ,
     read_proc_exe,
 )
+from .preflight import (
+    describe_running_stack,
+    guard_single_stack,
+    running_stack_processes,
+    running_stack_windows,
+    stop_running_stack,
+)
 from .process import (
     _child_pids,
     _finish_teardown,
@@ -100,6 +107,7 @@ __all__ = [
     "apply_changes",
     "cleanup_lucy_orphan_processes",
     "confirm_exit_action",
+    "describe_running_stack",
     "CORE_TEARDOWN",
     "CONFIG_DIR",
     "DEFAULT_CONFIG_FILE",
@@ -108,6 +116,7 @@ __all__ = [
     "find_lucy_orphan_pids",
     "get_dev_mode",
     "get_pkg_status",
+    "guard_single_stack",
     "is_in_tmux",
     "is_lucy_orphan",
     "is_lucy_orphan_cmdline",
@@ -134,6 +143,9 @@ __all__ = [
     "read_proc_exe",
     "restore_selection",
     "default_robot_selection",
+    "running_stack_processes",
+    "running_stack_windows",
+    "stop_running_stack",
     "run_shell_command",
     "run_shell_command_async",
     "run_teardown_async",
