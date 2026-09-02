@@ -35,12 +35,20 @@ export PATH="${HOME}/.pixi/bin:${PATH}"
 command -v pixi >/dev/null 2>&1 || exit 1
 
 out="${CACHE}.out"
+# Job control gives the probe its own process group so the timeout below can
+# signal the whole tree. `ros2 control` runs the rclpy node as a child of
+# itself, so signalling only the subshell leaves that node alive holding a DDS
+# participant. One escapes per timed-out poll, and since the launcher polls
+# core's readiness for as long as it is up they accumulate, loading the machine
+# and adding participants that every other node then discovers and tracks.
+set -m
 (
   cd "${ROOT}" || exit 1
   pixi run -- bash -c 'source scripts/dds_env.sh 2>/dev/null; ros2 control list_controllers' \
     > "${out}" 2>&1
 ) &
 probe_pid=$!
+set +m
 
 waited=0
 while kill -0 "${probe_pid}" 2>/dev/null && (( waited < CALL_TIMEOUT * 10 )); do
@@ -48,7 +56,7 @@ while kill -0 "${probe_pid}" 2>/dev/null && (( waited < CALL_TIMEOUT * 10 )); do
   waited=$((waited + 1))
 done
 if kill -0 "${probe_pid}" 2>/dev/null; then
-  kill -9 "${probe_pid}" 2>/dev/null
+  kill -9 -- "-${probe_pid}" 2>/dev/null || kill -9 "${probe_pid}" 2>/dev/null
   wait "${probe_pid}" 2>/dev/null
 fi
 wait "${probe_pid}" 2>/dev/null
@@ -60,5 +68,10 @@ active=$(grep -cE '[[:space:]]active[[:space:]]*$' "${out}" 2>/dev/null)
 rm -f "${out}"
 
 if (( active >= MIN_ACTIVE )); then result=0; else result=1; fi
-printf '%s %s\n' "${now}" "${result}" > "${CACHE}" 2>/dev/null || true
+
+# Stamp at completion rather than at entry. The probe above runs for as long as
+# CALL_TIMEOUT, so an entry carrying the time this script *started* is already
+# older than TTL by the time it is written: the slow path — the only one worth
+# caching — would never produce a hit, and every caller would pay full price.
+printf '%s %s\n' "$(date +%s)" "${result}" > "${CACHE}" 2>/dev/null || true
 exit "${result}"

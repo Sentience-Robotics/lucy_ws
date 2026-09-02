@@ -19,6 +19,7 @@ from .constants import (
     MIN_TERM_HEIGHT,
     MIN_TERM_WIDTH,
     NIX_GL_ENV_SCRIPT,
+    REDRAW_INTERVAL_MS,
     SELECTION_FILE,
     STATE_FILE,
     STOPPING_TIMEOUT,
@@ -75,6 +76,7 @@ from .shell import (
 )
 from .state import (
     LauncherState,
+    StatusPoller,
     _has_unapplied_changes,
     _intended_running,
     _nav_hint,
@@ -92,11 +94,12 @@ from .tmux import (
     is_in_tmux,
     needs_tmux_session,
 )
-from .tui import draw_too_small_message, draw_tui, main
+from .tui import confirm_exit_action, draw_too_small_message, draw_tui, main
 
 __all__ = [
     "apply_changes",
     "cleanup_lucy_orphan_processes",
+    "confirm_exit_action",
     "CORE_TEARDOWN",
     "CONFIG_DIR",
     "DEFAULT_CONFIG_FILE",
@@ -109,6 +112,7 @@ __all__ = [
     "is_lucy_orphan",
     "is_lucy_orphan_cmdline",
     "LauncherState",
+    "StatusPoller",
     "LOADING_TIMEOUT",
     "LOCAL_CONFIG_FILE",
     "LUCY_WS_MARKER",
@@ -121,6 +125,7 @@ __all__ = [
     "MIN_TERM_WIDTH",
     "needs_tmux_session",
     "NIX_GL_ENV_SCRIPT",
+    "REDRAW_INTERVAL_MS",
     "Package",
     "path_in_text",
     "process_workspace_markers",

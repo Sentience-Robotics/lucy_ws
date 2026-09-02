@@ -64,33 +64,54 @@ class Package:
             if self.is_running and self.id not in _pkg_stop_times:
                 self.selected = True
 
-    def update_running_status(self, running_modifiers):
+    def probe_status(self, running_modifiers):
+        """Shell-probe running/ready/pane state and return it, mutating nothing.
+
+        Every subprocess a status refresh needs lives here, and none of the
+        package's own fields are written, so this is safe to run on a background
+        thread while the UI keeps drawing. `readiness_check` is arbitrary shell
+        from the config and can take seconds (core's ends in a `ros2 control
+        list_controllers` behind a Pixi activation), which is exactly why the
+        probing is separated from applying the result."""
+        is_running = self.is_running
         if self.is_complex_command():
-            self.is_running = run_shell_command(self.command["is_running"], capture_output=True)
+            is_running = run_shell_command(self.command["is_running"], capture_output=True)
         elif self.type == "modifier":
-            self.is_running = self.id in running_modifiers
-        elif self.type == "core":
-            self.is_running = run_shell_command(
-                f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'",
-                capture_output=True,
-            )
-            if not self.is_running:
-                save_state({"modifiers": []})
-        elif self.type in ("tool", "interface"):
-            self.is_running = run_shell_command(
+            is_running = self.id in running_modifiers
+        elif self.type in ("core", "tool", "interface"):
+            is_running = run_shell_command(
                 f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'",
                 capture_output=True,
             )
 
-        if not self.is_running:
-            self.ready = False
+        if not is_running:
+            ready = False
         elif self.readiness_check:
-            self.ready = run_shell_command(self.readiness_check, capture_output=True)
+            ready = run_shell_command(self.readiness_check, capture_output=True)
         else:
-            self.ready = True
+            ready = True
 
-        self.pane_exit_status = _pane_exit_status(self.id) if self.is_running else None
-        self.pane_dead = self.pane_exit_status is not None
+        exit_status = _pane_exit_status(self.id) if is_running else None
+        return {
+            "is_running": is_running,
+            "ready": ready,
+            "pane_exit_status": exit_status,
+            "pane_dead": exit_status is not None,
+        }
+
+    def apply_status(self, status):
+        """Write a probe_status() result onto the package. UI thread only, so
+        that probe results and the optimistic updates apply_changes() makes have
+        a single writer."""
+        if self.type == "core" and not status["is_running"]:
+            save_state({"modifiers": []})
+        self.is_running = status["is_running"]
+        self.ready = status["ready"]
+        self.pane_exit_status = status["pane_exit_status"]
+        self.pane_dead = status["pane_dead"]
+
+    def update_running_status(self, running_modifiers):
+        self.apply_status(self.probe_status(running_modifiers))
 
     def is_complex_command(self):
         return isinstance(self.command, dict)

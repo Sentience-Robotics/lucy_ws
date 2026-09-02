@@ -9,9 +9,10 @@ except ImportError:
 
 from .apply import apply_changes, default_robot_selection, restore_selection
 from .config import get_dev_mode, load_config, save_selection
-from .constants import MIN_TERM_HEIGHT, MIN_TERM_WIDTH
+from .constants import MIN_TERM_HEIGHT, MIN_TERM_WIDTH, REDRAW_INTERVAL_MS
 from .state import (
     LauncherState,
+    StatusPoller,
     _has_unapplied_changes,
     _intended_running,
     _nav_hint,
@@ -55,9 +56,23 @@ def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hi
             pass
 
 
+def confirm_exit_action(key):
+    """What a keypress means while the exit prompt is up.
+
+    Navigation keeps the prompt standing: the status rows update underneath it
+    on every tick, and an answer that only survived until the next repaint would
+    be impossible to give. Anything else dismisses it, so no keystroke can
+    confirm a teardown by accident."""
+    if key in (ord("y"), ord("Y")):
+        return "confirm"
+    if key in (curses.KEY_UP, curses.KEY_DOWN):
+        return "keep"
+    return "dismiss"
+
+
 def draw_too_small_message(stdscr):
     h, w = stdscr.getmaxyx()
-    stdscr.clear()
+    stdscr.erase()
     message = "Please increase terminal size"
     message2 = f"({MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} required)"
     stdscr.addstr(h // 2 - 1, max(0, (w - len(message)) // 2), message, curses.A_BOLD)
@@ -65,13 +80,14 @@ def draw_too_small_message(stdscr):
     stdscr.refresh()
 
 
-def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False):
+def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False,
+             confirm_exit=False):
     h, w = stdscr.getmaxyx()
     if h < MIN_TERM_HEIGHT or w < MIN_TERM_WIDTH:
         draw_too_small_message(stdscr)
         return None
 
-    stdscr.clear()
+    stdscr.erase()
     title = "Lucy Control Center"
     stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
     stdscr.addstr(
@@ -81,7 +97,14 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
         curses.A_BOLD,
     )
 
-    if status_msg:
+    if confirm_exit:
+        stdscr.addstr(
+            h - 2,
+            2,
+            "Stop all processes and exit? (y/n)",
+            curses.A_BOLD | curses.color_pair(2),
+        )
+    elif status_msg:
         stdscr.addstr(h - 2, 2, status_msg, curses.A_BOLD)
     elif error_msg:
         stdscr.addstr(h - 2, 2, f"Warning: {error_msg}", curses.color_pair(2))
@@ -166,8 +189,6 @@ def main(stdscr):
     state = LauncherState(load_config())
     restore_selection(state)
     default_robot_selection(state)
-    current_idx = 0
-    error_msg = None
     status_msg = None
     status_msg_until = 0.0
 
@@ -183,10 +204,26 @@ def main(stdscr):
         save_selection({p.id for p in state.packages if p.selected})
         status_msg = "Starting default services for production mode..."
         status_msg_until = time.time() + 3.0
-        state.refresh_status()
+
+    poller = StatusPoller(state)
+    try:
+        return _event_loop(stdscr, state, poller, status_msg, status_msg_until)
+    finally:
+        poller.stop()
+
+
+def _event_loop(stdscr, state, poller, status_msg=None, status_msg_until=0.0):
+    """Draw/input loop. Package status arrives from `poller` as finished
+    snapshots so no keystroke ever waits on a readiness probe."""
+    current_idx = 0
+    error_msg = None
+    confirm_exit = False
 
     while True:
         try:
+            snapshot = poller.take()
+            if snapshot is not None:
+                state.apply_snapshot(snapshot)
             if status_msg and time.time() >= status_msg_until:
                 status_msg = None
             display_list = draw_tui(
@@ -196,6 +233,7 @@ def main(stdscr):
                 error_msg,
                 status_msg,
                 _has_unapplied_changes(state),
+                confirm_exit,
             )
             error_msg = None
 
@@ -208,24 +246,32 @@ def main(stdscr):
                 continue
 
             if _pkg_start_times or _pkg_stop_times:
-                poll_ms = 1000
+                poller.set_interval(1.0)
             elif _intended_running:
-                poll_ms = 5000
+                poller.set_interval(5.0)
             else:
-                poll_ms = None
-            if poll_ms is None:
+                poller.set_interval(None)
+
+            # Statuses also age on their own (LOADING and STOPPING both expire on
+            # a clock), so redraw on a short tick whenever anything is live. The
+            # redraw is cheap: erase() leaves curses sending only what changed.
+            if _intended_running or _pkg_stop_times:
+                stdscr.nodelay(1)
+                stdscr.timeout(REDRAW_INTERVAL_MS)
+            else:
                 stdscr.nodelay(0)
                 stdscr.timeout(-1)
-            else:
-                stdscr.nodelay(1)
-                stdscr.timeout(poll_ms)
             key = stdscr.getch()
-            if key == -1:
-                state.refresh_status()
+            if key == -1 or key == curses.KEY_RESIZE:
                 continue
 
-            if key == curses.KEY_RESIZE:
-                continue
+            if confirm_exit:
+                action = confirm_exit_action(key)
+                if action == "confirm":
+                    return "ExitWorkspace", state
+                if action == "dismiss":
+                    confirm_exit = False
+                    continue
 
             if key == curses.KEY_UP:
                 current_idx = (current_idx - 1) % len(display_list)
@@ -239,19 +285,9 @@ def main(stdscr):
                 save_selection({p.id for p in state.packages if p.selected})
                 status_msg = "Configuration Applied!"
                 status_msg_until = time.time() + 2.0
-                state.refresh_status()
+                poller.request_refresh()
             elif key in [ord("x"), ord("X"), ord("q"), ord("Q"), 27]:
-                h, w = stdscr.getmaxyx()
-                stdscr.addstr(
-                    h - 2,
-                    2,
-                    "Stop all processes and exit? (y/n)",
-                    curses.A_BOLD | curses.color_pair(2),
-                )
-                stdscr.refresh()
-                confirm_key = stdscr.getch()
-                if confirm_key in [ord("y"), ord("Y")]:
-                    return "ExitWorkspace", state
+                confirm_exit = True
 
         except curses.error:
             time.sleep(0.1)
