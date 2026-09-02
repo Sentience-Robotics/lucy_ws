@@ -2,7 +2,7 @@
 """Lucy workspace setup: clone sub-repos, install RoboStack deps via Pixi, colcon build.
 
 Single cross-platform implementation behind the Windows launcher and the
-Windows flows in windows/install_ops.py. Keep behaviour changes here so no
+Keep behaviour changes here so no
 platform drifts from the others.
 
 Usage:

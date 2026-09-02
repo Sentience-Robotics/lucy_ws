@@ -58,7 +58,7 @@ python install.py
 
 Keep the workspace in a path **without spaces**. Pixi console scripts (colcon, pytest, ROS 2 nodes) embed the interpreter path unquoted and cannot start from one; `%LOCALAPPDATA%\Programs\Lucy` is the installer's default.
 
-**End users:** download **`Lucy-Setup.exe`** from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases). See the [Windows README](windows/README.md).
+Pixi resolves **`win-64`** on both Intel/AMD and Windows-on-ARM hosts — there is no `win-arm64` entry in `pixi.lock`. Reopen your terminal after installing anything above so the updated `PATH` is picked up.
 
 ## Quick start
 
