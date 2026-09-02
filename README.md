@@ -41,28 +41,6 @@ programs.nix-ld.enable = true;
 ```
 
 For Gazebo/RViz GL, also see the [NixOS notes](docs/developer_lucy_packages.md#platform-setup) in the developer guide.
-<!-- 
-### Windows
-
-Install **Git**, **Python 3** and the **Visual Studio Build Tools** with the *Desktop development with C++* workload — ROS 2 C++ packages need the MSVC compiler:
-
-```powershell
-winget install Microsoft.VisualStudio.2022.BuildTools --override `
-  "--quiet --wait --norestart --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
-python install.py
-```
-
-Keep the workspace in a path **without spaces**. Pixi console scripts (colcon, pytest, ROS 2 nodes) embed the interpreter path unquoted and cannot start from one; `%LOCALAPPDATA%\Programs\Lucy` is the installer's default.
-
-**End users:** download **`Lucy-Setup.exe`** from [GitHub Releases](https://github.com/Sentience-Robotics/lucy_ws/releases). See the [Windows README](windows/README.md). -->
-
-## Quick start
-
-### Linux / macOS
-
-```bash
-python3 Lucy.py
-```
 
 ### Windows
 
