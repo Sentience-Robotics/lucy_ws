@@ -117,27 +117,27 @@ def show_cursor():
 def print_header():
     print(color(
         "  ██╗     ██╗   ██╗ ██████╗██╗   ██╗",
-        BRIGHT_CYAN
+        BRIGHT_GREEN
     ))
     print(color(
         "  ██║     ██║   ██║██╔════╝╚██╗ ██╔╝",
-        BRIGHT_CYAN
+        BRIGHT_GREEN
     ))
     print(color(
         "  ██║     ██║   ██║██║      ╚████╔╝ ",
-        BRIGHT_CYAN
+        BRIGHT_GREEN
     ))
     print(color(
         "  ██║     ██║   ██║██║       ╚██╔╝  ",
-        BRIGHT_CYAN
+        BRIGHT_GREEN
     ))
     print(color(
         "  ███████╗╚██████╔╝╚██████╗   ██║   ",
-        BRIGHT_CYAN
+        BRIGHT_GREEN
     ))
     print(color(
         "  ╚══════╝ ╚═════╝  ╚═════╝   ╚═╝   ",
-        BRIGHT_CYAN
+        BRIGHT_GREEN
     ))
 
     print()
