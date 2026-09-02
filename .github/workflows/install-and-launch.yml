@@ -1,14 +1,12 @@
 # - DEV=false  -> install.py uses url_https from config/repos.json.
 # - python3 install.py --skip-build clones sub-repos; colcon build runs via pixi run build.
 
-name: Install, Launch & Release
+name: Install, Build & Test
 
 on:
   workflow_dispatch:
   push:
     branches: [master, dev]
-    tags:
-      - 'v*'
   pull_request:
     branches: [master, dev]
 
