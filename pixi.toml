@@ -65,6 +65,7 @@ env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 
 [feature.ros.target.win-64.dependencies]
+windows-curses = ">=2.3.0,<3"
 # controller_manager crashes on win-64, so nothing publishes /joint_states.
 # joint_state_publisher supplies it from the URDF (viewer only, not driveable).
 ros-jazzy-joint-state-publisher = "*"
@@ -121,7 +122,6 @@ sim-rviz = { cmd = "bash scripts/pixi_lucy_launch.sh gazebo:=true headless:=true
 rviz = { cmd = "bash scripts/pixi_lucy_launch.sh rviz:=true" }
 
 [feature.launcher.target.win-64.tasks]
-rcl = { cmd = "python -c 'import rclpy; print(rclpy.__file__)'" } # TMP task for testing
 core = { cmd = "python scripts/pixi_lucy_launch.py" }
 sim = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true" }
 sim-headless = { cmd = "python scripts/pixi_lucy_launch.py gazebo:=true headless:=true" }

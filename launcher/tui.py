@@ -1,5 +1,29 @@
-"""Curses TUI rendering and main event loop."""
+"""Curses TUI rendering and main event loop.
 
+Cross-platform notes
+---------------------
+The stdlib `curses` module does not exist on Windows. To run this file on
+Windows you need the `windows-curses` package installed (it provides a
+drop-in `_curses`/`curses` implementation backed by PDCurses), e.g.:
+
+    pip install windows-curses
+
+If it isn't installed, `curses` will be `None` and `main()` will print a
+helpful message instead of crashing with an AttributeError.
+
+A few PDCurses (Windows) quirks are also handled explicitly:
+  * `use_default_colors()` / transparent (-1) backgrounds aren't reliably
+    supported on every Windows console, so we fall back to COLOR_BLACK.
+  * PDCurses does not reliably deliver KEY_RESIZE while `getch()` is
+    blocked indefinitely (no SIGWINCH on Windows), so on Windows we never
+    block forever - we poll on a short timeout instead.
+  * Writing to the terminal's bottom-right cell raises curses.error on
+    some consoles (this is stricter on Windows). All screen writes go
+    through `_safe_addstr`, which clips to the screen bounds and
+    swallows that specific error instead of aborting the whole frame.
+"""
+
+import sys
 import time
 
 try:
@@ -21,11 +45,42 @@ from .state import (
     get_pkg_status,
 )
 
+IS_WINDOWS = sys.platform.startswith("win")
+
+# On Windows, don't ever block on getch() indefinitely: PDCurses doesn't
+# reliably surface KEY_RESIZE (or console-resize at all) while blocked,
+# so we poll on a short timeout instead to stay responsive.
+WINDOWS_IDLE_POLL_MS = 1000
+
+
+def _safe_addstr(stdscr, y, x, text, attr=0):
+    """addstr that clips to the screen bounds and never raises curses.error.
+
+    Windows consoles (PDCurses) are stricter than most Unix terminals about
+    writing into the last cell of the screen, so this keeps drawing
+    resilient across platforms instead of aborting the whole frame.
+    """
+    if not text:
+        return x
+    h, w = stdscr.getmaxyx()
+    if y < 0 or y >= h or x >= w:
+        return x
+    max_len = w - x
+    if IS_WINDOWS and y == h - 1:
+        # Avoid writing into the bottom-right cell, which some Windows
+        # consoles refuse even with clipping.
+        max_len -= 1
+    clipped = text[: max(0, max_len)]
+    try:
+        stdscr.addstr(y, x, clipped, attr)
+    except curses.error:
+        pass
+    return x + len(clipped)
+
 
 def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hint="", url=""):
     base = f"{prefix}{indent}{checkbox} {name}"
-    stdscr.addstr(y, x, base, attr)
-    col = x + len(base)
+    col = _safe_addstr(stdscr, y, x, base, attr)
     labels = {
         "running": (" [RUNNING]", curses.color_pair(4)),
         "loading": (" [LOADING]", curses.color_pair(1)),
@@ -34,25 +89,11 @@ def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hi
         "stopped": (" [STOPPED]", curses.A_DIM),
     }
     status_str, status_attr = labels.get(status, (" [STOPPED]", curses.A_DIM))
-    try:
-        stdscr.addstr(y, col, status_str, status_attr)
-        col += len(status_str)
-    except curses.error:
-        pass
+    col = _safe_addstr(stdscr, y, col, status_str, status_attr)
     if url and status == "running":
-        text = f" ({url})"
-        try:
-            stdscr.addstr(y, col, text, curses.color_pair(3))
-            col += len(text)
-        except curses.error:
-            pass
+        col = _safe_addstr(stdscr, y, col, f" ({url})", curses.color_pair(3))
     if hint:
-        text = f" {hint}"
-        try:
-            stdscr.addstr(y, col, text, curses.color_pair(3))
-            col += len(text)
-        except curses.error:
-            pass
+        col = _safe_addstr(stdscr, y, col, f" {hint}", curses.color_pair(3))
 
 
 def draw_too_small_message(stdscr):
@@ -60,8 +101,8 @@ def draw_too_small_message(stdscr):
     stdscr.clear()
     message = "Please increase terminal size"
     message2 = f"({MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} required)"
-    stdscr.addstr(h // 2 - 1, max(0, (w - len(message)) // 2), message, curses.A_BOLD)
-    stdscr.addstr(h // 2, max(0, (w - len(message2)) // 2), message2, curses.A_DIM)
+    _safe_addstr(stdscr, h // 2 - 1, max(0, (w - len(message)) // 2), message, curses.A_BOLD)
+    _safe_addstr(stdscr, h // 2, max(0, (w - len(message2)) // 2), message2, curses.A_DIM)
     stdscr.refresh()
 
 
@@ -73,8 +114,9 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
 
     stdscr.clear()
     title = "Lucy Control Center"
-    stdscr.addstr(0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
-    stdscr.addstr(
+    _safe_addstr(stdscr, 0, max(0, (w - len(title)) // 2), title, curses.A_BOLD)
+    _safe_addstr(
+        stdscr,
         h - 1,
         2,
         "Enter: Apply | Space: Toggle | Q/X/Esc: Stop All & Exit",
@@ -82,11 +124,12 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
     )
 
     if status_msg:
-        stdscr.addstr(h - 2, 2, status_msg, curses.A_BOLD)
+        _safe_addstr(stdscr, h - 2, 2, status_msg, curses.A_BOLD)
     elif error_msg:
-        stdscr.addstr(h - 2, 2, f"Warning: {error_msg}", curses.color_pair(2))
+        _safe_addstr(stdscr, h - 2, 2, f"Warning: {error_msg}", curses.color_pair(2))
     elif unapplied:
-        stdscr.addstr(
+        _safe_addstr(
+            stdscr,
             h - 2,
             2,
             "Unapplied changes — press Enter to apply",
@@ -103,7 +146,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
 
     def draw_section(title, color, items, offset, gap=1, indent_all=False):
         nonlocal row
-        stdscr.addstr(row, 2, title, curses.A_BOLD | color)
+        _safe_addstr(stdscr, row, 2, title, curses.A_BOLD | color)
         row += gap
         for i, p in enumerate(items):
             list_idx = offset + i
@@ -150,18 +193,33 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False)
     return display_list
 
 
+def _init_colors():
+    """Set up color pairs, tolerating consoles that reject default (-1) colors.
+
+    Some Windows consoles (older cmd.exe / legacy PDCurses backends) don't
+    support `use_default_colors()` / transparent backgrounds the way most
+    Unix terminals do. Fall back to explicit COLOR_BLACK backgrounds.
+    """
+    if not curses.has_colors():
+        return
+    curses.start_color()
+    try:
+        curses.use_default_colors()
+        bg = -1
+    except curses.error:
+        bg = curses.COLOR_BLACK
+    curses.init_pair(1, curses.COLOR_YELLOW, bg)
+    curses.init_pair(2, curses.COLOR_RED, bg)
+    curses.init_pair(3, curses.COLOR_CYAN, bg)
+    curses.init_pair(4, curses.COLOR_GREEN, bg)
+
+
 def main(stdscr):
     curses.curs_set(0)
     stdscr.nodelay(0)
     stdscr.timeout(-1)
-    curses.start_color()
-    curses.use_default_colors()
 
-    if curses.has_colors():
-        curses.init_pair(1, curses.COLOR_YELLOW, -1)
-        curses.init_pair(2, curses.COLOR_RED, -1)
-        curses.init_pair(3, curses.COLOR_CYAN, -1)
-        curses.init_pair(4, curses.COLOR_GREEN, -1)
+    _init_colors()
 
     state = LauncherState(load_config())
     restore_selection(state)
@@ -213,12 +271,23 @@ def main(stdscr):
                 poll_ms = 5000
             else:
                 poll_ms = None
+
             if poll_ms is None:
-                stdscr.nodelay(0)
-                stdscr.timeout(-1)
+                if IS_WINDOWS:
+                    # PDCurses doesn't reliably deliver KEY_RESIZE (or any
+                    # console-resize notification) while getch() is
+                    # blocked indefinitely, since Windows has no SIGWINCH.
+                    # Poll on a short timeout instead so resizes and
+                    # status refreshes still get picked up.
+                    stdscr.nodelay(1)
+                    stdscr.timeout(WINDOWS_IDLE_POLL_MS)
+                else:
+                    stdscr.nodelay(0)
+                    stdscr.timeout(-1)
             else:
                 stdscr.nodelay(1)
                 stdscr.timeout(poll_ms)
+
             key = stdscr.getch()
             if key == -1:
                 state.refresh_status()
@@ -242,13 +311,20 @@ def main(stdscr):
                 state.refresh_status()
             elif key in [ord("x"), ord("X"), ord("q"), ord("Q"), 27]:
                 h, w = stdscr.getmaxyx()
-                stdscr.addstr(
+                _safe_addstr(
+                    stdscr,
                     h - 2,
                     2,
                     "Stop all processes and exit? (y/n)",
                     curses.A_BOLD | curses.color_pair(2),
                 )
                 stdscr.refresh()
+                # Make sure the confirmation prompt actually waits for a
+                # keypress rather than inheriting a non-blocking timeout
+                # from the polling above (important on Windows, where
+                # nodelay(1) getch() can spuriously return -1 immediately).
+                stdscr.nodelay(0)
+                stdscr.timeout(-1)
                 confirm_key = stdscr.getch()
                 if confirm_key in [ord("y"), ord("Y")]:
                     return "ExitWorkspace", state
@@ -256,3 +332,27 @@ def main(stdscr):
         except curses.error:
             time.sleep(0.1)
             continue
+
+
+def run():
+    """Entry point that also handles the "curses isn't installed" case.
+
+    On Windows, `curses` will be `None` if the `windows-curses` package
+    isn't installed. Rather than letting `curses.wrapper` raise an
+    AttributeError, print an actionable message.
+    """
+    if curses is None:
+        if IS_WINDOWS:
+            print(
+                "This TUI requires the 'windows-curses' package on Windows.\n"
+                "Install it with:  pip install windows-curses"
+            )
+        else:
+            print("This TUI requires the standard library 'curses' module, "
+                  "which is unavailable in this environment.")
+        return None
+    return curses.wrapper(main)
+
+
+if __name__ == "__main__":
+    run()
