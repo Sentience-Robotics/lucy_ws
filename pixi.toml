@@ -64,8 +64,10 @@ env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 [feature.ros.target.osx-64.activation]
 env = { RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp" }
 
-[feature.ros.target.win-64.dependencies]
+[feature.ros.target.win-64.pypi-dependencies]
 windows-curses = ">=2.3.0,<3"
+
+[feature.ros.target.win-64.dependencies]
 # controller_manager crashes on win-64, so nothing publishes /joint_states.
 # joint_state_publisher supplies it from the URDF (viewer only, not driveable).
 ros-jazzy-joint-state-publisher = "*"
