@@ -9,13 +9,23 @@ once every probe has returned.
 
 import os
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from launcher import StatusPoller
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# controllers_active.sh needs an executable fake pixi on PATH and kills the
+# probe by process group; Path.chmod grants no exec bit on Windows and there
+# are no process groups to signal.
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX-only shell helper"
+)
 
 
 class FakeState:
@@ -113,6 +123,7 @@ def test_idle_interval_stops_probing():
         poller.stop()
 
 
+@posix_only
 def test_controllers_probe_caches_a_result_slower_than_its_ttl(tmp_path):
     """The cache is stamped when the probe finishes, not when it starts.
 
@@ -148,6 +159,7 @@ def test_controllers_probe_caches_a_result_slower_than_its_ttl(tmp_path):
     )
 
 
+@posix_only
 def test_timed_out_probe_leaves_no_orphaned_node(tmp_path):
     """`ros2 control` runs the rclpy node as a child of itself, so signalling
     only the handle the script holds leaves the node alive holding a DDS
@@ -207,7 +219,7 @@ def test_exit_prompt_survives_a_redraw_tick():
 
 def test_exit_prompt_stands_while_navigating():
     """Answering must stay possible after the selection moves under the prompt."""
-    import curses
+    curses = pytest.importorskip("curses")
 
     from launcher import confirm_exit_action
 
@@ -217,7 +229,7 @@ def test_exit_prompt_stands_while_navigating():
 
 def test_exit_prompt_is_dismissed_by_anything_else():
     """No stray keystroke may confirm a teardown of the running stack."""
-    import curses
+    curses = pytest.importorskip("curses")
 
     from launcher import confirm_exit_action
 
