@@ -31,32 +31,14 @@ if _PROJECT_ROOT not in sys.path:
 import install as _install  # noqa: E402
 
 # --- re-exported cross-platform API (implemented in install.py) --------------
+# Only what install_runner.py, windows/Lucy.py and CI actually reach for.
 PrerequisiteError = _install.PrerequisiteError
-REQUIREMENT_DOCS = _install.REQUIREMENT_DOCS
-MIN_PIXI_VERSION = _install.MIN_PIXI_VERSION
 DEFAULT_REPOS_BRANCH = _install.DEFAULT_REPOS_BRANCH
 InstallMode = _install.InstallMode
 
 git_available = _install.git_available
-pixi_available = _install.pixi_available
-python_available = _install.python_available
-git_identity_warnings = _install.git_identity_warnings
 check_prerequisites = _install.check_prerequisites
 print_prerequisite_report = _install.print_prerequisite_report
-require_prerequisites = _install.require_prerequisites
-ensure_pixi = _install.ensure_pixi
-
-parse_repos = _install.parse_repos
-github_zip_url = _install.github_zip_url
-fetch_repo = _install.fetch_repo
-fetch_repo_git = _install.fetch_repo_git
-fetch_repo_zip = _install.fetch_repo_zip
-install_repos = _install.install_repos
-mark_optional_colcon_ignore = _install.mark_optional_colcon_ignore
-remove_workspace_src_repo = _install.remove_workspace_src_repo
-remove_build_artifacts = _install.remove_build_artifacts
-pixi_install = _install.pixi_install
-build_workspace = _install.build_workspace
 
 _safe_rmtree = _install.safe_rmtree
 

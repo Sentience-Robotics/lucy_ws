@@ -48,3 +48,7 @@ dist/
 
 *.local
 .local/
+
+# Generated at installer build time by windows/generate_releases.py
+windows/releases.json
+windows/releases.nsh
