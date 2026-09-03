@@ -11,6 +11,7 @@ except ImportError:
 from .config import load_config, load_workspace_env
 from .constants import STATE_FILE, TMUX_SESSION, WORKSPACE_ROOT
 from .apply import stop_all_packages
+from .process import prune_ros_logs
 from .shell import run_shell_command
 from .state import LauncherState
 from .preflight import claim_launcher_pidfile, guard_single_stack, release_launcher_pidfile
@@ -77,6 +78,9 @@ def run():
         stop_all_packages(state)
         if STATE_FILE.is_file():
             STATE_FILE.unlink()
+        pruned = prune_ros_logs()
+        if pruned:
+            print(f"Pruned {pruned} ros2 log entries older than a week.")
         if needs_tmux_session():
             print("Terminating tmux session...")
             run_shell_command(f"tmux kill-session -t {TMUX_SESSION} 2>/dev/null")

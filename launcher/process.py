@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 from .constants import (
     CONTROL_PANEL_DIR,
@@ -333,3 +334,37 @@ def _schedule_orphan_cleanup():
         _orphan_cleanup_timer = threading.Timer(ORPHAN_CLEANUP_DEBOUNCE, _fire)
         _orphan_cleanup_timer.daemon = True
         _orphan_cleanup_timer.start()
+
+
+def prune_ros_logs(retention_days=None, root=None):
+    """Delete ros2 log dirs and node logs older than the retention window.
+
+    ros2 writes a directory per launch plus a file per node and never prunes;
+    an active workspace reaches tens of thousands of files and hundreds of MB.
+    Returns the number of entries removed.
+    """
+    import shutil
+
+    from .constants import ROS_LOG_RETENTION_DAYS
+
+    days = ROS_LOG_RETENTION_DAYS if retention_days is None else retention_days
+    base = Path(root) if root else Path.home() / ".ros" / "log"
+    if days <= 0 or not base.is_dir():
+        return 0
+
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for entry in base.iterdir():
+        if entry.is_symlink():  # ros2's "latest" pointers
+            continue
+        try:
+            if entry.stat().st_mtime >= cutoff:
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed

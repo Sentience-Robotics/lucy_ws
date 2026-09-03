@@ -17,6 +17,7 @@ MIN_TERM_WIDTH = 65
 LOADING_TIMEOUT = 30  # seconds before LOADING transitions to CRASHED
 STOPPING_TIMEOUT = 30  # seconds to show STOPPING before giving up
 REDRAW_INTERVAL_MS = 250  # TUI repaint tick while any package is live
+ROS_LOG_RETENTION_DAYS = 7  # older ros2 launch log dirs are pruned on exit
 
 LUCY_WS_MARKER = str(WORKSPACE_ROOT)
 
