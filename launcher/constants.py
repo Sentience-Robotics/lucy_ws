@@ -21,6 +21,7 @@ ROS_LOG_RETENTION_DAYS = 7  # older ros2 launch log dirs are pruned on exit
 
 LUCY_WS_MARKER = str(WORKSPACE_ROOT)
 
+
 def _norm_path(s: str) -> str:
     return s.replace("\\", "/")
 

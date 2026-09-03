@@ -22,7 +22,9 @@ class LauncherState:
         package_configs = [
             p for p in config_data["packages"] if _pkg_visible(p, dev_mode)
         ]
-        self.packages = [Package(p, running_state["modifiers"]) for p in package_configs]
+        self.packages = [
+            Package(p, running_state["modifiers"]) for p in package_configs
+        ]
         self.package_map = {p.id: p for p in self.packages}
 
     def get_by_id(self, pkg_id):
@@ -88,7 +90,6 @@ class LauncherState:
         else:
             self._disable_with_dependents(pkg)
         return None
-
 
 
 class StatusPoller:

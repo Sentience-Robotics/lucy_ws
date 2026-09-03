@@ -2,12 +2,9 @@
 
 import time
 
-from .config import load_selection, save_selection
+from .config import load_selection
 from .constants import TMUX_SESSION
-from .shell import (
-    run_shell_command_async,
-    run_teardown_async,
-)
+from .shell import run_teardown_async
 from .state import (
     _intended_running,
     _pkg_start_times,
@@ -113,7 +110,9 @@ def apply_changes(state):
         if not pkg.selected and pkg.is_running:
             stopping = True
             if pkg.is_complex_command():
-                launcher.run_shell_command_async(pkg.command["stop"], schedule_cleanup=True)
+                launcher.run_shell_command_async(
+                    pkg.command["stop"], schedule_cleanup=True
+                )
             elif pkg.type == "core":
                 run_teardown_async(launcher._stop_core_tmux)
                 launcher.save_state({"modifiers": []})
@@ -124,7 +123,9 @@ def apply_changes(state):
             elif pkg.type in ("tool", "interface"):
                 run_teardown_async(lambda pid=pkg.id: launcher._stop_tmux_window(pid))
             elif pkg.type == "modifier" and "stop" in pkg.lifecycle_hooks:
-                launcher.run_shell_command_async(pkg.lifecycle_hooks["stop"], schedule_cleanup=True)
+                launcher.run_shell_command_async(
+                    pkg.lifecycle_hooks["stop"], schedule_cleanup=True
+                )
             else:
                 stopping = False
             _pkg_start_times.pop(pkg.id, None)
@@ -136,7 +137,11 @@ def apply_changes(state):
 
     for pkg in state.packages:
         crashed = pkg.pane_dead and pkg.pane_exit_status != 0
-        if pkg.selected and pkg.id not in _pkg_stop_times and (not pkg.is_running or crashed):
+        if (
+            pkg.selected
+            and pkg.id not in _pkg_stop_times
+            and (not pkg.is_running or crashed)
+        ):
             if pkg.pane_dead:
                 launcher.run_shell_command(
                     f"tmux kill-window -t {TMUX_SESSION}:{pkg.id} 2>/dev/null"
@@ -160,7 +165,9 @@ def apply_changes(state):
                 modifier_ids = [p.id for p in selected_modifiers]
                 full_cmd = f"{base_cmd} {' '.join(modifier_args)}"
                 launcher.run_shell_command(
-                    launcher._tmux_new_pixi_window("core", full_cmd, remain_on_exit=True)
+                    launcher._tmux_new_pixi_window(
+                        "core", full_cmd, remain_on_exit=True
+                    )
                 )
                 launcher.save_state({"modifiers": modifier_ids})
                 _pkg_start_times[pkg.id] = time.time()

@@ -91,8 +91,12 @@ def release_launcher_pidfile() -> None:
 def _parent_pid(pid: int):
     if sys.platform == "win32":
         return None
-    out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)],
-                         capture_output=True, text=True, check=False)
+    out = subprocess.run(
+        ["ps", "-o", "ppid=", "-p", str(pid)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     try:
         return int(out.stdout.strip())
     except ValueError:
@@ -215,7 +219,9 @@ def guard_single_stack(
 
     # No launcher owns these, so they are leftovers from a hard exit.
     print(describe_running_stack(processes, windows), file=out)
-    print("No Control Center owns it, so it is left over from an earlier run.", file=out)
+    print(
+        "No Control Center owns it, so it is left over from an earlier run.", file=out
+    )
 
     if is_interactive is None:
         is_interactive = sys.stdin.isatty()
@@ -231,7 +237,10 @@ def guard_single_stack(
 
     if is_interactive and not _truthy(FORCE_STOP_ENV):
         if not ask("Stop it and continue? [y/N] "):
-            print("Leaving it alone; start the Control Center again to adopt it.", file=out)
+            print(
+                "Leaving it alone; start the Control Center again to adopt it.",
+                file=out,
+            )
             return False
 
     print("Stopping the leftover stack...", file=out)

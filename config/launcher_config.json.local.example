@@ -3,7 +3,7 @@
   "packages": [
     {
       "id": "core",
-      "name": "Core (Lucy Bringup)",
+      "name": "Core",
       "description": "Base robot software stack",
       "type": "core",
       "dependencies": [],

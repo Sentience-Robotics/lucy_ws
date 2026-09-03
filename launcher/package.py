@@ -95,7 +95,9 @@ class Package:
         probing is separated from applying the result."""
         is_running = self.is_running
         if self.is_complex_command():
-            is_running = run_shell_command(self.command["is_running"], capture_output=True)
+            is_running = run_shell_command(
+                self.command["is_running"], capture_output=True
+            )
         elif self.type == "modifier":
             is_running = self.id in running_modifiers
         elif self.type in ("core", "tool", "interface"):

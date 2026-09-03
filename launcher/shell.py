@@ -80,7 +80,9 @@ def _pixi_workspace_script(user_cmd: str) -> str:
     return body
 
 
-def _tmux_new_pixi_window(window: str, user_cmd: str, remain_on_exit: bool = False) -> str:
+def _tmux_new_pixi_window(
+    window: str, user_cmd: str, remain_on_exit: bool = False
+) -> str:
     """Open a tmux window that runs user_cmd inside pixi run (tmux panes don't inherit pixi)."""
     inner = f"bash -lc {shlex.quote(_pixi_workspace_script(user_cmd))}"
     cmd = f"tmux new-window -d -t {TMUX_SESSION} -n {window} {inner}"
@@ -92,13 +94,18 @@ def _tmux_new_pixi_window(window: str, user_cmd: str, remain_on_exit: bool = Fal
 def _complex_package_start(pkg) -> str:
     """Legacy complex {start,stop,is_running} entries — route through Pixi when possible."""
     if pkg.id == "control_panel":
-        return _tmux_new_pixi_window("control_panel", "pixi run panel-dev", remain_on_exit=True)
+        return _tmux_new_pixi_window(
+            "control_panel", "pixi run panel-dev", remain_on_exit=True
+        )
     return pkg.command["start"]
 
 
 def run_shell_command(cmd, capture_output=False):
     if capture_output:
-        return subprocess.run(cmd, shell=True, capture_output=True, text=True).returncode == 0
+        return (
+            subprocess.run(cmd, shell=True, capture_output=True, text=True).returncode
+            == 0
+        )
     subprocess.run(cmd, shell=True)
 
 

@@ -44,8 +44,20 @@ def _fit(text, room):
     return (stripped[: max(0, room - 3)].rstrip(" .") + "...")[:room]
 
 
-def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hint="", url="",
-                  stage=""):
+def _draw_pkg_row(
+    stdscr,
+    y,
+    x,
+    prefix,
+    indent,
+    checkbox,
+    name,
+    attr,
+    status,
+    hint="",
+    url="",
+    stage="",
+):
     base = f"{prefix}{indent}{checkbox} {name}"
     stdscr.addstr(y, x, base, attr)
     col = x + len(base)
@@ -113,8 +125,15 @@ def draw_too_small_message(stdscr):
     stdscr.refresh()
 
 
-def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False,
-             confirm_exit=False):
+def draw_tui(
+    stdscr,
+    state,
+    current_idx,
+    error_msg,
+    status_msg,
+    unapplied=False,
+    confirm_exit=False,
+):
     h, w = stdscr.getmaxyx()
     if h < MIN_TERM_HEIGHT or w < MIN_TERM_WIDTH:
         draw_too_small_message(stdscr)
@@ -151,7 +170,9 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False,
 
     robots = [p for p in state.packages if p.type == "modifier" and p.requires_pkg]
     cores_and_mods = [
-        p for p in state.packages if p.type in ("core", "modifier") and not p.requires_pkg
+        p
+        for p in state.packages
+        if p.type in ("core", "modifier") and not p.requires_pkg
     ]
     interfaces = [p for p in state.packages if p.type == "interface"]
     tools = [p for p in state.packages if p.type == "tool"]
@@ -194,10 +215,14 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False,
         row += len(items) + 1
 
     row = 2
-    draw_section("Primary Launch Targets", curses.color_pair(1), cores_and_mods, 0, gap=2)
+    draw_section(
+        "Primary Launch Targets", curses.color_pair(1), cores_and_mods, 0, gap=2
+    )
     offset = len(cores_and_mods)
     if robots:
-        draw_section("Robot", curses.color_pair(1), robots, offset, gap=1, indent_all=True)
+        draw_section(
+            "Robot", curses.color_pair(1), robots, offset, gap=1, indent_all=True
+        )
         offset += len(robots)
     draw_section("Interfaces", curses.color_pair(3), interfaces, offset, gap=1)
     offset += len(interfaces)

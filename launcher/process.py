@@ -13,11 +13,7 @@ from .constants import (
     ORPHAN_CLEANUP_DEBOUNCE,
     _norm_path,
 )
-from .platform import (
-    path_in_text,
-    process_workspace_markers,
-    read_proc_cwd,
-)
+from .platform import path_in_text
 
 _orphan_cleanup_timer = None
 _orphan_cleanup_lock = threading.Lock()
@@ -151,7 +147,7 @@ def _iter_processes():
     if sys.platform == "win32":
         script = (
             "Get-CimInstance Win32_Process | "
-            "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }"
+            'ForEach-Object { "$($_.ProcessId)`t$($_.CommandLine)" }'
         )
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", script],

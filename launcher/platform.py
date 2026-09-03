@@ -146,7 +146,7 @@ def process_workspace_markers(pid: int) -> bool:
     if sys.platform == "win32":
         ws = LUCY_WS_MARKER.replace("'", "''")
         script = (
-            f"$p = Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\"; "
+            f'$p = Get-CimInstance Win32_Process -Filter "ProcessId={pid}"; '
             "if (-not $p) { exit 1 }; "
             f"if ($p.ExecutablePath -like '*{ws}*') {{ exit 0 }}; "
             f"if ($p.CommandLine -like '*{ws}*') {{ exit 0 }}; "

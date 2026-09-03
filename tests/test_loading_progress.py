@@ -46,7 +46,7 @@ def _package(monkeypatch, *, passing, running=True, stages=STAGES):
     pkg = Package(
         {
             "id": "core",
-            "name": "Core (Lucy Bringup)",
+            "name": "Core",
             "type": "core",
             "readiness_stages": stages,
         },
@@ -195,11 +195,11 @@ def _row_text(screen):
 def test_row_shows_the_stage_after_the_loading_label(fake_curses):
     screen = FakeScreen()
     tui._draw_pkg_row(
-        screen, 3, 4, "> ", "", "[x]", "Core (Lucy Bringup)", 0, "loading",
+        screen, 3, 4, "> ", "", "[x]", "Core", 0, "loading",
         stage="1/8 Starting Rosbridge...",
     )
     assert _row_text(screen) == (
-        "> [x] Core (Lucy Bringup) [LOADING] 1/8 Starting Rosbridge..."
+        "> [x] Core [LOADING] 1/8 Starting Rosbridge..."
     )
 
 
@@ -207,7 +207,7 @@ def test_the_stage_is_greyed_out(fake_curses):
     """Dimmed so a progress readout does not compete with the status label."""
     screen = FakeScreen()
     tui._draw_pkg_row(
-        screen, 3, 4, "> ", "", "[x]", "Core (Lucy Bringup)", 0, "loading",
+        screen, 3, 4, "> ", "", "[x]", "Core", 0, "loading",
         stage="1/8 Starting Rosbridge...",
     )
     stage_write = next(w for w in screen.writes if "Rosbridge" in w[2])
@@ -224,11 +224,11 @@ def test_a_long_stage_is_truncated_rather_than_dropped(fake_curses):
     """addstr past the last column raises, taking the rest of the row with it."""
     screen = FakeScreen(width=50)
     tui._draw_pkg_row(
-        screen, 3, 4, "> ", "", "[x]", "Core (Lucy Bringup)", 0, "loading",
+        screen, 3, 4, "> ", "", "[x]", "Core", 0, "loading",
         stage="6/8 Building robot model...",
     )
     text = _row_text(screen)
-    assert text.startswith("> [x] Core (Lucy Bringup) [LOADING] 6/8 B")
+    assert text.startswith("> [x] Core [LOADING] 6/8 B")
     assert len(text) + 4 <= 50
 
 
