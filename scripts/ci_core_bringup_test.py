@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CI: bring core up headless and assert the ROS graph is usable.
+"""CI: bring core up and assert the ROS graph is usable.
 
 ci_tmux_launcher_smoke.sh checks that the processes started. This checks that
 the graph they formed is one the control panel and RViz can actually use.
@@ -24,13 +24,11 @@ TMUX_SESSION = os.environ.get("LUCY_TMUX_SESSION", "lucy_ws")
 BRINGUP_TIMEOUT_S = float(os.environ.get("LUCY_CI_BRINGUP_TIMEOUT", "300"))
 ROSBRIDGE_PORT = int(os.environ.get("PORT_ROSBRIDGE", "9090"))
 GRAPH_SETTLE_S = 20.0
-# Spawners are staggered behind the entity reaching Gazebo, so activation is
-# tens of seconds after the graph first appears.
 CONTROLLER_TIMEOUT_S = 180.0
 
 CORE_CMD = (
     "ros2 launch lucy_bringup lucy.launch.py "
-    "robot_package:=inmoov_urdf gazebo:=true headless:=true"
+    "robot_package:=inmoov_urdf gazebo:=false"
 )
 
 
@@ -195,8 +193,8 @@ def check_meshes_resolve_locally(urdf: str) -> None:
 def check_controllers_active() -> None:
     """Wait until every loaded controller is active.
 
-    Polled, not sampled: the spawners are staggered behind the entity reaching
-    Gazebo, so a single sample returns a different set run to run.
+    Polled, not sampled: lucy_control_supervisor spawns controllers one at a
+    time, so a single sample mid-startup returns a different set run to run.
     """
     from controller_manager_msgs.srv import ListControllers
     import rclpy

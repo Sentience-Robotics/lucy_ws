@@ -1,6 +1,7 @@
 """Tests for keeping one Control Center, and one stack, per host."""
 
 import io
+import sys
 
 import pytest
 
@@ -8,6 +9,10 @@ from launcher import guard_single_stack
 from launcher.preflight import ALLOW_MULTIPLE_ENV, FORCE_STOP_ENV, describe_running_stack
 
 PROCS = [(4242, "/path/ros2_control_node --ros-args"), (4243, "gz sim -r world.sdf")]
+
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX-only process introspection"
+)
 
 
 def _guard(processes=(), windows=(), answer=True, stop_ok=True, interactive=True,
@@ -110,6 +115,7 @@ def test_guard_runs_before_the_tui_takes_the_terminal():
     assert text.index("guard_single_stack()") < text.index("curses.wrapper(main)")
 
 
+@posix_only
 def test_the_guard_never_targets_its_own_ancestors():
     """The sweep matches command lines, and the invoking shell can carry the
     workspace path and a stack marker in its argv."""
@@ -148,6 +154,7 @@ def test_restarting_over_your_own_stack_is_not_blocked_by_the_pidfile():
     assert proceed is True
 
 
+@posix_only
 def test_pidfile_ignores_a_dead_launcher(tmp_path, monkeypatch):
     from launcher import preflight
 
