@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 JOINT_COMMAND_TOPIC = "/lucy/commanded_joint_states"
 JOINT_STATES_TOPIC = "/joint_states"
 GAZEBO_ON_ARGS = ("gazebo:=true", "gazebo:=1", "gazebo:=yes")
+DDS_LOCALHOST_OFF = ("0", "false", "no", "off", "disable")
 # Long enough for a working ros2_control to have spawned its broadcaster.
 FALLBACK_DELAY_S = 25.0
 DISCOVERY_SETTLE_S = 3.0
@@ -222,11 +223,36 @@ def refuse_gazebo_on_windows() -> None:
     )
 
 
+def apply_dds_scope() -> None:
+    """Scope discovery to this host, as scripts/dds_env.sh does for the shell path.
+
+    Only that shell script set it, so Windows ran with Jazzy's SUBNET default and
+    merged anyone else's Lucy into this graph. ROS_LOCALHOST_ONLY stays unset: it
+    is deprecated and takes precedence, which would make rcl ignore the range.
+    The CycloneDDS URI dds_env.sh also exports is left out, being inert under
+    rmw_fastrtps_cpp, which is what Windows runs.
+    """
+    if os.environ.get("LUCY_DDS_RANGE"):
+        os.environ["ROS_AUTOMATIC_DISCOVERY_RANGE"] = os.environ["LUCY_DDS_RANGE"]
+    elif os.environ.get("LUCY_DDS_LOCALHOST", "1").strip().lower() in DDS_LOCALHOST_OFF:
+        os.environ["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "SUBNET"
+    else:
+        os.environ["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "LOCALHOST"
+
+    peers = os.environ.get("LUCY_DDS_PEERS", "")
+    if peers:
+        # Additive to localhost, not a replacement for it. rcl splits on ';'.
+        os.environ["ROS_STATIC_PEERS"] = ";".join(
+            p for p in "".join(peers.split()).split(",") if p
+        )
+
+
 def main() -> int:
     if os.name == "nt" and gazebo_requested(sys.argv[1:]):
         refuse_gazebo_on_windows()
         return 1
 
+    apply_dds_scope()
     configure_windows_dll_search_path()
     validate_windows_ros_runtime()
 
