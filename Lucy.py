@@ -67,9 +67,7 @@ def windows_main():
     install.py runs interactively so its pixi and MSVC prompts reach the user.
     """
     if not is_installed():
-        print("Lucy is not installed in this workspace.")
-        if not confirm("Install now?"):
-            return 0
+        print("Lucy is not installed in this workspace. Running install.py")
         rc = run_command([sys.executable, "install.py"], interactive=True, extra_env=INSTALL_ENV)
         if rc != 0:
             print(f"\nInstall failed with exit code {rc}.", file=sys.stderr)
