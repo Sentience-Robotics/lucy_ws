@@ -110,6 +110,7 @@ panel-build = { cmd = "yarn build", cwd = "src/lucy_control_panel" }
 [feature.dev.tasks]
 doctor = "python scripts/ros_doctor.py"
 workspace-test = { cmd = "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests -q -p pytester -p python -p terminal" }
+core-bringup-test = "bash -c 'source scripts/dds_env.sh 2>/dev/null; python scripts/ci_core_bringup_test.py'"
 shell = "bash scripts/pixi_dev_shell.sh"
 
 [feature.launcher.target.unix.tasks]

@@ -88,6 +88,13 @@ jobs:
           chmod +x scripts/ci_tmux_launcher_smoke.sh
           LUCY_WS_ROOT="$PWD" ./scripts/ci_tmux_launcher_smoke.sh
 
+      # The smoke above answers "did the processes start". This asks whether the
+      # graph they formed is one the control panel and RViz can actually use.
+      - name: Core bringup graph checks (Linux)
+        if: matrix.pixi_platform == 'linux-64'
+        shell: bash
+        run: pixi run core-bringup-test
+
       - name: Verify Pixi platform
         shell: bash
         run: |
