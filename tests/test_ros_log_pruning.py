@@ -1,7 +1,10 @@
 """ros2 writes a log dir per launch and a file per node, and never prunes."""
 
 import os
+import sys
 import time
+
+import pytest
 
 from launcher import prune_ros_logs
 
@@ -32,6 +35,9 @@ def test_recent_entries_are_kept(tmp_path):
     assert recent.exists()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="os.utime(follow_symlinks=False) is POSIX-only"
+)
 def test_latest_symlink_is_left_alone(tmp_path):
     target = tmp_path / "run"
     target.mkdir()
