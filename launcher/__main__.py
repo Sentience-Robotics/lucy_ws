@@ -13,6 +13,7 @@ from .constants import STATE_FILE, TMUX_SESSION, WORKSPACE_ROOT
 from .apply import stop_all_packages
 from .shell import run_shell_command
 from .state import LauncherState
+from .preflight import claim_launcher_pidfile, guard_single_stack, release_launcher_pidfile
 from .tmux import is_in_tmux, needs_tmux_session
 from .tui import main
 
@@ -47,6 +48,12 @@ def run():
         sys.exit(1)
     os.chdir(WORKSPACE_ROOT)
 
+    # Before curses takes the terminal, so the question is readable and
+    # answerable on a plain prompt.
+    if not guard_single_stack():
+        sys.exit(1)
+
+    claim_launcher_pidfile()
     status, state = None, None
     try:
         status, state = curses.wrapper(main)
@@ -62,6 +69,8 @@ def run():
         curses.endwin()
         print(f"An unexpected error occurred: {e}", file=sys.stderr)
         sys.exit(1)
+
+    release_launcher_pidfile()
 
     if status == "ExitWorkspace":
         print("\nStopping all processes and exiting workspace...")
