@@ -7,6 +7,7 @@ import time
 from .constants import LOADING_TIMEOUT, STOPPING_TIMEOUT
 from .config import get_dev_mode, load_state
 from .package import Package, _pkg_visible
+from .shell import tmux_window_snapshot
 
 
 _pkg_start_times = {}  # pkg_id -> float, timestamp when start was issued
@@ -33,7 +34,11 @@ class LauncherState:
         Runs the shell probes without touching the packages, so StatusPoller can
         call it off the UI thread."""
         running_modifiers = load_state()["modifiers"]
-        return {pkg.id: pkg.probe_status(running_modifiers) for pkg in self.packages}
+        windows, dead = tmux_window_snapshot()
+        return {
+            pkg.id: pkg.probe_status(running_modifiers, windows, dead)
+            for pkg in self.packages
+        }
 
     def apply_snapshot(self, snapshot):
         """Write a probe_snapshot() result onto the packages. UI thread only."""
@@ -199,6 +204,21 @@ def _nav_hint(pkg):
     if not pkg.nav_hint or not pkg.is_running:
         return ""
     return f"({pkg.nav_hint})"
+
+
+def _stage_hint(pkg, status):
+    """Readiness progress for a package, e.g. "6/8 Building robot model...".
+
+    LOADING on its own says nothing about whether a 150-second core bringup is
+    seconds from ready or wedged on its first milestone, so the row names the
+    milestone the probe is waiting on and how far through the list it is.
+
+    Shown only while loading: a stage reads as progress, and next to STOPPED or
+    CRASHED it would instead look like something still on its way."""
+    stage = getattr(pkg, "stage", None)
+    if status != "loading" or not stage:
+        return ""
+    return f"{stage['index']}/{stage['total']} {stage['label']}..."
 
 
 def _status_url(pkg):

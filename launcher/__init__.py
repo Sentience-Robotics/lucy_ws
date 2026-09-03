@@ -90,6 +90,7 @@ from .state import (
     _nav_hint,
     _pkg_start_times,
     _pkg_stop_times,
+    _stage_hint,
     _status_url,
     get_pkg_status,
 )
@@ -196,6 +197,7 @@ __all__ = [
     "_read_proc_exe",
     "_ros_pkg_installed",
     "_schedule_orphan_cleanup",
+    "_stage_hint",
     "_status_url",
     "_stop_core_tmux",
     "_stop_tmux_window",

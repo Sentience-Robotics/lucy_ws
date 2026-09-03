@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Exit 0 when ros2_control reports at least one *active* controller.
+# Exit 0 when ros2_control reports at least `min_active` *active* controllers.
 #
 #   scripts/controllers_active.sh [min_active]
+#
+# min_active 0 asks only whether /controller_manager answered at all.
 #
 # Used by config/launcher_config.json so core reads ready only when the robot can
 # actually be driven. Process liveness is not enough: controller_manager happily
@@ -23,11 +25,38 @@ TTL="${LUCY_CONTROLLERS_CACHE_TTL:-8}"
 CALL_TIMEOUT="${LUCY_CONTROLLERS_TIMEOUT:-12}"
 CACHE="${TMPDIR:-/tmp}/lucy_controllers_active.$(id -u).cache"
 
+# The cache holds the active count, not a verdict, so callers asking different
+# thresholds share one probe. -1 means the manager did not answer.
+verdict() {
+  local active="$1"
+  if [[ "${active}" -lt 0 ]]; then return 1; fi
+  if [[ "${active}" -ge "${MIN_ACTIVE}" ]]; then return 0; fi
+  return 1
+}
+
+# Fast path: lucy_control_supervisor records "<controller_manager pid> <count>"
+# once the spawners succeed, which costs nothing to read and survives a probe
+# scoped differently from the stack. The pid is checked for liveness so a marker
+# from a killed supervisor fails. No marker (Gazebo owns its own manager) falls
+# through to the graph below.
+READY_FILE="${LUCY_CONTROL_READY_FILE:-${TMPDIR:-/tmp}/lucy_control_ready.$(id -u)}"
+if [[ -f "${READY_FILE}" ]]; then
+  # `read` reports EOF without a trailing newline but still assigns.
+  read -r ready_pid ready_active < "${READY_FILE}" 2>/dev/null
+  if [[ "${ready_pid}" =~ ^[0-9]+$ ]] && [[ "${ready_active}" =~ ^[0-9]+$ ]] \
+     && kill -0 "${ready_pid}" 2>/dev/null; then
+    verdict "${ready_active}"
+    exit $?
+  fi
+fi
+
 now=$(date +%s)
 if [[ -f "${CACHE}" ]]; then
-  read -r stamp cached < "${CACHE}" 2>/dev/null || { stamp=0; cached=1; }
-  if [[ "${stamp}" =~ ^[0-9]+$ ]] && (( now - stamp < TTL )); then
-    exit "${cached:-1}"
+  read -r stamp cached < "${CACHE}" 2>/dev/null || { stamp=0; cached=-1; }
+  if [[ "${stamp}" =~ ^[0-9]+$ ]] && [[ "${cached}" =~ ^-?[0-9]+$ ]] \
+     && (( now - stamp < TTL )); then
+    verdict "${cached}"
+    exit $?
   fi
 fi
 
@@ -51,15 +80,19 @@ probe_pid=$!
 set +m
 
 waited=0
+timed_out=0
 while kill -0 "${probe_pid}" 2>/dev/null && (( waited < CALL_TIMEOUT * 10 )); do
   sleep 0.1
   waited=$((waited + 1))
 done
 if kill -0 "${probe_pid}" 2>/dev/null; then
+  timed_out=1
   kill -9 -- "-${probe_pid}" 2>/dev/null || kill -9 "${probe_pid}" 2>/dev/null
-  wait "${probe_pid}" 2>/dev/null
 fi
+# Exactly one wait: the second reap of an already-collected pid returns 127,
+# which would read as a failed probe on every single call.
 wait "${probe_pid}" 2>/dev/null
+probe_status=$?
 
 # grep -c prints a count and still exits 1 on zero matches, so take the count
 # and normalise rather than chaining a fallback that would append a second line.
@@ -67,11 +100,15 @@ active=$(grep -cE '[[:space:]]active[[:space:]]*$' "${out}" 2>/dev/null)
 [[ "${active}" =~ ^[0-9]+$ ]] || active=0
 rm -f "${out}"
 
-if (( active >= MIN_ACTIVE )); then result=0; else result=1; fi
+# A failed call says nothing about the controllers; recording its 0 would let
+# the `min_active 0` stage pass while /controller_manager is still absent.
+if (( timed_out )) || (( probe_status != 0 )); then
+  active=-1
+fi
 
 # Stamp at completion rather than at entry. The probe above runs for as long as
 # CALL_TIMEOUT, so an entry carrying the time this script *started* is already
 # older than TTL by the time it is written: the slow path — the only one worth
 # caching — would never produce a hit, and every caller would pay full price.
-printf '%s %s\n' "$(date +%s)" "${result}" > "${CACHE}" 2>/dev/null || true
-exit "${result}"
+printf '%s %s\n' "$(date +%s)" "${active}" > "${CACHE}" 2>/dev/null || true
+verdict "${active}"

@@ -18,12 +18,34 @@ from .state import (
     _nav_hint,
     _pkg_start_times,
     _pkg_stop_times,
+    _stage_hint,
     _status_url,
     get_pkg_status,
 )
 
 
-def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hint="", url=""):
+def _fit(text, room):
+    """Shorten a trailing "..."-suffixed stage readout to `room` columns.
+
+    The stage is the last thing on the row and the first to run off the end of a
+    terminal at MIN_TERM_WIDTH — where an addstr past the last column raises,
+    taking the rest of the row with it. The suffix goes first: it is decoration
+    the "n/N" counter already carries, and dropping it is often enough to keep
+    the label whole. Only when that is not enough is the label itself cut, with
+    the suffix put back to mark the cut — an ASCII "..." and not an ellipsis
+    character, because the launcher never calls setlocale() and curses would
+    encode one against the C locale's ASCII codec, raising a UnicodeEncodeError
+    that is not a curses.error and so not caught below."""
+    if len(text) <= room:
+        return text
+    stripped = text.rstrip(".")
+    if len(stripped) <= room:
+        return stripped
+    return (stripped[: max(0, room - 3)].rstrip(" .") + "...")[:room]
+
+
+def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hint="", url="",
+                  stage=""):
     base = f"{prefix}{indent}{checkbox} {name}"
     stdscr.addstr(y, x, base, attr)
     col = x + len(base)
@@ -40,6 +62,17 @@ def _draw_pkg_row(stdscr, y, x, prefix, indent, checkbox, name, attr, status, hi
         col += len(status_str)
     except curses.error:
         pass
+    if stage:
+        # Dimmed: the stage is a progress readout, not a state of its own, and
+        # must not compete with the status label it trails.
+        room = stdscr.getmaxyx()[1] - col - 1
+        if room > 1:
+            text = _fit(f" {stage}", room)
+            try:
+                stdscr.addstr(y, col, text, curses.A_DIM)
+                col += len(text)
+            except curses.error:
+                pass
     if url and status == "running":
         text = f" ({url})"
         try:
@@ -156,6 +189,7 @@ def draw_tui(stdscr, state, current_idx, error_msg, status_msg, unapplied=False,
                 status,
                 hint,
                 _status_url(p),
+                _stage_hint(p, status),
             )
         row += len(items) + 1
 
@@ -245,8 +279,11 @@ def _event_loop(stdscr, state, poller, status_msg=None, status_msg_until=0.0):
                     time.sleep(0.1)
                 continue
 
+            # A refresh runs every readiness check, ~120ms for core's stages, on
+            # the poller thread. Transitions poll at 2Hz to keep the displayed
+            # stage current; a settled stack changes only when something breaks.
             if _pkg_start_times or _pkg_stop_times:
-                poller.set_interval(1.0)
+                poller.set_interval(0.5)
             elif _intended_running:
                 poller.set_interval(5.0)
             else:
