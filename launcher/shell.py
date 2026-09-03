@@ -132,6 +132,35 @@ def run_teardown_async(teardown_fn):
     threading.Thread(target=_target, daemon=True).start()
 
 
+def tmux_window_snapshot():
+    """Live window names and {window: exit status of its dead pane}.
+
+    One query for all packages; asking per package cost a shell, a tmux client
+    and a grep each.
+    """
+    out = subprocess.run(
+        f"tmux list-panes -s -t {TMUX_SESSION} "
+        "-F '#{window_name}:#{pane_dead}:#{pane_dead_status}' 2>/dev/null",
+        shell=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    windows = set()
+    dead = {}
+    for line in out.splitlines():
+        parts = line.strip().split(":")
+        if len(parts) < 2:
+            continue
+        name, is_dead, status = parts[0], parts[1], parts[2] if len(parts) > 2 else ""
+        windows.add(name)
+        if is_dead == "1" and name not in dead:
+            try:
+                dead[name] = int(status)
+            except ValueError:
+                dead[name] = -1  # signal death reports no status; treat as a crash
+    return windows, dead
+
+
 def _pane_exit_status(pkg_id):
     """Exit code of the package's dead tmux pane, or None if it isn't dead.
     remain-on-exit keeps the dead pane (and its output) so we can read the code:

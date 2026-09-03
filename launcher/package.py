@@ -21,6 +21,24 @@ def _ros_pkg_installed(pkg_name):
     return (WORKSPACE_ROOT / "install" / pkg_name).is_dir()
 
 
+def _readiness_stages(raw):
+    """Ordered (label, check) readiness milestones from config.
+
+    A package may split its readiness probe into named stages instead of one
+    opaque `readiness_check`, so the TUI can say which milestone the stack is
+    still waiting on rather than only that it is LOADING. Malformed entries are
+    dropped: launcher_config.json is hand-edited, and a typo in one stage must
+    not take the whole probe (and with it the package's status) down."""
+    stages = []
+    for entry in raw or []:
+        if not isinstance(entry, dict):
+            continue
+        label, check = entry.get("label"), entry.get("check")
+        if label and check:
+            stages.append((str(label), str(check)))
+    return stages
+
+
 def _pkg_visible(pkg_config, dev_mode):
     """Whether a package appears in the launcher."""
     if pkg_config.get("dev_only") and not dev_mode:
@@ -44,6 +62,7 @@ class Package:
         self.requires_pkg = data.get("requires_pkg")
         self.subitem = data.get("subitem", False)
         self.readiness_check = data.get("readiness_check")
+        self.readiness_stages = _readiness_stages(data.get("readiness_stages"))
         self.readiness_timeout = data.get("readiness_timeout", LOADING_TIMEOUT)
         self.runs_on_vnc = data.get("runs_on_vnc", False)
         self.display_switch = data.get("display_switch", False)
@@ -52,6 +71,7 @@ class Package:
 
         self.is_running = False
         self.ready = False
+        self.stage = None
         self.pane_dead = False
         self.pane_exit_status = None
         self.update_running_status(running_modifiers)
@@ -64,7 +84,7 @@ class Package:
             if self.is_running and self.id not in _pkg_stop_times:
                 self.selected = True
 
-    def probe_status(self, running_modifiers):
+    def probe_status(self, running_modifiers, tmux_windows=None, tmux_dead=None):
         """Shell-probe running/ready/pane state and return it, mutating nothing.
 
         Every subprocess a status refresh needs lives here, and none of the
@@ -79,25 +99,55 @@ class Package:
         elif self.type == "modifier":
             is_running = self.id in running_modifiers
         elif self.type in ("core", "tool", "interface"):
-            is_running = run_shell_command(
-                f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'",
-                capture_output=True,
-            )
+            if tmux_windows is not None:
+                is_running = self.id in tmux_windows
+            else:
+                is_running = run_shell_command(
+                    f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'",
+                    capture_output=True,
+                )
 
+        stage = None
         if not is_running:
             ready = False
+        elif self.readiness_stages:
+            ready, stage = self._probe_stages()
         elif self.readiness_check:
             ready = run_shell_command(self.readiness_check, capture_output=True)
         else:
             ready = True
 
-        exit_status = _pane_exit_status(self.id) if is_running else None
+        if not is_running:
+            exit_status = None
+        elif tmux_dead is not None:
+            exit_status = tmux_dead.get(self.id)
+        else:
+            exit_status = _pane_exit_status(self.id)
         return {
             "is_running": is_running,
             "ready": ready,
+            "stage": stage,
             "pane_exit_status": exit_status,
             "pane_dead": exit_status is not None,
         }
+
+    def _probe_stages(self):
+        """Walk `readiness_stages` in order, returning (ready, stage-in-progress).
+
+        The walk stops at the first stage that has not passed yet: that stage is
+        what the stack is currently waiting on, and it is also what the package
+        reports as unready. Short-circuiting is what keeps this no more expensive
+        than the single `&&` chain it replaces — the costly probes sit late in
+        the list precisely because nothing reaches them until the cheap ones
+        pass."""
+        for index, (label, check) in enumerate(self.readiness_stages):
+            if not run_shell_command(check, capture_output=True):
+                return False, {
+                    "index": index + 1,
+                    "total": len(self.readiness_stages),
+                    "label": label,
+                }
+        return True, None
 
     def apply_status(self, status):
         """Write a probe_status() result onto the package. UI thread only, so
@@ -107,6 +157,7 @@ class Package:
             save_state({"modifiers": []})
         self.is_running = status["is_running"]
         self.ready = status["ready"]
+        self.stage = status.get("stage")
         self.pane_exit_status = status["pane_exit_status"]
         self.pane_dead = status["pane_dead"]
 

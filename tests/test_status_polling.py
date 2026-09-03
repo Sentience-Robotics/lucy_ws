@@ -9,23 +9,13 @@ once every probe has returned.
 
 import os
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
 
-import pytest
-
 from launcher import StatusPoller
 
 ROOT = Path(__file__).resolve().parents[1]
-
-# controllers_active.sh needs an executable fake pixi on PATH and kills the
-# probe by process group; Path.chmod grants no exec bit on Windows and there
-# are no process groups to signal.
-posix_only = pytest.mark.skipif(
-    sys.platform == "win32", reason="POSIX-only shell helper"
-)
 
 
 class FakeState:
@@ -123,7 +113,6 @@ def test_idle_interval_stops_probing():
         poller.stop()
 
 
-@posix_only
 def test_controllers_probe_caches_a_result_slower_than_its_ttl(tmp_path):
     """The cache is stamped when the probe finishes, not when it starts.
 
@@ -159,7 +148,60 @@ def test_controllers_probe_caches_a_result_slower_than_its_ttl(tmp_path):
     )
 
 
-@posix_only
+def _fake_pixi(tmp_path, body):
+    """A stand-in `pixi` on PATH, plus the env that points the probe at it."""
+    home = tmp_path / "home"
+    (home / ".pixi" / "bin").mkdir(parents=True, exist_ok=True)
+    fake = home / ".pixi" / "bin" / "pixi"
+    fake.write_text(body)
+    fake.chmod(0o755)
+    return {
+        **os.environ,
+        "HOME": str(home),
+        "TMPDIR": str(tmp_path),
+        "LUCY_CONTROLLERS_CACHE_TTL": "30",
+        "LUCY_CONTROLLERS_TIMEOUT": "10",
+    }
+
+
+def _controllers_active(env, *args):
+    return subprocess.run(
+        ["bash", str(ROOT / "scripts" / "controllers_active.sh"), *args],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+    ).returncode
+
+
+def test_probe_caches_the_count_so_two_thresholds_do_not_collide(tmp_path):
+    """The launcher asks the same probe two questions one stage apart — "did
+    /controller_manager answer at all" and "is anything active yet" — and the
+    answers must not contaminate each other. Caching a verdict rather than the
+    count served the first caller's threshold to the second, so whichever stage
+    ran first decided both."""
+    env = _fake_pixi(
+        tmp_path,
+        "#!/usr/bin/env bash\n"
+        "echo 'joint_state_broadcaster jsb/JSB active'\n"
+        "echo 'left_arm_controller     jtc/JTC inactive'\n",
+    )
+    # Ask the strict question first; its answer must not become the cached verdict.
+    assert _controllers_active(env, "2") != 0, "2 active reported, only 1 is"
+    assert _controllers_active(env, "1") == 0, (
+        "the cached answer to a stricter threshold was reused for a looser one"
+    )
+    assert _controllers_active(env, "0") == 0
+
+
+def test_a_manager_that_never_answers_is_not_reported_as_zero_active(tmp_path):
+    """`min_active 0` asks only whether the manager answered. A timed-out probe
+    produces no output, and counting that as "answered, none active" would let
+    the controller-manager stage pass while nothing is running at all."""
+    env = _fake_pixi(tmp_path, "#!/usr/bin/env bash\nsleep 60\n")
+    env["LUCY_CONTROLLERS_TIMEOUT"] = "2"
+    assert _controllers_active(env, "0") != 0
+
+
 def test_timed_out_probe_leaves_no_orphaned_node(tmp_path):
     """`ros2 control` runs the rclpy node as a child of itself, so signalling
     only the handle the script holds leaves the node alive holding a DDS
@@ -219,7 +261,7 @@ def test_exit_prompt_survives_a_redraw_tick():
 
 def test_exit_prompt_stands_while_navigating():
     """Answering must stay possible after the selection moves under the prompt."""
-    curses = pytest.importorskip("curses")
+    import curses
 
     from launcher import confirm_exit_action
 
@@ -229,7 +271,7 @@ def test_exit_prompt_stands_while_navigating():
 
 def test_exit_prompt_is_dismissed_by_anything_else():
     """No stray keystroke may confirm a teardown of the running stack."""
-    curses = pytest.importorskip("curses")
+    import curses
 
     from launcher import confirm_exit_action
 
