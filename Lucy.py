@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 
-import curses
 import os
 import subprocess
 import sys
+import shutil
+
+try:
+    import curses
+except ImportError:  # Windows: handled by windows_main
+    curses = None
 
 MIN_TERM_HEIGHT = 15
 MIN_TERM_WIDTH = 65
+INSTALL_ENV = {"LUCY_PIXI_AUTO_UPGRADE": "1"}
 
 def is_installed():
     """True when the workspace has been built (mirrors launch_lucy.sh's check)."""
-    return os.path.isfile("install/setup.bash")
+    return any(os.path.isfile(f) for f in ("install/setup.bash", "install/setup.bat"))
 
 def get_dev_mode():
     if not os.path.exists(".env"):
@@ -38,19 +44,80 @@ def set_dev_mode(is_enabled):
         if not dev_found:
             f.write(f"DEV={str(is_enabled).lower()}\n")
 
-def run_command(command, interactive=False):
+PIXI_TASKS = (
+    ("pixi run core", "robot stack + rosbridge on 9090"),
+    ("pixi run control-panel", "web UI on http://localhost:4004"),
+    ("pixi run rviz", "optional viewer"),
+)
+
+
+def confirm(prompt):
+    """Yes unless explicitly declined; assumes yes when nothing can answer."""
+    if not sys.stdin.isatty():
+        return True
+    try:
+        return input(f"{prompt} [Y/n] ").strip().lower() in ("", "y", "yes")
+    except EOFError:
+        return True
+
+
+def windows_main():
+    """Entry point on Windows, which has neither curses for the TUI nor tmux to drive.
+
+    install.py runs interactively so its pixi and MSVC prompts reach the user.
+    """
+    if not is_installed():
+        print("Lucy is not installed in this workspace. Running install.py")
+        rc = run_command([sys.executable, "install.py"], interactive=True, extra_env=INSTALL_ENV)
+        if rc != 0:
+            print(f"\nInstall failed with exit code {rc}.", file=sys.stderr)
+            return rc
+
+    print("\nLucy is installed. Start each component in its own terminal:")
+    for command, purpose in PIXI_TASKS:
+        print(f"  {command:<24} {purpose}")
+    return 0
+
+
+def prepend_pixi_to_path():
+    """Prefer ~/.pixi/bin over system/nix pixi (official installer is usually newer)."""
+    pixi_bin = os.path.join(os.path.expanduser("~"), ".pixi", "bin")
+    if os.path.isdir(pixi_bin):
+        path = os.environ.get("PATH", "")
+        parts = path.split(os.pathsep) if path else []
+        if pixi_bin not in parts:
+            os.environ["PATH"] = pixi_bin + os.pathsep + path
+
+def check_prereqs():
+    prepend_pixi_to_path()
+    if shutil.which("pixi") is None:
+        print("Missing pixi. Install: https://pixi.prefix.dev/latest/installation/")
+        return False
+    return True
+
+def run_command(command, interactive=False, extra_env=None):
     """Runs a command.
 
     If interactive is True, runs natively in the terminal.
     """
     print(f"--- Running: {' '.join(command)} ---")
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
     try:
         if interactive:
             # Inherit standard IO to maintain terminal size and TTY functionality
-            return subprocess.run(command).returncode
+            return subprocess.run(command, env=env).returncode
         else:
             # Popen is fine for non-interactive scripts like install/build
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+                stdin=subprocess.DEVNULL,
+            )
             while True:
                 output = process.stdout.readline()
                 if output == '' and process.poll() is not None:
@@ -93,7 +160,7 @@ def not_installed_screen(stdscr):
         checkbox = "[x]" if is_dev_mode else "[ ]"
         dev_line = f"{checkbox} Developer Mode"
         stdscr.addstr(start + len(lines), max(0, (w - len(dev_line)) // 2), dev_line)
-        hint_line = "(SSH clones, interactive dev shell)"
+        hint_line = "(SSH clones during install; does not change Launch)"
         stdscr.addstr(start + len(lines) + 1, max(0, (w - len(hint_line)) // 2), hint_line, curses.A_DIM)
 
         footer = [
@@ -153,7 +220,7 @@ def main_tui(stdscr):
             else:
                 stdscr.addstr(2 + i, 4, f"{prefix}{option}")
 
-        stdscr.addstr(h - 2, 2, "Enter/Space: Select/Toggle | Up/Down: Navigate", curses.A_DIM)
+        stdscr.addstr(h - 2, 2, "Or: pixi run build, ./launch_lucy.sh", curses.A_DIM)
         stdscr.refresh()
 
         key = stdscr.getch()
@@ -173,9 +240,19 @@ def main_tui(stdscr):
                 is_dev_mode = not is_dev_mode
                 set_dev_mode(is_dev_mode)
             elif selected_option == "Update":
-                return {"cmd": ["./install.sh"], "interactive": False, "name": "Install"}
+                return {
+                    "cmd": [sys.executable, "install.py"],
+                    "interactive": False,
+                    "name": "Install",
+                    "extra_env": INSTALL_ENV,
+                }
             elif selected_option == "Rebuild":
-                return {"cmd": ["./install.sh", "--build-only"], "interactive": False, "name": "Rebuild"}
+                return {
+                    "cmd": ["pixi", "run", "build"],
+                    "interactive": False,
+                    "name": "Rebuild",
+                    "followup": [["pixi", "run", "panel-install"]],
+                }
             elif selected_option == "Launch":
                 return {"cmd": ["./launch_lucy.sh"], "interactive": True, "name": "Launch"}
             elif selected_option == "Exit":
@@ -184,6 +261,10 @@ def main_tui(stdscr):
 if __name__ == "__main__":
     # This initial check is done before curses.wrapper to provide a clean error message
     # without the screen flicker of initializing and de-initializing curses.
+    # Windows first: the size check below needs curses, which does not exist there.
+    if sys.platform == "win32":
+        sys.exit(windows_main())
+
     def check_initial_size():
         stdscr = curses.initscr()
         h, w = stdscr.getmaxyx()
@@ -193,6 +274,9 @@ if __name__ == "__main__":
     if not check_initial_size():
         print("Error: Terminal window is too small.", file=sys.stderr)
         print(f"Please increase the terminal size to at least {MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} characters.", file=sys.stderr)
+        sys.exit(1)
+
+    if not check_prereqs():
         sys.exit(1)
 
     # First run: nothing built yet — offer to install before showing the menu.
@@ -208,7 +292,7 @@ if __name__ == "__main__":
             sys.exit(1)
         if not wants_install:
             sys.exit(0)
-        rc = run_command(["./install.sh"], interactive=False)
+        rc = run_command([sys.executable, "install.py"], extra_env=INSTALL_ENV)
         if rc != 0:
             print(f"\n--- Install finished with exit code {rc} ---")
             print("Press Enter to exit.")
@@ -240,7 +324,15 @@ if __name__ == "__main__":
             # User selected Exit
             break
 
-        rc = run_command(task["cmd"], interactive=task.get("interactive", False))
+        rc = run_command(
+            task["cmd"],
+            interactive=task.get("interactive", False),
+            extra_env=task.get("extra_env"),
+        )
+        for follow in task.get("followup", []):
+            if rc != 0:
+                break
+            rc = run_command(follow, interactive=False, extra_env=task.get("extra_env"))
 
         if task.get("interactive", False):
             print(f"--- Session finished with exit code {rc} ---")
