@@ -1,4 +1,7 @@
-# Workspace (filled by install.sh)
+# Pixi
+.pixi/
+
+# Workspace (filled by install.py)
 src/
 
 # Colcon
@@ -24,18 +27,26 @@ __pycache__/
 .env
 .env.local
 
-# Docker platform choice (./install.sh --arm)
-.lucy-docker-platform
-
-# Launcher remembered tick selection (persisted across container restarts)
+# Launcher remembered tick selection (persisted across restarts)
 .lucy_launcher_state.json
+
+# Launcher runtime modifier state (which core modifiers were applied)
+.lucy_launcher_modifiers.json
+.lucy_launcher.pid
 
 # Local repo override (forks/branches; takes precedence over config/repos.json)
 config/repos.json.local
 
-# End-user install profile (written by installer / Lucy.exe)
+# Local launcher override (package list/toggles; takes precedence over config/launcher_config.json)
+config/launcher_config.json.local
+
+# End-user install profile (written by the Windows installer)
 config/install.profile.json
 
 # Windows executable files
 dist/
 *.spec
+
+*.local
+.local/
+

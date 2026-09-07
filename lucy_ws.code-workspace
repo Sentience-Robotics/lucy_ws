@@ -1,0 +1,43 @@
+{
+  "folders": [
+    {
+      "name": "lucy_ws",
+      "path": "."
+    },
+    {
+      "name": "inmoov_urdf",
+      "path": "src/inmoov_urdf"
+    },
+    {
+      "name": "lucy_ros_packages",
+      "path": "src/lucy_ros_packages"
+    },
+    {
+      "name": "lucy_control_panel",
+      "path": "src/lucy_control_panel"
+    },
+    {
+      "name": "thais_urdf",
+      "path": "src/thais_urdf"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true
+    },
+    "search.exclude": {
+      "**/build": true,
+      "**/install": true,
+      "**/log": true,
+      "**/node_modules": true,
+      "**/.git": true
+    },
+    "files.watcherExclude": {
+      "**/build/**": true,
+      "**/install/**": true,
+      "**/log/**": true,
+      "**/node_modules/**": true
+    }
+  }
+}
