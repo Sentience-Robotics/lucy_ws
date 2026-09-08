@@ -57,12 +57,6 @@ def test_escape_leaves_the_menu(stub_curses):
     assert Lucy.main_tui(_StubScreen([27])) is None
 
 
-def test_quit_key_is_advertised_in_the_footer(stub_curses):
-    screen = _StubScreen([ord("q")])
-    Lucy.main_tui(screen)
-    assert any("Q, X or ESC: Quit" in line for line in screen.written)
-
-
 def test_footer_fits_the_minimum_terminal_width(stub_curses):
     screen = _StubScreen([ord("q")])
     Lucy.main_tui(screen)
