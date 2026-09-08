@@ -89,7 +89,7 @@ def env_flag(name: str, env: Optional[dict] = None) -> bool:
 
 
 def default_run_command(command: list[str], check: bool = True, cwd: Optional[str] = None) -> int:
-    print(f"--- Running: {' '.join(command)} ---")
+    print(f"--- Running: {' '.join(command)} ---", flush=True)
     code = subprocess.run(command, cwd=cwd, check=False).returncode
     if check and code != 0:
         raise subprocess.CalledProcessError(code, command)
