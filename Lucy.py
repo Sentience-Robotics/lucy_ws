@@ -10,6 +10,8 @@ try:
 except ImportError:  # Windows: handled by windows_main
     curses = None
 
+ESCAPE_DELAY_MS = 50
+
 MIN_TERM_HEIGHT = 15
 MIN_TERM_WIDTH = 65
 INSTALL_ENV = {"LUCY_PIXI_AUTO_UPGRADE": "1"}
@@ -64,11 +66,11 @@ def confirm(prompt):
 def windows_main():
     """Entry point on Windows, which has neither curses for the TUI nor tmux to drive.
 
-    install.py runs interactively so its pixi and MSVC prompts reach the user.
+    Lucy-Setup.exe is the supported installer; this covers running Lucy.py directly.
     """
     if not is_installed():
         print("Lucy is not installed in this workspace. Running install.py")
-        rc = run_command([sys.executable, "install.py"], interactive=True, extra_env=INSTALL_ENV)
+        rc = run_command([sys.executable, "install.py"], extra_env=INSTALL_ENV)
         if rc != 0:
             print(f"\nInstall failed with exit code {rc}.", file=sys.stderr)
             return rc
@@ -95,43 +97,31 @@ def check_prereqs():
         return False
     return True
 
-def run_command(command, interactive=False, extra_env=None):
-    """Runs a command.
+def run_command(command, extra_env=None):
+    """Runs a command with standard IO inherited.
 
-    If interactive is True, runs natively in the terminal.
+    The child keeps the real terminal, so its output is not block-buffered, git
+    and pixi report progress, and credential prompts reach the user.
     """
     print(f"--- Running: {' '.join(command)} ---")
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
     try:
-        if interactive:
-            # Inherit standard IO to maintain terminal size and TTY functionality
-            return subprocess.run(command, env=env).returncode
-        else:
-            # Popen is fine for non-interactive scripts like install/build
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env=env,
-                stdin=subprocess.DEVNULL,
-            )
-            while True:
-                output = process.stdout.readline()
-                if output == '' and process.poll() is not None:
-                    break
-                if output:
-                    print(output.strip())
-            return process.poll()
-
+        return subprocess.run(command, env=env).returncode
     except FileNotFoundError:
         print(f"Error: Command '{command[0]}' not found. Make sure it's in your PATH and executable.")
         return -1
     except Exception as e:
         print(f"An error occurred: {e}")
         return -1
+
+def use_responsive_escape():
+    """ESC starts every arrow and function key sequence, so ncurses delays
+    reporting a lone ESC. Call after curses is initialised."""
+    if hasattr(curses, "set_escdelay"):
+        curses.set_escdelay(ESCAPE_DELAY_MS)
+
 
 def not_installed_screen(stdscr):
     """First-run screen shown when the workspace isn't built yet.
@@ -140,6 +130,7 @@ def not_installed_screen(stdscr):
     curses.curs_set(0)
     stdscr.nodelay(0)
     stdscr.timeout(-1)
+    use_responsive_escape()
 
     is_dev_mode = get_dev_mode()
 
@@ -193,6 +184,7 @@ def main_tui(stdscr):
     curses.curs_set(0)
     stdscr.nodelay(0)
     stdscr.timeout(-1)
+    use_responsive_escape()
     curses.start_color()
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_CYAN, -1)
@@ -225,6 +217,9 @@ def main_tui(stdscr):
 
         key = stdscr.getch()
 
+        if key in (ord('q'), ord('Q'), ord('x'), ord('X'), 27):  # q / x / ESC
+            return None
+
         if key == curses.KEY_UP:
             current_idx = (current_idx - 1 + len(options)) % len(options)
             if options[current_idx] == "---":
@@ -242,19 +237,18 @@ def main_tui(stdscr):
             elif selected_option == "Update":
                 return {
                     "cmd": [sys.executable, "install.py"],
-                    "interactive": False,
                     "name": "Install",
                     "extra_env": INSTALL_ENV,
                 }
             elif selected_option == "Rebuild":
                 return {
                     "cmd": ["pixi", "run", "build"],
-                    "interactive": False,
                     "name": "Rebuild",
                     "followup": [["pixi", "run", "panel-install"]],
                 }
             elif selected_option == "Launch":
-                return {"cmd": ["./launch_lucy.sh"], "interactive": True, "name": "Launch"}
+                # Hands the terminal to the stack; the menu does not come back.
+                return {"cmd": ["./launch_lucy.sh"], "name": "Launch", "exits_menu": True}
             elif selected_option == "Exit":
                 return None
 
@@ -274,9 +268,6 @@ if __name__ == "__main__":
     if not check_initial_size():
         print("Error: Terminal window is too small.", file=sys.stderr)
         print(f"Please increase the terminal size to at least {MIN_TERM_WIDTH}x{MIN_TERM_HEIGHT} characters.", file=sys.stderr)
-        sys.exit(1)
-
-    if not check_prereqs():
         sys.exit(1)
 
     # First run: nothing built yet — offer to install before showing the menu.
@@ -302,6 +293,9 @@ if __name__ == "__main__":
         print("Press Enter to continue to the menu.")
         input()
 
+    if not check_prereqs():
+        sys.exit(1)
+
     while True:
         task = None
         try:
@@ -324,17 +318,13 @@ if __name__ == "__main__":
             # User selected Exit
             break
 
-        rc = run_command(
-            task["cmd"],
-            interactive=task.get("interactive", False),
-            extra_env=task.get("extra_env"),
-        )
+        rc = run_command(task["cmd"], extra_env=task.get("extra_env"))
         for follow in task.get("followup", []):
             if rc != 0:
                 break
-            rc = run_command(follow, interactive=False, extra_env=task.get("extra_env"))
+            rc = run_command(follow, extra_env=task.get("extra_env"))
 
-        if task.get("interactive", False):
+        if task.get("exits_menu", False):
             print(f"--- Session finished with exit code {rc} ---")
             break
 
