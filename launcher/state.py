@@ -79,6 +79,9 @@ class LauncherState:
                 self._disable_with_dependents(other_pkg)
         pkg.selected = False
 
+    def _robot_packages(self):
+        return [p for p in self.packages if p.requires_pkg]
+
     def toggle(self, pkg_id):
         pkg = self.get_by_id(pkg_id)
         if not pkg:
@@ -88,6 +91,10 @@ class LauncherState:
         if not pkg.selected:
             self._enable_with_deps(pkg)
         else:
+            if pkg.requires_pkg:
+                selected_robots = [r for r in self._robot_packages() if r.selected]
+                if len(selected_robots) <= 1:
+                    return "One robot package required"
             self._disable_with_dependents(pkg)
         return None
 
