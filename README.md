@@ -40,6 +40,11 @@ python3 Lucy.py
 programs.nix-ld.enable = true;
 ```
 
+If you choose to install pixi beforehand, you will need to source it:
+```
+export PATH="$HOME/.pixi/bin:$PATH"
+```
+
 For Gazebo/RViz GL, also see the [NixOS notes](docs/developer_lucy_packages.md#platform-setup) in the developer guide.
 
 ### Windows
