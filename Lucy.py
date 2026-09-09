@@ -212,7 +212,6 @@ def main_tui(stdscr):
             else:
                 stdscr.addstr(2 + i, 4, f"{prefix}{option}")
 
-        stdscr.addstr(h - 2, 2, "Or: pixi run build, ./launch_lucy.sh", curses.A_DIM)
         stdscr.refresh()
 
         key = stdscr.getch()
