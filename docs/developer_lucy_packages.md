@@ -215,9 +215,11 @@ Vite proxies `/rosbridge` to `ws://127.0.0.1:9090`. Launcher sets `LUCY_LCP_*` v
 
 | Document | Contents |
 |----------|----------|
+| [`docs/adding_robot_packages.md`](adding_robot_packages.md) | How to add a new robot URDF package |
 | [`docs/launcher_packages.md`](launcher_packages.md) | Adding packages to the Control Center |
 | [`docs/pixi_setup.md`](pixi_setup.md) | Pixi/RoboStack deps, lock workflow, component tasks |
 | [`docs/pixi_release.md`](pixi_release.md) | Release packaging (pixi-build-ros) |
 | [`src/lucy_ros_packages/docs/DEVELOPER.md`](../src/lucy_ros_packages/docs/DEVELOPER.md) | bringup, ros2_control, CI |
 | [`src/lucy_ros_packages/doc/ROS2_CONTROL.md`](../src/lucy_ros_packages/doc/ROS2_CONTROL.md) | ros2_control on Lucy |
 | [`src/inmoov_urdf/docs/DEVELOPER.md`](../src/inmoov_urdf/docs/DEVELOPER.md) | URDF, meshes, sim launches |
+| [`src/so_arm101_urdf/docs/DEVELOPER.md`](../src/so_arm101_urdf/docs/DEVELOPER.md) | SO-ARM101 follower arm |

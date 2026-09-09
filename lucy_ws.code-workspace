@@ -19,6 +19,10 @@
     {
       "name": "thais_urdf",
       "path": "src/thais_urdf"
+    },
+    {
+      "name": "so_arm101_urdf",
+      "path": "src/so_arm101_urdf"
     }
   ],
   "settings": {
