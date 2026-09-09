@@ -144,14 +144,14 @@ gstreamer = "*"
 
 # tmux is a host tool (see README). Not bundled in Pixi so `pixi run` does not shadow it.
 
-# --- activation: colcon overlay + Gazebo plugin path ---
+# --- activation: colcon overlay + DDS scope + Gazebo plugin path ---
 [target.unix.activation]
-scripts = ["install/setup.bash"]
+scripts = ["install/setup.bash", "scripts/dds_env.sh"]
 env = { GZ_SIM_SYSTEM_PLUGIN_PATH = "$CONDA_PREFIX/lib" }
 
 # Linux overrides unix activation (does not merge) — repeat setup.bash here.
 [target.linux.activation]
-scripts = ["install/setup.bash", "scripts/gz_rendering_env.sh"]
+scripts = ["install/setup.bash", "scripts/dds_env.sh", "scripts/gz_rendering_env.sh"]
 env = { GZ_SIM_SYSTEM_PLUGIN_PATH = "$CONDA_PREFIX/lib" }
 
 [target.win.activation]
