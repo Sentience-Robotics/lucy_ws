@@ -50,6 +50,7 @@ REQUIREMENT_DOCS = {
     "msvc": ("Visual Studio Build Tools (Desktop development with C++)",
              "https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022"),
     "workspace-path": ("Workspace path without spaces", ""),
+    "nix-ld": (" REQUIREMENT, MANUAL ACTION REQUIRED:\nPlease enable `programs.nix-ld.enable = true;` in your NixOS configuration and rebuild your system before continuing. See README.md for details."),
 }
 
 InstallMode = str  # "install" | "update" | "repair" | "build-only"
@@ -65,6 +66,14 @@ class PrerequisiteError(Exception):
         super().__init__("\n".join(format_issue(i) for i in issues))
 
 
+class NixLdError(Exception):
+    """Raised when nix-ld is not enabled in a NixOS environment."""
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+
 def requirement_issue(req_id: str, detail: str) -> dict:
     name, url = REQUIREMENT_DOCS[req_id]
     return {"id": req_id, "name": name, "url": url, "detail": detail}
@@ -77,6 +86,11 @@ def format_issue(issue: dict) -> str:
 
 
 def fail(req_id: str, detail: str):
+    """
+    Raise a PrerequisiteError for a single missing requirement, with a formatted message.
+
+    Ensure the requirement ID is in REQUIREMENT_DOCS, and provide a detail message explaining the issue.
+    """
     raise PrerequisiteError([requirement_issue(req_id, detail)])
 
 
@@ -418,10 +432,16 @@ def pixi_bin_dirs() -> list[Path]:
 def prepend_pixi_to_path() -> None:
     """A fresh pixi install is not on PATH until the shell restarts."""
     path = os.environ.get("PATH", "")
+    pixi_path = os.path.expanduser("~/.pixi/bin")
+
+    if os.path.isdir(pixi_path) and pixi_path not in path.split(os.pathsep):
+        path = pixi_path + os.pathsep + path
+
     for bin_dir in reversed(pixi_bin_dirs()):
         text = str(bin_dir)
         if bin_dir.is_dir() and text not in path.split(os.pathsep):
             path = text + os.pathsep + path
+
     os.environ["PATH"] = path
 
 
@@ -435,19 +455,58 @@ def pixi_install_command() -> list[str]:
     return ["sh", "-c", f"curl -fsSL {PIXI_INSTALL_URL_POSIX} | bash"]
 
 
-def confirm_install(req_id: str, prompt: str, auto_env: str) -> None:
+def confirm_install(
+    req_id: str,
+    prompt: str,
+    auto_env: str,
+    default: bool = False,
+) -> bool:
     """Ask before installing third-party software; skip the prompt in CI or when opted in."""
     if env_flag(auto_env) or env_flag("CI"):
-        return
+        return True
+
     if not sys.stdin or not sys.stdin.isatty():
-        fail(req_id, f"{prompt} needs confirmation in non-interactive mode. "
-                     f"Set {auto_env}=1 or run from an interactive terminal.")
-    if input(f"{prompt} [y/N] ").strip().lower() not in ("y", "yes"):
-        fail(req_id, f"Aborted - install it manually or set {auto_env}=1.")
+        fail(
+            req_id,
+            f"{prompt} needs confirmation in non-interactive mode. "
+            f"Set {auto_env}=1 or run from an interactive terminal.",
+        )
+
+    suffix = "[Y/n]" if default else "[y/N]"
+    answer = input(f"{prompt} {suffix} ").strip().lower()
+
+    if not answer:
+        return default
+
+    return answer in ("y", "yes")
 
 
-def confirm_pixi_install() -> None:
-    confirm_install("pixi", "Install/upgrade pixi via https://pixi.sh?", "LUCY_PIXI_AUTO_UPGRADE")
+def is_nix_environment() -> bool:
+    """Return True if the current process appears to be running in a Nix environment."""
+    return any(
+        os.environ.get(name)
+        for name in ("IN_NIX_SHELL", "NIX_PATH", "NIX_PROFILES")
+    )
+
+
+def is_nix_ld_enabled() -> bool:
+    result = subprocess.run(
+        ["nixos-option", "programs.nix-ld.enable"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if result.returncode != 0:
+        return False
+
+    lines = result.stdout.splitlines()
+
+    for i, line in enumerate(lines):
+        if line.strip() == "Value:" and i + 1 < len(lines):
+            return lines[i + 1].strip().lower() == "true"
+
+    return False
 
 
 def ensure_pixi(run_command: Callable = default_run_command, log: Log = print) -> None:
@@ -465,8 +524,10 @@ def ensure_pixi(run_command: Callable = default_run_command, log: Log = print) -
         else "install: pixi not found - installing via pixi.sh ...")
     log("install: (LUCY_SKIP_PIXI_UPGRADE=1 to abort; LUCY_PIXI_AUTO_UPGRADE=1 to skip prompt)")
 
-    confirm_pixi_install()
-    run_command(pixi_install_command())
+    if confirm_install("pixi", "Install/upgrade pixi via https://pixi.sh?", "LUCY_PIXI_AUTO_UPGRADE", default=True):
+        run_command(pixi_install_command())
+    else:
+        fail("pixi", "pixi install/upgrade cancelled by user")
     prepend_pixi_to_path()
 
     current = pixi_version()
@@ -504,8 +565,10 @@ def ensure_msvc(run_command: Callable = default_run_command, log: Log = print) -
 
     log("install: MSVC build tools not found - installing via winget (roughly 1.5 GB) ...")
     log("install: (LUCY_SKIP_MSVC_INSTALL=1 to abort; LUCY_MSVC_AUTO_INSTALL=1 to skip prompt)")
-    confirm_install("msvc", "Install the Visual Studio Build Tools C++ compiler?", "LUCY_MSVC_AUTO_INSTALL")
-    run_command(msvc_install_command())
+    if confirm_install("msvc", "Install the Visual Studio Build Tools C++ compiler?", "LUCY_MSVC_AUTO_INSTALL"):
+        run_command(msvc_install_command())
+    else:
+        fail("msvc", "MSVC install cancelled by user")
 
     if not msvc_available():
         fail("msvc", "winget finished but the C++ toolchain is still not detectable. "
@@ -795,6 +858,11 @@ def run_flow(
         log("DEV=true: using url_ssh from repos config.")
 
     ensure_pixi(run_command, log)
+
+    if is_nix_environment():
+        if not is_nix_ld_enabled():
+            raise NixLdError("Please enable `programs.nix-ld.enable = true;` in your NixOS configuration and rebuild your system before continuing. See README.md for details.")
+
     if not skip_build:
         ensure_msvc(run_command, log)
     require_prerequisites(
@@ -869,13 +937,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     except (subprocess.CalledProcessError, RuntimeError, ValueError) as exc:
         print(f"Install failed: {exc}", file=sys.stderr)
         return 1
+    except NixLdError as exc:
+        print(f"MANUAL ACTION NEEDED: {exc}", file=sys.stderr)
+        return 1
 
     if args.skip_build:
         print("Repos ready. Run 'pixi run build' or re-run without --skip-build.")
     elif sys.platform == "win32":
         print("Install complete. Run 'pixi run core', then 'pixi run control-panel'.")
     else:
-        print("Install complete. Run './launch_lucy.sh' or Launch in Lucy.py")
+        print("Install complete. Run 'python3 Lucy.py'")
     return 0
 
 
