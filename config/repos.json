@@ -1,12 +1,6 @@
 {
   "repos": [
     {
-      "name": "inmoov_urdf",
-      "branch": "master",
-      "url_https": "https://github.com/Sentience-Robotics/inmoov_urdf.git",
-      "url_ssh": "git@github.com:Sentience-Robotics/inmoov_urdf.git"
-    },
-    {
       "name": "lucy_ros_packages",
       "branch": "master",
       "url_https": "https://github.com/Sentience-Robotics/lucy_ros_packages.git",
@@ -19,8 +13,20 @@
       "url_ssh": "git@github.com:Sentience-Robotics/lucy_control_panel.git"
     },
     {
+      "name": "lucy_embedded_firmware",
+      "branch": "master",
+      "url_https": "https://github.com/Sentience-Robotics/lucy_embedded_firmware.git",
+      "url_ssh": "git@github.com:Sentience-Robotics/lucy_embedded_firmware.git"
+    },
+    {
+      "name": "inmoov_urdf",
+      "branch": "master",
+      "url_https": "https://github.com/Sentience-Robotics/inmoov_urdf.git",
+      "url_ssh": "git@github.com:Sentience-Robotics/inmoov_urdf.git"
+    },
+    {
       "name": "so_arm101_urdf",
-      "branch": "dev",
+      "branch": "master",
       "url_https": "https://github.com/Sentience-Robotics/so_arm101_urdf.git",
       "url_ssh": "git@github.com:Sentience-Robotics/so_arm101_urdf.git"
     }
