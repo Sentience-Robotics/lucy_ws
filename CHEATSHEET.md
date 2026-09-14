@@ -28,7 +28,7 @@ cargo run -- so_arm
   "repos": [
     {
       "name": "inmoov_urdf",
-      "branch": "aes/fix-mimic-joints",
+      "branch": "dev",
       "url_https": "https://github.com/Sentience-Robotics/inmoov_urdf.git",
       "url_ssh": "git@github.com:Sentience-Robotics/inmoov_urdf.git"
     },
