@@ -89,9 +89,8 @@ class Package:
     def status_window(self):
         """Tmux window whose dead pane is this package's crash signal.
 
-        A modifier with a start hook owns a window under another name, and that
-        pane dying is the only place its failure surfaces: the modifier itself
-        reads as running for as long as core recorded it."""
+        A modifier reads as running for as long as core recorded it, so a hook
+        window's pane is the only place its failure surfaces."""
         if self.type == "modifier" and "start" in self.lifecycle_hooks:
             return self.lifecycle_window
         return self.id

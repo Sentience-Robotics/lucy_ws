@@ -1,15 +1,6 @@
-# Lucy RP2040 controller board — serial access without group membership.
+# Lucy RP2040 controller board: serial access without dialout membership.
+# VID/PID match firmwares/rp2040/src/main.rs; installed by install.py.
 #
-# Installed to /etc/udev/rules.d/ by install.py. The firmware declares this
-# VID/PID in firmwares/rp2040/src/main.rs (UsbVidPid(0x16c0, 0x27dd)), and the
-# host-side bridge scans for the same pair.
-#
-# Without this rule the board lands as root:dialout 0660, so opening it needs
-# dialout membership — which a login session picks up only after a full
-# re-login, and which a long-lived tmux server never picks up at all. The
-# embedded bridge then dies on "Permission denied" opening /dev/ttyACM0.
-#
-# MODE="0666" is deliberate: it works over SSH and in headless or containerised
-# sessions, where TAG+="uaccess" grants nothing because there is no active local
-# seat. The trade-off is that any local user can open the board's serial port.
+# MODE="0666" rather than TAG+="uaccess" alone, which grants nothing over SSH or
+# in a headless session. Any local user can open the port.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="16c0", ATTRS{idProduct}=="27dd", MODE="0666", TAG+="uaccess"

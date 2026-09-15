@@ -29,9 +29,8 @@ def _package_needs_vite_preserve(pkg) -> bool:
 def _stop_lifecycle_windows(state):
     """Close the tmux windows opened by modifier start hooks.
 
-    They live and die with core: a hook process maps the shared memory core
-    creates, and core unlinks and recreates it on every start, so one that
-    outlives a restart keeps writing into a mapping nothing reads any more."""
+    Core unlinks and recreates its shared memory on every start, so a hook that
+    outlives a restart writes into a mapping nothing reads."""
     import launcher
 
     for pkg in state.packages:
