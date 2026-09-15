@@ -509,6 +509,91 @@ def is_nix_ld_enabled() -> bool:
     return False
 
 
+UDEV_RULE_NAME = "99-lucy-rp2040.rules"
+UDEV_RULES_DIR = Path("/etc/udev/rules.d")
+
+
+def udev_rule_source(project_root: Path | str) -> Path:
+    return Path(project_root) / "config" / "udev" / UDEV_RULE_NAME
+
+
+def udev_rule_is_current(project_root: Path | str, rules_dir: Path = UDEV_RULES_DIR) -> bool:
+    """True when the installed rule already matches the one in the repo."""
+    source = udev_rule_source(project_root)
+    installed = Path(rules_dir) / UDEV_RULE_NAME
+    if not source.is_file() or not installed.is_file():
+        return False
+    try:
+        return installed.read_text() == source.read_text()
+    except OSError:
+        return False
+
+
+def ensure_rp2040_udev_rule(
+    project_root: Path | str,
+    run_command: Callable = default_run_command,
+    log: Log = print,
+    rules_dir: Path = UDEV_RULES_DIR,
+) -> bool:
+    """Install the RP2040 serial-access udev rule. Returns True when it is in place.
+
+    Never fatal: the workspace builds and runs in simulation without it, and only
+    the real-hardware bridge needs the board's serial port."""
+    if not sys.platform.startswith("linux"):
+        return False
+    source = udev_rule_source(project_root)
+    if not source.is_file():
+        log(f"install: {UDEV_RULE_NAME} missing from the repo; skipping udev setup.")
+        return False
+    if udev_rule_is_current(project_root, rules_dir):
+        return True
+    if env_flag("LUCY_SKIP_UDEV_RULE"):
+        log("install: LUCY_SKIP_UDEV_RULE=1, skipping RP2040 udev rule.")
+        return False
+    # CI has no board to talk to, and confirm_install() treats CI as consent —
+    # which would sudo-install a rule and run udevadm on every runner.
+    if env_flag("CI") and not env_flag("LUCY_UDEV_AUTO_INSTALL"):
+        log("install: CI, skipping RP2040 udev rule.")
+        return False
+    if shutil.which("udevadm") is None:
+        log("install: udevadm not found; skipping RP2040 udev rule.")
+        return False
+
+    target = Path(rules_dir) / UDEV_RULE_NAME
+    # Guarded rather than delegated to confirm_install: that helper treats a
+    # non-tty as fatal, and a missing udev rule must never fail a build-only or
+    # piped install.
+    if not (env_flag("LUCY_UDEV_AUTO_INSTALL") or env_flag("CI")) and not (
+        sys.stdin and sys.stdin.isatty()
+    ):
+        log("install: non-interactive, skipping the RP2040 udev rule.")
+        log(f"install: install it later with: sudo install -m 0644 {source} {target}")
+        return False
+
+    log(f"install: RP2040 serial access needs {target} (sudo).")
+    log("install: without it the embedded bridge cannot open /dev/ttyACM0.")
+    log("install: (LUCY_SKIP_UDEV_RULE=1 to skip; LUCY_UDEV_AUTO_INSTALL=1 to skip prompt)")
+    if not confirm_install(
+        "udev-rule",
+        f"Install {UDEV_RULE_NAME} to {rules_dir}?",
+        "LUCY_UDEV_AUTO_INSTALL",
+        default=True,
+    ):
+        log("install: skipped the udev rule; hardware bring-up will need it later.")
+        return False
+
+    try:
+        run_command(["sudo", "install", "-m", "0644", str(source), str(target)])
+        run_command(["sudo", "udevadm", "control", "--reload-rules"])
+        run_command(["sudo", "udevadm", "trigger", "--subsystem-match=tty"])
+    except (subprocess.CalledProcessError, OSError) as exc:
+        log(f"install: could not install the udev rule ({exc}).")
+        log(f"install: do it by hand with: sudo install -m 0644 {source} {target}")
+        return False
+    log("install: udev rule active. Replug the board if it is already connected.")
+    return True
+
+
 def ensure_pixi(run_command: Callable = default_run_command, log: Log = print) -> None:
     """Make a new-enough pixi available, installing or upgrading it when allowed."""
     prepend_pixi_to_path()
@@ -883,6 +968,8 @@ def run_flow(
         pixi_run(root, ["lock"], run_command)
 
     pixi_install(root, run_command, log)
+
+    ensure_rp2040_udev_rule(root, run_command, log)
 
     if skip_build:
         log("Skipping workspace build (--skip-build).")
