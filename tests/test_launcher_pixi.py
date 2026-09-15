@@ -625,6 +625,10 @@ def test_modifier_start_hook_window_closes_with_core(monkeypatch):
     monkeypatch.setattr(launcher, "_tmux_new_pixi_window", lambda *a, **k: "")
     monkeypatch.setattr(launcher, "_stop_tmux_window", lambda w: stopped.append(w))
 
+    # The hook window must look live, or the teardown is skipped as a no-op.
+    monkeypatch.setattr(
+        "launcher.apply.tmux_window_snapshot", lambda: ({"core", "embedded"}, {})
+    )
     # Core deselected while running: its window and the hook's both go.
     state = _hook_state(core_selected=False, core_running=True, real_selected=False)
     monkeypatch.setattr(launcher, "run_shell_command_async", lambda *a, **k: None)
@@ -670,3 +674,25 @@ def test_modifier_without_hook_still_keys_on_its_own_id(monkeypatch):
     assert gazebo.status_window == "gazebo"
     status = gazebo.probe_status(["gazebo"], tmux_windows={"core"}, tmux_dead={"embedded": 101})
     assert status["pane_dead"] is False
+
+
+def test_absent_hook_window_is_not_torn_down(monkeypatch):
+    """The teardown shell waits on the pane, so skip windows that do not exist."""
+    stopped = []
+    _silence_teardown(monkeypatch)
+    monkeypatch.setattr(launcher, "run_shell_command", lambda _cmd: None)
+    monkeypatch.setattr(launcher, "_tmux_new_pixi_window", lambda *a, **k: "")
+    monkeypatch.setattr(launcher, "_stop_tmux_window", lambda w: stopped.append(w))
+    monkeypatch.setattr("launcher.apply.tmux_window_snapshot", lambda: (set(), {}))
+    monkeypatch.setattr(launcher, "run_shell_command_async", lambda *a, **k: None)
+    monkeypatch.setattr("launcher.apply.run_teardown_async", lambda fn: fn())
+
+    apply_changes(_hook_state(core_selected=False, core_running=True, real_selected=False))
+    assert stopped == []
+
+
+def test_window_teardown_stops_waiting_once_the_pane_is_gone():
+    cmd = _window_teardown_shell("embedded")
+    assert "list-panes" in cmd
+    assert "break" in cmd
+    assert cmd.index("C-c") < cmd.index("break") < cmd.index("kill-window")

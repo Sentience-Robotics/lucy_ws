@@ -4,7 +4,7 @@ import time
 
 from .config import load_selection
 from .constants import TMUX_SESSION
-from .shell import run_teardown_async
+from .shell import run_teardown_async, tmux_window_snapshot
 from .state import (
     _intended_running,
     _pkg_start_times,
@@ -33,9 +33,11 @@ def _stop_lifecycle_windows(state):
     outlives a restart writes into a mapping nothing reads."""
     import launcher
 
+    live, _ = tmux_window_snapshot()
     for pkg in state.packages:
         if pkg.type == "modifier" and "start" in pkg.lifecycle_hooks:
-            launcher._stop_tmux_window(pkg.lifecycle_window)
+            if pkg.lifecycle_window in live:
+                launcher._stop_tmux_window(pkg.lifecycle_window)
 
 
 def _orphan_preserve_from_state(state):
