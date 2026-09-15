@@ -95,3 +95,36 @@ def test_non_linux_is_a_noop(tmp_path, monkeypatch):
     )
     assert result is False
     assert calls == []
+
+
+def test_ci_skips_without_touching_the_runner(tmp_path, monkeypatch):
+    """CI has no board, and confirm_install() would read CI as consent to sudo."""
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.delenv("LUCY_SKIP_UDEV_RULE", raising=False)
+    monkeypatch.delenv("LUCY_UDEV_AUTO_INSTALL", raising=False)
+    calls = []
+    result = installer.ensure_rp2040_udev_rule(
+        installer.ROOT,
+        run_command=lambda cmd, **kw: calls.append(cmd),
+        log=lambda _m: None,
+        rules_dir=tmp_path,
+    )
+    assert result is False
+    assert calls == []
+
+
+def test_ci_can_still_opt_in_explicitly(tmp_path, monkeypatch):
+    if not sys.platform.startswith("linux"):
+        pytest.skip("udev rule only installs on Linux")
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setenv("LUCY_UDEV_AUTO_INSTALL", "1")
+    monkeypatch.delenv("LUCY_SKIP_UDEV_RULE", raising=False)
+    monkeypatch.setattr(installer.shutil, "which", lambda _n: "/usr/bin/udevadm")
+    calls = []
+    installer.ensure_rp2040_udev_rule(
+        installer.ROOT,
+        run_command=lambda cmd, **kw: calls.append(cmd),
+        log=lambda _m: None,
+        rules_dir=tmp_path,
+    )
+    assert any("udevadm" in " ".join(c) for c in calls)

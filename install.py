@@ -550,6 +550,11 @@ def ensure_rp2040_udev_rule(
     if env_flag("LUCY_SKIP_UDEV_RULE"):
         log("install: LUCY_SKIP_UDEV_RULE=1, skipping RP2040 udev rule.")
         return False
+    # CI has no board to talk to, and confirm_install() treats CI as consent —
+    # which would sudo-install a rule and run udevadm on every runner.
+    if env_flag("CI") and not env_flag("LUCY_UDEV_AUTO_INSTALL"):
+        log("install: CI, skipping RP2040 udev rule.")
+        return False
     if shutil.which("udevadm") is None:
         log("install: udevadm not found; skipping RP2040 udev rule.")
         return False
