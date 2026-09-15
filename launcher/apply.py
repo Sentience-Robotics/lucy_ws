@@ -26,6 +26,19 @@ def _package_needs_vite_preserve(pkg) -> bool:
     return "vite" in cl or "panel-dev" in cl
 
 
+def _stop_lifecycle_windows(state):
+    """Close the tmux windows opened by modifier start hooks.
+
+    They live and die with core: a hook process maps the shared memory core
+    creates, and core unlinks and recreates it on every start, so one that
+    outlives a restart keeps writing into a mapping nothing reads any more."""
+    import launcher
+
+    for pkg in state.packages:
+        if pkg.type == "modifier" and "start" in pkg.lifecycle_hooks:
+            launcher._stop_tmux_window(pkg.lifecycle_window)
+
+
 def _orphan_preserve_from_state(state):
     """Tmux windows and Vite protection for services that should survive a core restart."""
     windows = set()
@@ -61,6 +74,7 @@ def stop_all_packages(state):
                 launcher._stop_tmux_window(pkg.id)
             elif pkg.type == "modifier" and "stop" in pkg.lifecycle_hooks:
                 launcher.run_shell_command(pkg.lifecycle_hooks["stop"])
+        _stop_lifecycle_windows(state)
         core = state.get_by_id("core")
         if core and core.is_running:
             launcher._stop_core_tmux()
@@ -76,6 +90,20 @@ def apply_changes(state):
 
     last_launched_window = None
     core_pkg = state.get_by_id("core")
+    launched_hook_windows = set()
+
+    def _start_hook_window(mod):
+        """Open a modifier's hook window, at most once per apply pass."""
+        if mod.lifecycle_window in launched_hook_windows:
+            return
+        launched_hook_windows.add(mod.lifecycle_window)
+        launcher.run_shell_command(
+            launcher._tmux_new_pixi_window(
+                mod.lifecycle_window,
+                mod.lifecycle_hooks["start"],
+                remain_on_exit=True,
+            )
+        )
 
     modifiers_changed = False
     if core_pkg and core_pkg.selected:
@@ -89,6 +117,7 @@ def apply_changes(state):
             modifiers_changed = True
 
     if modifiers_changed and core_pkg and core_pkg.selected:
+        _stop_lifecycle_windows(state)
         launcher._stop_core_tmux()
         launcher._finish_teardown(
             preserve_package_windows=frozenset(preserve_windows),
@@ -114,6 +143,7 @@ def apply_changes(state):
                     pkg.command["stop"], schedule_cleanup=True
                 )
             elif pkg.type == "core":
+                _stop_lifecycle_windows(state)
                 run_teardown_async(launcher._stop_core_tmux)
                 launcher.save_state({"modifiers": []})
                 for mod in state.packages:
@@ -144,7 +174,7 @@ def apply_changes(state):
         ):
             if pkg.pane_dead:
                 launcher.run_shell_command(
-                    f"tmux kill-window -t {TMUX_SESSION}:{pkg.id} 2>/dev/null"
+                    f"tmux kill-window -t {TMUX_SESSION}:{pkg.status_window} 2>/dev/null"
                 )
                 pkg.pane_dead = False
                 pkg.is_running = False
@@ -173,8 +203,16 @@ def apply_changes(state):
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
                 for mod in selected_modifiers:
+                    if "start" in mod.lifecycle_hooks:
+                        _start_hook_window(mod)
                     _pkg_start_times[mod.id] = time.time()
                     _intended_running.add(mod.id)
+            elif pkg.type == "modifier" and "start" in pkg.lifecycle_hooks:
+                # Core is already up (it would have launched this hook itself
+                # otherwise), so a dead hook window is revived on its own.
+                _start_hook_window(pkg)
+                _pkg_start_times[pkg.id] = time.time()
+                _intended_running.add(pkg.id)
             elif pkg.type in ("tool", "interface"):
                 if pkg.type == "interface":
                     launcher.run_shell_command(

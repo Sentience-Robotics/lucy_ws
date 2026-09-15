@@ -110,6 +110,12 @@
       "dependencies": ["core"],
       "conflicts": ["gazebo"],
       "command": "real:=true",
+      "lifecycle_window": "embedded",
+      "readiness_check": "pgrep -f '[l]ucy_embedded_firmware_sim' >/dev/null 2>&1",
+      "readiness_timeout": 180,
+      "lifecycle_hooks": {
+        "start": "until ls /dev/shm/*.lucy_reg_table >/dev/null 2>&1; do sleep 0.5; done; f=$(ls -t /dev/shm/*.lucy_reg_table | head -1); node=${f##*/}; node=${node%.lucy_reg_table}; echo \"Attaching embedded firmware to node_name=$node\"; cd src/lucy_embedded_firmware/firmwares/sim && exec cargo run -- \"$node\""
+      },
       "default_on": false
     },
     {

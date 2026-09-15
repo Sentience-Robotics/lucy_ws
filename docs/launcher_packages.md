@@ -39,6 +39,8 @@ Every package entry in `config/launcher_config.json` uses the following fields t
 | `conflicts` | `array` of `strings` | A list of `id`s that cannot run alongside this package. Toggling this package on will automatically toggle the conflicting packages off. |
 | `command` | `string` or `object` | The shell command to execute. <br> - **For `"core"`**: The base command (e.g. `ros2 launch ...`). <br> - **For `"modifier"`**: The argument string appended to the core command. <br> - **For `"interface"` / `"tool"`**: A simple string executed in a new tmux window, or a complex object containing `"start"`, `"stop"`, and `"is_running"` shell commands for custom background handling (like the web control panel). |
 | `default_on` | `boolean` | If set to `true`, the package will be selected by default when the launcher boots up (currently unused as the launcher loads an empty initial state, but available for future functionality). |
+| `lifecycle_hooks` | `object` | Optional `{"start": ..., "stop": ...}` shell commands for a `"modifier"`. A `"start"` hook runs in its own tmux window right after `core` launches, for a side process that belongs to that modifier rather than to the core command — `real` uses it for the embedded firmware bridge. Hook windows live and die with `core`, which is what keeps a bridge from outliving the shared memory it maps. |
+| `lifecycle_window` | `string` | Name of the tmux window a `lifecycle_hooks.start` process runs in. Defaults to the package `id`; set it when the hook is a different concern from the modifier itself (`real` → `embedded`). Its dead pane is also what makes the modifier report `CRASHED`. |
 
 ### Under the Hood (`launcher` and `launch_lucy.sh`)
 
@@ -53,6 +55,7 @@ Package commands in other tmux windows are wrapped in `pixi run` so each pane ge
 When you apply changes in the launcher:
 - **Core + Modifiers:** The script takes the core command, appends all active modifier commands, and spins up a dedicated `core` tmux window.
 - **Interfaces / Tools:** The script spins up a new tmux window named after the package's `id` and executes its command via Pixi. Legacy complex `{start, stop, is_running}` objects are still supported for local overrides.
+- **Modifier start hooks:** A modifier carrying `lifecycle_hooks.start` also gets its own window, named by `lifecycle_window`. Selecting `real` therefore gives you two windows: `core` for the ROS stack and `embedded` for the firmware bridge. The bridge waits for `core` to create its shared memory, reads the `node_name` from it, and runs `firmwares/sim`. Opening the board's serial port needs `config/udev/99-lucy-rp2040.rules`, which `install.py` offers to install — without it the bridge dies with `Permission denied` on `/dev/ttyACM0`, since `dialout` membership never reaches an already-running tmux server.
 
 ### Stopping packages and exiting
 
