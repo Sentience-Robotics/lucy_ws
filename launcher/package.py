@@ -58,6 +58,7 @@ class Package:
         self.conflicts = data.get("conflicts", [])
         self.command = data.get("command", "")
         self.lifecycle_hooks = data.get("lifecycle_hooks", {})
+        self.lifecycle_window = data.get("lifecycle_window", self.id)
         self.selected = data.get("default_on", False)
         self.requires_pkg = data.get("requires_pkg")
         self.subitem = data.get("subitem", False)
@@ -83,6 +84,16 @@ class Package:
 
             if self.is_running and self.id not in _pkg_stop_times:
                 self.selected = True
+
+    @property
+    def status_window(self):
+        """Tmux window whose dead pane is this package's crash signal.
+
+        A modifier reads as running for as long as core recorded it, so a hook
+        window's pane is the only place its failure surfaces."""
+        if self.type == "modifier" and "start" in self.lifecycle_hooks:
+            return self.lifecycle_window
+        return self.id
 
     def probe_status(self, running_modifiers, tmux_windows=None, tmux_dead=None):
         """Shell-probe running/ready/pane state and return it, mutating nothing.
@@ -122,9 +133,9 @@ class Package:
         if not is_running:
             exit_status = None
         elif tmux_dead is not None:
-            exit_status = tmux_dead.get(self.id)
+            exit_status = tmux_dead.get(self.status_window)
         else:
-            exit_status = _pane_exit_status(self.id)
+            exit_status = _pane_exit_status(self.status_window)
         return {
             "is_running": is_running,
             "ready": ready,
