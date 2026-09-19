@@ -1,6 +1,7 @@
 """Package model and visibility helpers."""
 
 import os
+import subprocess
 
 from .constants import LOADING_TIMEOUT, WORKSPACE_ROOT
 from .config import save_state
@@ -58,11 +59,11 @@ class Package:
         self.conflicts = data.get("conflicts", [])
         self.command = data.get("command", "")
         self.lifecycle_hooks = data.get("lifecycle_hooks", {})
-        self.lifecycle_window = data.get("lifecycle_window", self.id)
         self.selected = data.get("default_on", False)
         self.requires_pkg = data.get("requires_pkg")
         self.subitem = data.get("subitem", False)
         self.readiness_check = data.get("readiness_check")
+        self.exit_check = data.get("exit_check")
         self.readiness_stages = _readiness_stages(data.get("readiness_stages"))
         self.readiness_timeout = data.get("readiness_timeout", LOADING_TIMEOUT)
         self.runs_on_vnc = data.get("runs_on_vnc", False)
@@ -84,16 +85,6 @@ class Package:
 
             if self.is_running and self.id not in _pkg_stop_times:
                 self.selected = True
-
-    @property
-    def status_window(self):
-        """Tmux window whose dead pane is this package's crash signal.
-
-        A modifier reads as running for as long as core recorded it, so a hook
-        window's pane is the only place its failure surfaces."""
-        if self.type == "modifier" and "start" in self.lifecycle_hooks:
-            return self.lifecycle_window
-        return self.id
 
     def probe_status(self, running_modifiers, tmux_windows=None, tmux_dead=None):
         """Shell-probe running/ready/pane state and return it, mutating nothing.
@@ -132,10 +123,19 @@ class Package:
 
         if not is_running:
             exit_status = None
+        elif self.exit_check:
+            res = subprocess.run(
+                self.exit_check, shell=True, capture_output=True, text=True
+            ).stdout.strip()
+            exit_status = (
+                int(res)
+                if (res.isdigit() or (res.startswith("-") and res[1:].isdigit()))
+                else None
+            )
         elif tmux_dead is not None:
-            exit_status = tmux_dead.get(self.status_window)
+            exit_status = tmux_dead.get(self.id)
         else:
-            exit_status = _pane_exit_status(self.status_window)
+            exit_status = _pane_exit_status(self.id)
         return {
             "is_running": is_running,
             "ready": ready,

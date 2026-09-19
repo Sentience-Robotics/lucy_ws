@@ -537,162 +537,111 @@ def test_core_teardown_kills_rviz_before_sigint():
     assert teardown.index("pkill -9 -x rviz2") < teardown.index("C-c")
 
 
-class _HookPkg:
-    """Package double carrying a modifier start hook."""
+def test_window_teardown_stops_waiting_once_the_pane_is_gone():
+    from launcher.tmux import _window_teardown_shell
 
-    def __init__(self, pid, ptype, selected, running, command="", hooks=None, window=None):
-        self.id = pid
-        self.type = ptype
-        self.selected = selected
-        self.is_running = running
-        self.command = command
-        self.lifecycle_hooks = hooks or {}
-        self.lifecycle_window = window or pid
-        self.pane_dead = False
-        self.pane_exit_status = None
-        self.readiness_check = None
-
-    def is_complex_command(self):
-        return False
+    cmd = _window_teardown_shell("control_panel")
+    assert "list-panes" in cmd
+    assert "break" in cmd
+    assert cmd.index("C-c") < cmd.index("break") < cmd.index("kill-window")
 
 
-def _hook_state(core_selected=True, core_running=False, real_selected=True):
-    core = _HookPkg(
-        "core", "core", core_selected, core_running, "ros2 launch lucy_bringup lucy.launch.py"
-    )
-    real = _HookPkg(
-        "real",
-        "modifier",
-        real_selected,
-        False,
-        "real:=true",
-        hooks={"start": "run-the-bridge"},
-        window="embedded",
-    )
-
-    class FakeState:
-        packages = [core, real]
-
-        def get_by_id(self, pid):
-            return {"core": core, "real": real}.get(pid)
-
-    return FakeState()
-
-
-def _silence_teardown(monkeypatch):
-    # apply_changes tracks start/stop bookkeeping in module globals that earlier
-    # tests in this file leave populated; a stale "core" entry skips the start.
-    from launcher.state import _intended_running, _pkg_start_times, _pkg_stop_times
-
-    _pkg_start_times.clear()
-    _pkg_stop_times.clear()
-    _intended_running.clear()
-    monkeypatch.setattr(launcher, "_stop_core_tmux", lambda: None)
-    monkeypatch.setattr(
-        launcher,
-        "_finish_teardown",
-        lambda preserve_package_windows=None, protect_vite=None: None,
-    )
-    monkeypatch.setattr(launcher, "save_state", lambda _data: None)
-    monkeypatch.setattr(launcher, "set_orphan_preserve_windows", lambda *a, **k: None)
-
-
-def test_modifier_start_hook_opens_its_own_window(monkeypatch):
-    """The bridge gets a tmux window of its own, separate from core's."""
-    windows = []
-    _silence_teardown(monkeypatch)
-    monkeypatch.setattr(launcher, "_stop_tmux_window", lambda _w: None)
-    monkeypatch.setattr(launcher, "run_shell_command", lambda _cmd: None)
-    monkeypatch.setattr(
-        launcher,
-        "_tmux_new_pixi_window",
-        lambda window, cmd, remain_on_exit=False: windows.append((window, cmd)) or "",
-    )
-
-    apply_changes(_hook_state())
-
-    assert ("embedded", "run-the-bridge") in windows
-    core_windows = [w for w, _ in windows]
-    assert "core" in core_windows
-    assert core_windows.index("core") < core_windows.index("embedded")
-
-
-def test_modifier_start_hook_window_closes_with_core(monkeypatch):
-    """A hook window must not outlive the core whose shared memory it maps."""
-    stopped = []
-    _silence_teardown(monkeypatch)
-    monkeypatch.setattr(launcher, "run_shell_command", lambda _cmd: None)
-    monkeypatch.setattr(launcher, "_tmux_new_pixi_window", lambda *a, **k: "")
-    monkeypatch.setattr(launcher, "_stop_tmux_window", lambda w: stopped.append(w))
-
-    # The hook window must look live, or the teardown is skipped as a no-op.
-    monkeypatch.setattr(
-        "launcher.apply.tmux_window_snapshot", lambda: ({"core", "embedded"}, {})
-    )
-    # Core deselected while running: its window and the hook's both go.
-    state = _hook_state(core_selected=False, core_running=True, real_selected=False)
-    monkeypatch.setattr(launcher, "run_shell_command_async", lambda *a, **k: None)
-    monkeypatch.setattr("launcher.apply.run_teardown_async", lambda fn: fn())
-    apply_changes(state)
-
-    assert "embedded" in stopped
-
-
-def test_modifier_with_hook_reports_its_window_pane_death(monkeypatch):
-    """A dead bridge must not read as RUNNING just because core recorded it."""
+def test_modifier_with_exit_check_reports_crash_when_exit_code_present(tmp_path):
     from launcher.package import Package
+    from launcher.state import get_pkg_status, _intended_running, _pkg_start_times
 
-    real = Package(
+    status_file = tmp_path / "bridge_status"
+    pkg = Package(
         {
             "id": "real",
             "name": "... with Real Hardware",
             "type": "modifier",
             "command": "real:=true",
-            "lifecycle_window": "embedded",
-            "lifecycle_hooks": {"start": "run-the-bridge"},
+            "readiness_check": "false",
+            "exit_check": f"cat {status_file} 2>/dev/null",
         },
-        [],
+        running_modifiers=["real"],
     )
-    assert real.status_window == "embedded"
-
-    # Modifier is recorded as running, but its hook window's pane exited 101.
-    status = real.probe_status(
-        ["real"], tmux_windows={"core", "embedded"}, tmux_dead={"embedded": 101}
-    )
-    assert status["is_running"] is True
-    assert status["pane_dead"] is True
-    assert status["pane_exit_status"] == 101
-
-
-def test_modifier_without_hook_still_keys_on_its_own_id(monkeypatch):
-    from launcher.package import Package
-
-    gazebo = Package(
-        {"id": "gazebo", "name": "Gazebo", "type": "modifier", "command": "gazebo:=true"},
-        [],
-    )
-    assert gazebo.status_window == "gazebo"
-    status = gazebo.probe_status(["gazebo"], tmux_windows={"core"}, tmux_dead={"embedded": 101})
+    # File doesn't exist yet: exit_status is None, pane_dead is False
+    status = pkg.probe_status(["real"])
     assert status["pane_dead"] is False
+    assert status["pane_exit_status"] is None
+
+    # Write non-zero exit code: probe_status detects crash immediately
+    status_file.write_text("1\n")
+    status = pkg.probe_status(["real"])
+    assert status["pane_dead"] is True
+    assert status["pane_exit_status"] == 1
+    pkg.apply_status(status)
+
+    _intended_running.add("real")
+    try:
+        assert get_pkg_status(pkg) == "crashed"
+    finally:
+        _intended_running.discard("real")
+        _pkg_start_times.pop("real", None)
 
 
-def test_absent_hook_window_is_not_torn_down(monkeypatch):
-    """The teardown shell waits on the pane, so skip windows that do not exist."""
-    stopped = []
-    _silence_teardown(monkeypatch)
-    monkeypatch.setattr(launcher, "run_shell_command", lambda _cmd: None)
-    monkeypatch.setattr(launcher, "_tmux_new_pixi_window", lambda *a, **k: "")
-    monkeypatch.setattr(launcher, "_stop_tmux_window", lambda w: stopped.append(w))
-    monkeypatch.setattr("launcher.apply.tmux_window_snapshot", lambda: (set(), {}))
-    monkeypatch.setattr(launcher, "run_shell_command_async", lambda *a, **k: None)
-    monkeypatch.setattr("launcher.apply.run_teardown_async", lambda fn: fn())
+def test_intended_running_package_crashes_immediately_when_not_running():
+    import time
+    from launcher.package import Package
+    from launcher.state import get_pkg_status, _intended_running, _pkg_start_times
 
-    apply_changes(_hook_state(core_selected=False, core_running=True, real_selected=False))
-    assert stopped == []
+    pkg = Package(
+        {
+            "id": "real",
+            "name": "... with Real Hardware",
+            "type": "modifier",
+            "command": "real:=true",
+        },
+        running_modifiers=[],
+    )
+    assert not pkg.is_running
+    _intended_running.add("real")
+    _pkg_start_times["real"] = time.time()
+    try:
+        assert get_pkg_status(pkg) == "crashed"
+    finally:
+        _intended_running.discard("real")
+        _pkg_start_times.pop("real", None)
 
 
-def test_window_teardown_stops_waiting_once_the_pane_is_gone():
-    cmd = _window_teardown_shell("embedded")
-    assert "list-panes" in cmd
-    assert "break" in cmd
-    assert cmd.index("C-c") < cmd.index("break") < cmd.index("kill-window")
+def test_real_hardware_stays_loading_until_microcontroller_ready_file_exists(tmp_path):
+    import time
+    from launcher.package import Package
+    from launcher.state import get_pkg_status, _intended_running, _pkg_start_times
+
+    ready_file = tmp_path / ".lucy_real_hardware_ready"
+    pkg = Package(
+        {
+            "id": "real",
+            "name": "... with Real Hardware",
+            "type": "modifier",
+            "command": "real:=true",
+            "readiness_check": f"test -f {ready_file}",
+            "readiness_timeout": 30,
+        },
+        running_modifiers=["real"],
+    )
+
+    _intended_running.add("real")
+    _pkg_start_times["real"] = time.time()
+    try:
+        # Microcontroller has NOT been found yet: ready_file is absent
+        status = pkg.probe_status(["real"])
+        assert status["ready"] is False
+        pkg.apply_status(status)
+        assert get_pkg_status(pkg) == "loading"
+
+        # Microcontroller found and opened: ready_file is created
+        ready_file.touch()
+        status = pkg.probe_status(["real"])
+        assert status["ready"] is True
+        pkg.apply_status(status)
+        assert get_pkg_status(pkg) == "running"
+    finally:
+        _intended_running.discard("real")
+        _pkg_start_times.pop("real", None)
+
+
+
