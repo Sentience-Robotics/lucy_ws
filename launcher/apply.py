@@ -1,5 +1,7 @@
 """Apply package selection changes and full teardown."""
 
+import subprocess
+import threading
 import time
 
 from .config import load_selection
@@ -10,6 +12,99 @@ from .state import (
     _pkg_start_times,
     _pkg_stop_times,
 )
+
+# Async preflight (e.g. ``pixi run firmware-check``) so the curses loop stays responsive.
+_preflight_lock = threading.Lock()
+_preflight_running = False
+_preflight_ready = False
+_preflight_error: str | None = None
+
+
+def preflight_pending() -> bool:
+    with _preflight_lock:
+        return _preflight_running
+
+
+def take_preflight_result() -> tuple[bool, str | None] | None:
+    """Return ``(ok, error)`` once a background preflight finishes; else ``None``."""
+    global _preflight_running, _preflight_ready, _preflight_error
+    with _preflight_lock:
+        if _preflight_running:
+            return None
+        if _preflight_ready:
+            _preflight_ready = False
+            return (True, None)
+        if _preflight_error is not None:
+            err = _preflight_error
+            _preflight_error = None
+            return (False, err)
+        return None
+
+
+def _selected_preflight_checks(state) -> list[tuple[str, str]]:
+    """``(modifier_name, check_command)`` for selected modifiers with a preflight."""
+    core_pkg = state.get_by_id("core")
+    if not (core_pkg and core_pkg.selected):
+        return []
+    out: list[tuple[str, str]] = []
+    for mod in state.packages:
+        if mod.type != "modifier" or not mod.selected:
+            continue
+        check = getattr(mod, "preflight_check", None)
+        if check:
+            out.append((mod.name, check))
+    return out
+
+
+def _run_preflight_checks(checks: list[tuple[str, str]]) -> str | None:
+    """Run preflight commands; return an error string or ``None`` on success."""
+    for name, check in checks:
+        proc = subprocess.run(check, shell=True, capture_output=True, text=True)
+        if proc.returncode == 0:
+            continue
+        detail = (proc.stdout or proc.stderr or "").strip()
+        if detail:
+            first = detail.splitlines()[0][:100]
+            return f"{name}: {first}"
+        return f"{name}: preflight failed — run pixi run firmware-setup"
+    return None
+
+
+def request_apply(state):
+    """Apply selection, running any preflight off the TUI thread when needed.
+
+    Returns:
+      - ``"pending"`` if a background preflight was started (poll via
+        :func:`take_preflight_result`, then call
+        ``apply_changes(state, skip_preflight=True)``).
+      - ``None`` on immediate success.
+      - error string on immediate failure.
+    """
+    global _preflight_running, _preflight_ready, _preflight_error
+
+    checks = _selected_preflight_checks(state)
+    if not checks:
+        return apply_changes(state, skip_preflight=True)
+
+    with _preflight_lock:
+        if _preflight_running:
+            return "pending"
+        _preflight_running = True
+        _preflight_ready = False
+        _preflight_error = None
+
+    def _worker():
+        global _preflight_running, _preflight_ready, _preflight_error
+        err = _run_preflight_checks(checks)
+        with _preflight_lock:
+            _preflight_running = False
+            if err:
+                _preflight_error = err
+            else:
+                _preflight_ready = True
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return "pending"
 
 
 def _clean_status():
@@ -79,9 +174,8 @@ def stop_all_packages(state):
     launcher._finish_teardown()
 
 
-def apply_changes(state):
+def apply_changes(state, *, skip_preflight: bool = False):
     import launcher
-    import subprocess
 
     preserve_windows, protect_vite = _orphan_preserve_from_state(state)
     launcher.set_orphan_preserve_windows(preserve_windows, protect_vite=protect_vite)
@@ -90,26 +184,11 @@ def apply_changes(state):
     core_pkg = state.get_by_id("core")
 
     # Block core start when a selected modifier's preflight fails (e.g. real HW).
-    if core_pkg and core_pkg.selected:
-        selected_modifiers = [
-            p for p in state.packages if p.type == "modifier" and p.selected
-        ]
-        for mod in selected_modifiers:
-            check = getattr(mod, "preflight_check", None)
-            if not check:
-                continue
-            proc = subprocess.run(
-                check, shell=True, capture_output=True, text=True
-            )
-            if proc.returncode != 0:
-                detail = (proc.stdout or proc.stderr or "").strip()
-                if detail:
-                    # Keep one line for the TUI status bar.
-                    first = detail.splitlines()[0][:100]
-                    return f"{mod.name}: {first}"
-                return (
-                    f"{mod.name}: preflight failed — run pixi run firmware-setup"
-                )
+    # Prefer :func:`request_apply` from the TUI so this does not freeze curses.
+    if not skip_preflight:
+        err = _run_preflight_checks(_selected_preflight_checks(state))
+        if err:
+            return err
 
     modifiers_changed = False
     if core_pkg and core_pkg.selected:

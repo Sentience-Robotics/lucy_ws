@@ -59,3 +59,28 @@ def test_check_cli_exits_nonzero_when_missing(fw, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         fw.main(["--check"])
     assert exc.value.code == 1
+
+
+@pytest.mark.parametrize(
+    ("system", "machine", "expected"),
+    [
+        ("Windows", "AMD64", "https://win.rustup.rs/x86_64"),
+        ("Windows", "x86_64", "https://win.rustup.rs/x86_64"),
+        ("Windows", "ARM64", "https://win.rustup.rs/aarch64"),
+        ("Windows", "aarch64", "https://win.rustup.rs/aarch64"),
+        (
+            "Linux",
+            "x86_64",
+            "https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init",
+        ),
+        (
+            "Darwin",
+            "arm64",
+            "https://static.rust-lang.org/rustup/dist/aarch64-apple-darwin/rustup-init",
+        ),
+    ],
+)
+def test_rustup_init_url(fw, monkeypatch, system, machine, expected):
+    monkeypatch.setattr(fw.platform, "system", lambda: system)
+    monkeypatch.setattr(fw.platform, "machine", lambda: machine)
+    assert fw.rustup_init_url() == expected

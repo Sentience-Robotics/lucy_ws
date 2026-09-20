@@ -16,4 +16,8 @@ export PATH="${CARGO_HOME}/bin:${CONDA_PREFIX}/bin:${PATH}"
 # Prebuilt picotool needs libusb from the Pixi env (esp. on NixOS).
 if [[ -d "${CONDA_PREFIX}/lib" ]]; then
   export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+  # macOS uses DYLD_LIBRARY_PATH (ignored by SIP for hardened binaries, but needed otherwise).
+  if [[ "$(uname)" == "Darwin" ]]; then
+    export DYLD_LIBRARY_PATH="${CONDA_PREFIX}/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
+  fi
 fi

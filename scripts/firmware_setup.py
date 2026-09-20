@@ -205,6 +205,9 @@ def rustup_init_url() -> str:
     machine = platform.machine().lower()
 
     if system == "Windows":
+        # win.rustup.rs hosts both arches; prefer native on Windows ARM.
+        if machine in ("aarch64", "arm64"):
+            return "https://win.rustup.rs/aarch64"
         return "https://win.rustup.rs/x86_64"
 
     if system == "Darwin":
