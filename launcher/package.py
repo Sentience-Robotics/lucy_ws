@@ -1,6 +1,7 @@
 """Package model and visibility helpers."""
 
 import os
+import subprocess
 
 from .constants import LOADING_TIMEOUT, WORKSPACE_ROOT
 from .config import save_state
@@ -62,6 +63,7 @@ class Package:
         self.requires_pkg = data.get("requires_pkg")
         self.subitem = data.get("subitem", False)
         self.readiness_check = data.get("readiness_check")
+        self.exit_check = data.get("exit_check")
         self.readiness_stages = _readiness_stages(data.get("readiness_stages"))
         self.readiness_timeout = data.get("readiness_timeout", LOADING_TIMEOUT)
         self.runs_on_vnc = data.get("runs_on_vnc", False)
@@ -121,6 +123,15 @@ class Package:
 
         if not is_running:
             exit_status = None
+        elif self.exit_check:
+            res = subprocess.run(
+                self.exit_check, shell=True, capture_output=True, text=True
+            ).stdout.strip()
+            exit_status = (
+                int(res)
+                if (res.isdigit() or (res.startswith("-") and res[1:].isdigit()))
+                else None
+            )
         elif tmux_dead is not None:
             exit_status = tmux_dead.get(self.id)
         else:

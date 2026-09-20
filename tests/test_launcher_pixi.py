@@ -1,6 +1,7 @@
 """Tests for launcher Pixi/tmux command wrapping (no tmux or ROS required)."""
 
 import os
+import sys
 
 import launcher
 from launcher import (
@@ -535,3 +536,122 @@ def test_core_teardown_kills_rviz_before_sigint():
     teardown = _core_teardown_shell()
     assert "pkill -9 -x rviz2" in teardown
     assert teardown.index("pkill -9 -x rviz2") < teardown.index("C-c")
+
+
+def test_window_teardown_stops_waiting_once_the_pane_is_gone():
+    from launcher.tmux import _window_teardown_shell
+
+    cmd = _window_teardown_shell("control_panel")
+    assert "list-panes" in cmd
+    assert "break" in cmd
+    assert cmd.index("C-c") < cmd.index("break") < cmd.index("kill-window")
+
+
+def test_modifier_with_exit_check_reports_crash_when_exit_code_present(tmp_path):
+    from launcher.package import Package
+    from launcher.state import get_pkg_status, _intended_running, _pkg_start_times
+
+    status_file = tmp_path / "bridge_status"
+    pkg = Package(
+        {
+            "id": "real",
+            "name": "... with Real Hardware",
+            "type": "modifier",
+            "command": "real:=true",
+            "readiness_check": "false",
+            "exit_check": (
+                f'"{sys.executable}" -c "import pathlib, sys; '
+                f'p = pathlib.Path(sys.argv[1]); '
+                f'sys.stdout.write(p.read_text().strip()) if p.is_file() else None" '
+                f'"{status_file}"'
+            ),
+        },
+        running_modifiers=["real"],
+    )
+    # File doesn't exist yet: exit_status is None, pane_dead is False
+    status = pkg.probe_status(["real"])
+    assert status["pane_dead"] is False
+    assert status["pane_exit_status"] is None
+
+    # Write non-zero exit code: probe_status detects crash immediately
+    status_file.write_text("1\n")
+    status = pkg.probe_status(["real"])
+    assert status["pane_dead"] is True
+    assert status["pane_exit_status"] == 1
+    pkg.apply_status(status)
+
+    _intended_running.add("real")
+    try:
+        assert get_pkg_status(pkg) == "crashed"
+    finally:
+        _intended_running.discard("real")
+        _pkg_start_times.pop("real", None)
+
+
+def test_intended_running_package_crashes_immediately_when_not_running():
+    import time
+    from launcher.package import Package
+    from launcher.state import get_pkg_status, _intended_running, _pkg_start_times
+
+    pkg = Package(
+        {
+            "id": "real",
+            "name": "... with Real Hardware",
+            "type": "modifier",
+            "command": "real:=true",
+        },
+        running_modifiers=[],
+    )
+    assert not pkg.is_running
+    _intended_running.add("real")
+    _pkg_start_times["real"] = time.time()
+    try:
+        assert get_pkg_status(pkg) == "crashed"
+    finally:
+        _intended_running.discard("real")
+        _pkg_start_times.pop("real", None)
+
+
+def test_real_hardware_stays_loading_until_microcontroller_ready_file_exists(tmp_path):
+    import time
+    from launcher.package import Package
+    from launcher.state import get_pkg_status, _intended_running, _pkg_start_times
+
+    ready_file = tmp_path / ".lucy_real_hardware_ready"
+    pkg = Package(
+        {
+            "id": "real",
+            "name": "... with Real Hardware",
+            "type": "modifier",
+            "command": "real:=true",
+            "readiness_check": (
+                f'"{sys.executable}" -c "import pathlib, sys; '
+                f'sys.exit(0 if pathlib.Path(sys.argv[1]).is_file() else 1)" '
+                f'"{ready_file}"'
+            ),
+            "readiness_timeout": 30,
+        },
+        running_modifiers=["real"],
+    )
+
+    _intended_running.add("real")
+    _pkg_start_times["real"] = time.time()
+    try:
+        # Microcontroller has NOT been found yet: ready_file is absent
+        status = pkg.probe_status(["real"])
+        assert status["ready"] is False
+        pkg.apply_status(status)
+        assert get_pkg_status(pkg) == "loading"
+
+        # Microcontroller found and opened: ready_file is created
+        ready_file.touch()
+        status = pkg.probe_status(["real"])
+        assert status["ready"] is True
+        pkg.apply_status(status)
+        assert get_pkg_status(pkg) == "running"
+    finally:
+        _intended_running.discard("real")
+        _pkg_start_times.pop("real", None)
+
+
+

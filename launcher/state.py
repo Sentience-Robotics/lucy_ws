@@ -184,16 +184,16 @@ def get_pkg_status(pkg):
         _pkg_start_times.pop(pkg.id, None)
         return "running"
     if pkg.id in _intended_running:
+        if not pkg.is_running:
+            _pkg_start_times.pop(pkg.id, None)
+            return "crashed"
         timeout = getattr(pkg, "readiness_timeout", LOADING_TIMEOUT)
         started = _pkg_start_times.get(pkg.id)
         if started is None:
-            if pkg.is_running:
-                _pkg_start_times[pkg.id] = time.time()
-                return "loading"
-            return "crashed"
+            _pkg_start_times[pkg.id] = time.time()
+            return "loading"
         if time.time() - started < timeout:
             return "loading"
-        _pkg_start_times.pop(pkg.id, None)
         return "crashed"
     return "stopped"
 

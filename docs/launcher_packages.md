@@ -39,6 +39,9 @@ Every package entry in `config/launcher_config.json` uses the following fields t
 | `conflicts` | `array` of `strings` | A list of `id`s that cannot run alongside this package. Toggling this package on will automatically toggle the conflicting packages off. |
 | `command` | `string` or `object` | The shell command to execute. <br> - **For `"core"`**: The base command (e.g. `ros2 launch ...`). <br> - **For `"modifier"`**: The argument string appended to the core command. <br> - **For `"interface"` / `"tool"`**: A simple string executed in a new tmux window, or a complex object containing `"start"`, `"stop"`, and `"is_running"` shell commands for custom background handling (like the web control panel). |
 | `default_on` | `boolean` | If set to `true`, the package will be selected by default when the launcher boots up (currently unused as the launcher loads an empty initial state, but available for future functionality). |
+| `readiness_check` | `string` | Optional shell command that exits 0 when the package or modifier is ready and running. |
+| `exit_check` | `string` | Optional shell command returning the exit code of an underlying process (e.g. `cat /tmp/.lucy_real_hardware_status 2>/dev/null`), enabling immediate crash detection without a tmux window. |
+| `readiness_timeout` | `integer` | Timeout in seconds before an unready package is considered crashed (default: 30s). |
 
 ### Under the Hood (`launcher` and `launch_lucy.sh`)
 
