@@ -6,6 +6,7 @@ import subprocess
 from .constants import LOADING_TIMEOUT, WORKSPACE_ROOT
 from .config import save_state
 from .shell import run_shell_command, _pane_exit_status
+from .tmux import HOST_TMUX
 
 
 def _env_enabled(var_name):
@@ -108,7 +109,7 @@ class Package:
                 is_running = self.id in tmux_windows
             else:
                 is_running = run_shell_command(
-                    f"tmux list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'",
+                    f"{HOST_TMUX} list-windows -F '#{{window_name}}' | grep -q '^{self.id}$'",
                     capture_output=True,
                 )
 

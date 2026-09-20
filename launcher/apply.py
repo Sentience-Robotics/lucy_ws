@@ -7,6 +7,7 @@ import time
 from .config import load_selection
 from .constants import TMUX_SESSION
 from .shell import run_teardown_async
+from .tmux import HOST_TMUX
 from .state import (
     _intended_running,
     _pkg_start_times,
@@ -258,7 +259,7 @@ def apply_changes(state, *, skip_preflight: bool = False):
         ):
             if pkg.pane_dead:
                 launcher.run_shell_command(
-                    f"tmux kill-window -t {TMUX_SESSION}:{pkg.id} 2>/dev/null"
+                    f"{HOST_TMUX} kill-window -t {TMUX_SESSION}:{pkg.id} 2>/dev/null"
                 )
                 pkg.pane_dead = False
                 pkg.is_running = False
@@ -266,7 +267,8 @@ def apply_changes(state, *, skip_preflight: bool = False):
                 launcher.run_shell_command(launcher._complex_package_start(pkg))
                 if pkg.readiness_check:
                     launcher.run_shell_command(
-                        f"tmux set-window-option -t {TMUX_SESSION}:{pkg.id} remain-on-exit on 2>/dev/null"
+                        f"{HOST_TMUX} set-window-option -t {TMUX_SESSION}:{pkg.id} "
+                        "remain-on-exit on 2>/dev/null"
                     )
                 _pkg_start_times[pkg.id] = time.time()
                 _intended_running.add(pkg.id)
@@ -312,7 +314,7 @@ def apply_changes(state, *, skip_preflight: bool = False):
 
     if last_launched_window:
         launcher.run_shell_command(
-            f"tmux select-window -t {TMUX_SESSION}:{last_launched_window}"
+            f"{HOST_TMUX} select-window -t {TMUX_SESSION}:{last_launched_window}"
         )
     return None
 
