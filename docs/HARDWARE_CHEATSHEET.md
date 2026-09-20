@@ -18,7 +18,7 @@ sudo picotool load -fx lucy_embedded_firmware_rp2040.uf2
 
 1. Run core
 pixi shell
-LUCY_BUS_SERVO_ID=6 LUCY_ROBOT_PACKAGE=so_arm101_urdf ros2 launch lucy_bringup lucy.launch.py real:=true robot_package:=so_arm101_urdf
+LUCY_ROBOT_PACKAGE=so_arm101_urdf ros2 launch lucy_bringup lucy.launch.py real:=true robot_package:=so_arm101_urdf
 
 2. Run control panel
 pixi run panel-dev

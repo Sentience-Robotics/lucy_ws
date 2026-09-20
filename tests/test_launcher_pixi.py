@@ -1,6 +1,7 @@
 """Tests for launcher Pixi/tmux command wrapping (no tmux or ROS required)."""
 
 import os
+import sys
 
 import launcher
 from launcher import (
@@ -558,7 +559,12 @@ def test_modifier_with_exit_check_reports_crash_when_exit_code_present(tmp_path)
             "type": "modifier",
             "command": "real:=true",
             "readiness_check": "false",
-            "exit_check": f"cat {status_file} 2>/dev/null",
+            "exit_check": (
+                f'"{sys.executable}" -c "import pathlib, sys; '
+                f'p = pathlib.Path(sys.argv[1]); '
+                f'sys.stdout.write(p.read_text().strip()) if p.is_file() else None" '
+                f'"{status_file}"'
+            ),
         },
         running_modifiers=["real"],
     )
@@ -618,7 +624,11 @@ def test_real_hardware_stays_loading_until_microcontroller_ready_file_exists(tmp
             "name": "... with Real Hardware",
             "type": "modifier",
             "command": "real:=true",
-            "readiness_check": f"test -f {ready_file}",
+            "readiness_check": (
+                f'"{sys.executable}" -c "import pathlib, sys; '
+                f'sys.exit(0 if pathlib.Path(sys.argv[1]).is_file() else 1)" '
+                f'"{ready_file}"'
+            ),
             "readiness_timeout": 30,
         },
         running_modifiers=["real"],
