@@ -81,12 +81,35 @@ def stop_all_packages(state):
 
 def apply_changes(state):
     import launcher
+    import subprocess
 
     preserve_windows, protect_vite = _orphan_preserve_from_state(state)
     launcher.set_orphan_preserve_windows(preserve_windows, protect_vite=protect_vite)
 
     last_launched_window = None
     core_pkg = state.get_by_id("core")
+
+    # Block core start when a selected modifier's preflight fails (e.g. real HW).
+    if core_pkg and core_pkg.selected:
+        selected_modifiers = [
+            p for p in state.packages if p.type == "modifier" and p.selected
+        ]
+        for mod in selected_modifiers:
+            check = getattr(mod, "preflight_check", None)
+            if not check:
+                continue
+            proc = subprocess.run(
+                check, shell=True, capture_output=True, text=True
+            )
+            if proc.returncode != 0:
+                detail = (proc.stdout or proc.stderr or "").strip()
+                if detail:
+                    # Keep one line for the TUI status bar.
+                    first = detail.splitlines()[0][:100]
+                    return f"{mod.name}: {first}"
+                return (
+                    f"{mod.name}: preflight failed — run pixi run firmware-setup"
+                )
 
     modifiers_changed = False
     if core_pkg and core_pkg.selected:
@@ -212,6 +235,7 @@ def apply_changes(state):
         launcher.run_shell_command(
             f"tmux select-window -t {TMUX_SESSION}:{last_launched_window}"
         )
+    return None
 
 
 def restore_selection(state):

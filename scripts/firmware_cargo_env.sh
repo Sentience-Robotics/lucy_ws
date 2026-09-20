@@ -12,4 +12,8 @@ fi
 
 export CARGO_HOME="${CONDA_PREFIX}/cargo"
 export RUSTUP_HOME="${CONDA_PREFIX}/rustup"
-export PATH="${CARGO_HOME}/bin:${PATH}"
+export PATH="${CARGO_HOME}/bin:${CONDA_PREFIX}/bin:${PATH}"
+# Prebuilt picotool needs libusb from the Pixi env (esp. on NixOS).
+if [[ -d "${CONDA_PREFIX}/lib" ]]; then
+  export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi

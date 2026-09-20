@@ -343,11 +343,14 @@ def _event_loop(stdscr, state, poller, status_msg=None, status_msg_until=0.0):
                 pkg_to_toggle = display_list[current_idx]
                 error_msg = state.toggle(pkg_to_toggle.id)
             elif key == ord("\n"):
-                apply_changes(state)
-                save_selection({p.id for p in state.packages if p.selected})
-                status_msg = "Configuration Applied!"
-                status_msg_until = time.time() + 2.0
-                poller.request_refresh()
+                apply_error = apply_changes(state)
+                if apply_error:
+                    error_msg = apply_error
+                else:
+                    save_selection({p.id for p in state.packages if p.selected})
+                    status_msg = "Configuration Applied!"
+                    status_msg_until = time.time() + 2.0
+                    poller.request_refresh()
             elif key in [ord("x"), ord("X"), ord("q"), ord("Q"), 27]:
                 confirm_exit = True
 

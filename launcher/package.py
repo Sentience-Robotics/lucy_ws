@@ -64,6 +64,7 @@ class Package:
         self.subitem = data.get("subitem", False)
         self.readiness_check = data.get("readiness_check")
         self.exit_check = data.get("exit_check")
+        self.preflight_check = data.get("preflight_check")
         self.readiness_stages = _readiness_stages(data.get("readiness_stages"))
         self.readiness_timeout = data.get("readiness_timeout", LOADING_TIMEOUT)
         self.runs_on_vnc = data.get("runs_on_vnc", False)
